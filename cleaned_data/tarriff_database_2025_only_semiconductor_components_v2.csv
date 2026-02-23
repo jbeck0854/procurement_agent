@@ -1,0 +1,143 @@
+hts8,brief_description,mfn_text_rate_pct,how_measured
+84145915,"Fans used for cooling microprocessors, telecommunications equipment, or computers",0.0,NO
+84248910,"Mechanical appliances for projecting, dispersing or spraying liquids or powders, used for making printed circuits or printed circuit assemblies",0.0,NO
+84733011,"Printed circuit assemblies, not incorporating a cathode ray tube, of the machines of 8471",0.0,
+84733020,"Parts and accessories of the ADP machines of heading 8471, not incorporating a CRT, parts and accessories of printed circuit assemblies",0.0,NO
+84734010,Printed circuit assemblies for automatic teller machines of subheading 8472.90.10,0.0,NO
+84734021,Printed circuit assemblies of word processing machines of 8472.90.50,0.0,NO
+84735030,Printed circuit assemblies suitable for use with machines of two or more of the headings 8469 to 8472,0.0,NO
+84735060,Part/accessory (also face plate and lock latch) of printed circuit assemblies suitable for use w/machine of two or more heading 8469 to 8472,0.0,KG
+84798992,Automated electronic component placement machines for making printed circuit assemblies,0.0,NO
+84807140,Injection or compression type molds for rubber or plastics for the manufacture of semiconductor devices,0.0,NO
+84807180,"Molds for rubber or plastics, injection or compression types, other than for shoe machinery or for manufacture of semiconductor devices",3.1,NO
+84862000,Machines and apparatus for the manufacture of semiconductor devices or electronic integrated circuits,0.0,NO
+84864000,Machines and apparatus for the manufacture of masks and reticles and for the assembly of electronic integrated circuits,0.0,NO
+84869000,"Parts and accessories of the machines and apparatus for the manufacture of semiconductor devices, electronic integrated circuits and flat pa",0.0,NO
+84879000,"Machinery parts, not containing electrical connectors, insulators, coils, contacts or other electrical features and other parts nesoi",3.9,KG
+85042100,Liquid dielectric transformers having a power handling capacity not exceeding 650 kVA,0.0,NO
+85042200,"Liquid dielectric transformers having a power handling capacity exceeding 650 kVA but not exceeding 10,000 kVA",0.0,NO
+85042300,"Liquid dielectric transformers having a power handling capacity exceeding 10,000 kVA",1.6,NO
+85043120,"Unrated electrical transformers other than liquid dielectric, having a power handling capacity not exceeding 1 kVA",0.0,NO
+85043140,"Electrical transformers other than liquid dielectric, having a power handling capacity less than 1 kVA",6.6,NO
+85043160,"Electrical transformers other than liquid dielectric, having a power handling capacity of l kVA",1.6,NO
+85043200,"Electrical transformers other than liquid dielectric, having a power handling capacity exceeding 1 kVA but not exceeding 16 kVA",2.4,NO
+85043300,"Electrical transformers other than liquid dielectric, having a power handling capacity exceeding 16 kVA but not exceeding 500 kVA",1.6,NO
+85043400,"Electrical transformers other than liquid dielectric, having a power handling capacity exceeding 500 kVA",1.6,NO
+85045040,Other inductors for power supplies for ADP machines and units of heading 8471 or for telecommunication apparatus,0.0,NO
+85045080,"Other inductors, nesoi",0.0,NO
+85049020,Printed circuit assemblies of power supplies for automatic data processing machines or units thereof of heading 8471,0.0,NO
+85049041,Parts of power supplies (other than printed circuit assemblies) for automatic data processing machines or units thereof of heading 8471,0.0,NO
+85049065,Printed circuit assemblies of the goods of subheading 8504.40 or 8504.50 for telecommunication apparatus,0.0,NO
+85049075,"Printed circuit assemblies of electrical transformers, static converters and inductors, nesoi",0.0,NO
+85049096,"Parts (other than printed circuit assemblies) of electrical transformers, static converters and inductors",0.0,NO
+85118020,"Voltage and voltage-current regulators with cut-out relays designed for use on 6, 12 or 24 V systems",2.5,NO
+85118040,"Voltage and voltage-current regulators with cut-out relays other than those designed for use on 6, 12 or 24 V systems",0.0,NO
+85119020,"Parts of voltage and voltage-current regulators with cut-out relays, designed for use on 6, 12 or 24 V systems",3.1,KG
+85119040,"Parts of voltage and voltage-current regulators with cut-out relays, other than those designed for use on 6, 12 or 24 V systems",0.0,KG
+85143110,Electron beam furnaces for making printed circuits or printed circuit assemblies,0.0,NO
+85143190,"Electron beam furnaces, other than for making printed circuits or printed circuit assemblies",1.3,NO
+85143210,Plasma and vacuum arc furnaces for making printed circuits or printed circuit assemblies,0.0,NO
+85143290,"Plasma and vacuum arc furnaces, other than for making printed circuits or printed circuit assemblies",1.3,NO
+85143910,Other industrial furnaces and ovens for making printed circuits or printed circuit assemblies,0.0,NO
+85168040,"Electric heating resistors assembled only with simple insulated former and electrical connectors, used for anti-icing or de-icing",0.0,NO
+85168080,"Electric heating resistors, nesoi",0.0,NO
+85189020,Printed circuit assemblies of line telephone handsets; parts of repeaters,0.0,NO
+85189041,Other parts of telephone handsets other than printed circuit assemblies,0.0,NO
+85189060,Printed circuit assemblies of the microphones of subheading 8518.10.40 or the loudspeakers of subheading 8518.29.40,0.0,NO
+85198141,"Other sound recording and reproducing apparatus using magnetic tape, optical media, or semiconductor media",0.0,NO
+85229025,"Assemblies & subassemblies of articles of 8520.90, consisting of 2 or more pieces fastened together, printed circuit assemblies",0.0,NO
+85229036,"Other assemblies & subassemblies of articles of 8520.90, consisting of 2 or more pieces fastened together, other than printed circuit assemblies",0.0,NO
+85229045,"Other parts of telephone answering machines, printed circuit assemblies",0.0,NO
+85229058,"Other parts of telephone answering machines, other than printed circuit assemblies",0.0,NO
+85229065,"Parts and accessories of apparatus of headings 8519 to 8521, nesoi, printed circuit assemblies",0.0,NO
+85229080,"Parts and accessories of apparatus of headings 8519 to 8521, nesoi, other than printed circuit assemblies",0.0,NO
+85235100,"Semiconductor media, solid state non-volatile storage devices",0.0,NO
+85235200,"Semiconductor media, smart cards",0.0,NO
+85235900,"Semiconductor media, nesoi",0.0,NO
+85241110,"Flat panel display modules of liquid crystals w/out drivers/control circuits, o/t for articles of subheadings 8528.59, 8528.69, 8528.72 and 8528.73",0.0,NO
+85241190,"Flat panel display modules of liquid crystals w/out drivers/control circuits, for articles of subheadings 8528.59, 8528.69, 8528.72 and 8528.73",4.5,NO
+85241200,Flat panel display modules of organic light-emitting diodes without drivers/control circuits,0.0,NO
+85249110,"Flat panel display modules of liquid crystals w/ drivers/control circuits, o/t for articles of subheadings 8528.59, 8528.69, 8528.72 and 8528.73",0.0,NO
+85249190,"Flat panel display modules of liquid crystals w/ drivers/control circuits, for articles of subheadings 8528.59, 8528.69, 8528.72 and 8528.73",4.5,NO
+85249200,Flat panel display modules of organic light-emitting diodes with drivers/control circuits,0.0,NO
+85287130,"TV reception printed circuit assemblies incorporating a tuner, of a kind used with ADP machines of heading 8471, nesoi",0.0,NO
+85299004,Tuners (printed circuit assemblies),0.0,NO
+85299021,"Other printed circuit assemblies suitable for use solely or principally with the apparatus of headings 8524 to 8528, nesoi",0.0,NO
+85299024,"Transceiver assemblies for the apparatus of subheading 8526.10, other than printed circuit assemblies",0.0,NO
+85299077,"Parts of printed circuit assemblies (including face plates and lock latches) for other apparatus of headings 8524 to 8528, nesoi",0.0,NO
+85312000,Indicator panels incorporating liquid crystal devices (LCD's) or light emitting diodes (LED's),0.0,NO
+85319015,Printed circuit assemblies of the panels of subheading 8531.20,0.0,NO
+85319030,"Printed circuit assemblies of electric sound or visual signaling apparatus, nesoi",0.0,NO
+85319075,"Parts of the panels of subheading 8531.20, other than printed circuit assemblies",0.0,NO
+85321000,Fixed electrical capacitors designed for use in 50/60 Hz circuits and having a reactive power handling capacity of not less than 0.5 kvar,0.0,NO
+85322100,Tantalum fixed capacitors,0.0,NO
+85322200,Aluminum electrolytic fixed capacitors,0.0,NO
+85322300,"Ceramic dielectric fixed capacitors, single layer",0.0,NO
+85322400,"Ceramic dielectric fixed capacitors, multilayer",0.0,NO
+85322500,Dielectric fixed capacitors of paper or plastics,0.0,NO
+85322900,"Fixed electrical capacitors, nesoi",0.0,NO
+85323000,Variable or adjustable (pre-set) electrical capacitors,0.0,NO
+85329000,"Parts of electrical capacitors, fixed, variable or adjustable (pre-set)",0.0,NO
+85331000,"Electrical fixed carbon resistors, composition or film types",0.0,NO
+85332100,"Electrical fixed resistors, other than composition or film type carbon resistors, for a power handling capacity not exceeding 20 W",0.0,NO
+85332900,"Electrical fixed resistors, other than composition or film type carbon resistors, for a power handling capacity exceeding 20 W",0.0,NO
+85333100,"Electrical wirewound variable resistors, including rheostats and potentiometers, for a power handling capacity not exceeding 20 W",0.0,NO
+85333900,"Electrical wirewound variable resistors, including rheostats and potentiometers, for a power handling capacity exceeding 20 W",0.0,NO
+85334040,Metal oxide resistors,0.0,NO
+85334080,"Electrical variable resistors, other than wirewound, including rheostats and potentiometers",0.0,NO
+85339080,"Other parts of electrical resistors, including rheostats and potentiometers, nesoi",0.0,NO
+85364100,"Relays for switching, protecting or making connections to or in electrical circuits, for a voltage not exceeding 60 V",2.7,NO
+85364900,"Relays for switching, protecting or making connections to or in electrical circuits, for a voltage exceeding 60 but not exceeding 1,000 V",2.7,NO
+85366940,"Connectors: coaxial, cylindrical multicontact, rack and panel, printed circuit, ribbon or flat cable, for a voltage not exceeding 1,000 V",0.0,NO
+85367000,"Connectors for optical fibers, optical fiber bundles or cables",0.0,NO
+85389010,Printed circuit assemblies of an article of heading 8537 for one of the articles described in additional U.S. note 12 to chapter 85,0.0,NO
+85389030,"Printed circuit assemblies, suitable for use solely or principally with the apparatus of heading 8535, 8536 or 8537, nesoi",3.5,NO
+85395100,Light-emitting diode (LED) modules,0.0,NO
+85395200,Light-emitting diode (LED) lamps,2.0,NO
+85411000,"Diodes, other than photosensitive or light-emitting diodes",0.0,NO
+85412100,"Transistors, other than photosensitive transistors, with a dissipation rating of less than 1 W",0.0,NO
+85412900,"Transistors, other than photosensitive transistors, with a dissipation rating of 1 W or more",0.0,NO
+85413000,"Thyristors, diacs and triacs, other than photosensitive devices",0.0,NO
+85414100,Light-emitting diodes,0.0,NO
+85414910,"Other photosensitive semiconductor diodes, other than light-emitting",0.0,NO
+85414970,Other photosensitive semiconductor transistors,0.0,NO
+85414995,"Other photosensitive semiconductor devices, other than diodes or transistors, nesoi",0.0,NO
+85415100,"Other semiconductor-based transducers, other than photosensitive transducers",0.0,NO
+85415900,"Other semiconductor devices, other than semiconductor-based transducers, other than photosensitive devices, nesoi",0.0,NO
+85416000,Mounted piezoelectric crystals,0.0,NO
+85419000,"Parts of diodes, transistors, similar semiconductor devices, photosensitive semiconductor devices, LED's and mounted piezoelectric crystals",0.0,NO
+85423100,Electronic integrated circuits: processors and controllers,0.0,NO
+85423200,Electronic integrated circuits: memories,0.0,NO
+85423900,Electronic integrated circuits: other,0.0,NO
+85429000,Parts of electronic integrated circuits and microassemblies,0.0,NO
+85437045,Other electric synchros and transducers; defrosters and demisters with electric resistors for aircraft,2.6,NO
+85439015,"Assemblies and subassemblies for flight data recorders, consisting of 2 or more parts pieces fastened together, printed circuit assemblies",0.0,NO
+85439035,"Assemblies and subassemblies for flight data recorders, consisting of 2 or more parts pieces fastened together, not printed circuit assys.",0.0,NO
+85439068,"Printed circuit assemblies of electrical machines and apparatus, having individual functions, nesoi",0.0,NO
+85439088,"Parts (other than printed circuit assemblies) of electrical machines and apparatus, having individual functions, nesoi",0.0,NO
+85444210,"Insulated electric conductors nesoi, for a voltage not exceeding 1,000 V, fitted with modular telephone connectors",0.0,NO
+85444220,"Insulated electric conductors nesoi, used for telecommuncations, for  a voltage not exceeding 1,000 V, fitted with connectors",0.0,NO
+85444290,"Insulated electric conductors nesoi, for a voltage not exceeding 1,000 V, fitted with connectors, nesoi",2.6,NO
+85444910,"Insulated electric conductors of a kind used for telecommunications, for a voltage not exceeding 80 V, not fitted with connectors",0.0,KG
+85444920,"Insulated electric conductors nesoi, for a voltage not exceeding 80 V, not fitted with connectors",3.5,KG
+85444930,"Insulated electric conductors nesoi, of copper, for a voltage not exceeding 1,000 V, not fitted with connectors",5.3,KG
+85444990,"Insulated electric conductors nesoi, not of copper, for a voltage not exceeding 1,000 V, not fitted with connectors",3.9,KG
+85446020,"Insulated electric conductors nesoi, for a voltage exceeding 1,000 V, fitted with connectors",3.7,NO
+85446040,"Insulated electric conductors nesoi, of copper, for a voltage exceeding 1,000 V, not fitted with connectors",3.5,KG
+85446060,"Insulated electric conductors nesoi, not of copper, for a voltage exceeding 1,000 V, not fitted with connectors",3.2,KG
+90132000,"Lasers, other than laser diodes",0.0,NO
+90139080,"Parts and accessories of liquid crystal devices nesoi, and optical appliances and instruments, nesoi",4.5,NO
+90181160,Printed circuit assemblies for electrocardiographs,0.0,NO
+90181190,"Parts and accessories of electrocardiographs, other than printed circuit assemblies",0.0,NO
+90181975,Printed circuit assemblies for electro-diagnostic parameter acquisition modules,0.0,NO
+90189068,Printed circuit assemblies for defibrillators,0.0,NO
+90279045,Printed circuit assemblies for instruments and apparatus of subheading 9027.80,0.0,NO
+90308200,"Instruments and apparatus for measuring or checking electrical quantities, nesoi: for measuring or checking semiconductor wafers or devices",0.0,NO
+90309025,Printed circuit assemblies for instruments and apparatus for measuring or detecting ionizing radiation,0.0,NO
+90309066,Printed circuit assemblies for subheadings and apparatus of 9030.40 & 9030.82,0.0,NO
+90309068,"Printed circuit assemblies, NESOI",0.0,NO
+90309084,"Parts and accessories for instruments and apparatus for measuring or checking semiconductor wafers or devices, nesoi",0.0,KG
+90314100,Optical measuring/checking instruments/appliances for inspecting semiconductor wafers/devices or photomasks/reticle used to mfg such devices,0.0,NO
+90314970,Optical instrument & appliance: to inspect masks (not photomask) used to mfg semiconductor devices; to measure contamination on such devices,0.0,NO
+90318040,Electron beam microscopes fitted with equipment specifically designed for the handling and transport of semiconductor devices or reticles,0.0,NO
+90330020,LEDs for backlighting of LCDs,0.0,NO
