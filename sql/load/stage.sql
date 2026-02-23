@@ -86,8 +86,8 @@ CREATE TABLE stg_port (
 );
 
 -- Synthetic Suppliers (one row per supplier)
-DROP TABLE IF EXISTS stg_synthetic_suppliers;
-CREATE TABLE stg_synthetic_suppliers (
+DROP TABLE IF EXISTS stg_suppliers;
+CREATE TABLE stg_suppliers (
   country_code CHAR(3),
   supplier_id TEXT,
   lead_time_mean NUMERIC,
@@ -120,6 +120,7 @@ CREATE TABLE stg_supplier_products (
   lead_time_mean NUMERIC,
   lead_time_variance NUMERIC,
   disruption_probability NUMERIC,
+  compliance_eligibility NUMERIC,
   logistics_reliability NUMERIC,
 
   product TEXT, -- the product manufactured by the supplier (e.g., integrated_circuit_components)
