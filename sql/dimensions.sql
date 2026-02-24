@@ -33,7 +33,7 @@ CREATE TABLE dim_ppi_series (
     country_code   CHAR(3) NULL REFERENCES dim_country(country_code),
     base_year      INT NOT NULL CHECK (base_year >= 1900),
     industry       TEXT NULL,
-    product        TEXT NULL
+    ppi_product    TEXT NULL
 );
 
 -- PPI Metadata series dimension DONE
@@ -72,4 +72,44 @@ CREATE TABLE dim_tariff_code (
     CONSTRAINT chk_hts8_digits CHECK (hts8 ~ '^[0-9]{8}$')
 );
 
+-- Product dimension (composite/synthetic)
+DROP TABLE IF EXISTS dim_product CASCADE;
+CREATE TABLE dim_product (
+    product_key SERIAL PRIMARY KEY,
+    product TEXT NOT NULL UNIQUE
+);
+
+
+-- Product and Country mapping 
+DROP TABLE IF EXISTS dim_product_country CASCADE;
+CREATE TABLE dim_product_country (
+    product_country_key SERIAL PRIMARY KEY,
+    product_key INT NOT NULL REFERENCES dim_product(product_key),
+    country_code CHAR(3) NOT NULL REFERENCES dim_country(country_code),
+    ppi_source TEXT NOT NULL CHECK (ppi_source IN ('BLS','FRED')),
+    ppi_region TEXT NULL,
+
+    CONSTRAINT uq_product_country UNIQUE (product_key, country_code)
+);
+
+-- Supplier dimension (composite/synthetic)
+-- links to product as well
+
+DROP TABLE IF EXISTS dim_supplier CASCADE;
+CREATE TABLE dim_supplier (
+    supplier_key SERIAL PRIMARY KEY,
+    supplier_id TEXT NOT NULL UNIQUE,
+    country_code CHAR(3) NOT NULL REFERENCES dim_country(country_code),
+    product_key INT NOT NULL REFERENCES dim_product(product_key),
+
+    lead_time_mean NUMERIC(5,3) NOT NULL, -- in days
+    lead_time_variance NUMERIC(5,3) NOT NULL, -- in days
+    disruption_probability NUMERIC(4,3) NOT NULL,
+    compliance_eligibility NUMERIC(4,3) NOT NULL, -- higher score better
+    logistics_reliability NUMERIC(4,3) NOT NULL -- higher score better
+
+
+);
+
 -- DONE
+

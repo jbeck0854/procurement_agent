@@ -5,6 +5,12 @@
 
 BEGIN;
 
+TRUNCATE
+  dim_supplier,
+  dim_product_country,
+  dim_product
+RESTART IDENTITY;
+
 -- ------------------------------------------------------------
 -- 1) dim_country (ISO3 only + any aggregates like OAC)
 -- Sources: WGI, LPI, Port calls (these are the tables that actually contain country_code)
@@ -106,7 +112,7 @@ WHERE series_id IS NOT NULL;
 -- ------------------------------------------------------------
 -- DONE
 TRUNCATE dim_ppi_series RESTART IDENTITY;
-INSERT INTO dim_ppi_series (series_id, source, country_code, base_year, industry, product)
+INSERT INTO dim_ppi_series (series_id, source, country_code, base_year, industry, ppi_product)
 SELECT
   m.series_id,
   m.source,
@@ -144,6 +150,42 @@ INSERT INTO dim_tariff_code (hts8, brief_description, how_measured)
 SELECT DISTINCT hts8, brief_description, how_measured
 FROM stg_tariff
 WHERE hts8 IS NOT NULL;
+
+-- ------------------------------------------------------------
+-- dim_product load
+-- ------------------------------------------------------------
+INSERT INTO dim_product (product)
+SELECT DISTINCT product
+FROM stg_products
+WHERE product IS NOT NULL;
+
+-- ---------------------------------------------
+-- dim_product_country load
+-- ----------------------------------------------
+INSERT INTO dim_product_country (product_key, country_code, ppi_source, ppi_region)
+SELECT DISTINCT
+    dp.product_key,
+    sp.country_code,
+    sp.ppi_source,
+    sp.ppi_region
+FROM stg_products sp
+JOIN dim_product dp ON dp.product = sp.product;
+
+
+-- ------------------------------------------------------------
+-- dim_supplier load
+-- ------------------------------------------------------------
+INSERT INTO dim_supplier (supplier_id, country_code, product_key, lead_time_mean, lead_time_variance, disruption_probability, compliance_eligibility, logistics_reliability)
+SELECT s.supplier_id, s.country_code, dp.product_key, s.lead_time_mean, s.lead_time_variance, s.disruption_probability, s.compliance_eligibility, s.logistics_reliability
+FROM stg_suppliers s 
+JOIN stg_supplier_products sp ON sp.supplier_id = s.supplier_id
+JOIN dim_product dp ON dp.product = CASE trim(sp.product)
+    WHEN 'IC Components' THEN 'integrated_circuit_components'
+    WHEN 'Microprocessors' THEN 'microprocessors'
+    WHEN 'Transistors' THEN 'transistors'
+    WHEN 'Power Devices' THEN 'power_devices'
+    END;
+
 
 COMMIT;
 
