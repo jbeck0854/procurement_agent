@@ -77,3 +77,31 @@ CREATE TABLE fact_tariff_schedule_yearly (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tariff_year ON fact_tariff_schedule_yearly(year);
+
+-- fact_product_monthly; measures: ppi_value, real_price
+DROP TABLE IF EXISTS fact_product_monthly CASCADE;
+CREATE TABLE fact_product_monthly (
+    date_key INT NOT NULL REFERENCES dim_date(date_key),
+    product_country_key INT NOT NULL REFERENCES dim_product_country(product_country_key),
+
+    ppi_value NUMERIC(12,4) NULL,
+    real_price NUMERIC(12,4) NULL,
+
+    PRIMARY KEY (date_key, product_country_key)
+);
+
+-- fact_supplier_product_profile; 1 row per supplier; measures: defect probability, bulk pricing parameters, baseline price and volatility
+DROP TABLE IF EXISTS fact_supplier_product_profile CASCADE;
+CREATE TABLE fact_supplier_product_profile (
+    supplier_key INT NOT NULL REFERENCES dim_supplier(supplier_key),
+
+    probability_of_defect NUMERIC(5,4) NOT NULL,
+    bulk_discount NUMERIC(5,4) NOT NULL,
+    bulk_units INT NOT NULL,
+    baseline_price NUMERIC(10,5) NOT NULL,
+    price_volatility NUMERIC(5,4) NOT NULL,
+
+    hts8 CHAR(8) NULL REFERENCES dim_tariff_code(hts8), -- for tariff lookup
+
+    PRIMARY KEY (supplier_key)
+);

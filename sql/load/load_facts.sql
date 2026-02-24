@@ -6,6 +6,10 @@
 
 BEGIN;
 
+-- wipds facts (makes safe to re-run without issues)
+TRUNCATE fact_product_monthly;
+TRUNCATE fact_supplier_product_profile;
+
 -- ----------------
 -- fact_ppi_monthly
 -- --------------
@@ -112,5 +116,41 @@ FROM stg_tariff t
 JOIN dim_tariff_code d
   ON d.hts8 = t.hts8
 WHERE t.hts8 IS NOT NULL AND t.mfn_text_rate IS NOT NULL;
+
+-- ---------------------------------------------
+-- fact_product_monthly
+-- ----------------------------------------------
+INSERT INTO fact_product_monthly (date_key, product_country_key, ppi_value, real_price)
+SELECT d.date_key, pc.product_country_key, sp.ppi_value, sp.real_price
+FROM stg_products sp
+JOIN dim_date d ON d.year = sp.year AND d.month = sp.month
+JOIN dim_product dp ON dp.product = sp.product
+JOIN dim_product_country pc ON pc.product_key = dp.product_key AND pc.country_code = sp.country_code;
+
+-- ------------------------------------------------------------
+-- Load fact_supplier_product_profile from stg_supplier_products
+-- (joins through dim_supplier using supplier_id)
+-- ------------------------------------------------------------
+INSERT INTO fact_supplier_product_profile (
+    supplier_key,
+    probability_of_defect,
+    bulk_discount,
+    bulk_units,
+    baseline_price,
+    price_volatility,
+    hts8
+)
+SELECT
+    ds.supplier_key,
+    sp.probability_of_defect,
+    sp.bulk_discount,
+    sp.bulk_units,
+    sp.baseline_price,
+    sp.price_volatility,
+    NULLIF(NULLIF(trim(sp.hts8_tariff), ''), 'None')::CHAR(8) AS hts8
+FROM stg_supplier_products sp
+JOIN dim_supplier ds
+  ON ds.supplier_id = sp.supplier_id;
+
 
 COMMIT;
