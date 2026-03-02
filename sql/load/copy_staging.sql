@@ -76,5 +76,9 @@ TRUNCATE TABLE stg_products;
 TRUNCATE TABLE stg_supplier_products;
 \copy stg_supplier_products FROM 'cleaned_data/suppliers_products.csv' WITH (FORMAT csv, HEADER true);
 
+-- synthetic inventory + demand
+TRUNCATE TABLE stg_inventory_demand;
+\copy stg_inventory_demand FROM 'cleaned_data/inventory_demand.csv' WITH (FORMAT csv, HEADER true);
+
 
 
