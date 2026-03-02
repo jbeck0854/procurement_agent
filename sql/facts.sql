@@ -105,3 +105,32 @@ CREATE TABLE fact_supplier_product_profile (
 
     PRIMARY KEY (supplier_key)
 );
+
+
+-- Inventory + Demand: monthly grain = month x product
+---- Measures: demand + inventory positions + planning parameters (from synthetic file)
+DROP TABLE IF EXISTS fact_inventory_demand_monthly CASCADE;
+CREATE TABLE fact_inventory_demand_monthly (
+    date_key INT NOT NULL REFERENCES dim_date(date_key),
+    product_key INT NOT NULL REFERENCES dim_product(product_key),
+
+    monthly_demand_units         INT NULL,
+
+    safety_stock_units           INT NULL,
+    on_hand_units                INT NULL,
+    on_order_units               INT NULL,
+    backorder_units              INT NULL,
+    reorder_point_units          INT NULL,
+
+    -- keeping these here too for traceability and ease of querying, even though they could be pulled in from dim_inventory_policy
+    unit_value                   NUMERIC(12,6) NOT NULL,
+    unit_holding_cost_per_month  NUMERIC(12,6) NOT NULL,
+    lead_time_months             NUMERIC(10,6) NOT NULL,
+    stockout_probability         NUMERIC(18,12) NOT NULL,
+    fixed_ordering_cost          INT NOT NULL,
+
+    PRIMARY KEY (date_key, product_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fact_inventory_date ON fact_inventory_demand_monthly(date_key);
+CREATE INDEX IF NOT EXISTS idx_fact_inventory_product ON fact_inventory_demand_monthly(product_key);

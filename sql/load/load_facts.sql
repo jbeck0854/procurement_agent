@@ -6,9 +6,10 @@
 
 BEGIN;
 
--- wipds facts (makes safe to re-run without issues)
+-- wipes facts (makes safe to re-run without issues)
 TRUNCATE fact_product_monthly;
 TRUNCATE fact_supplier_product_profile;
+TRUNCATE fact_inventory_demand_monthly;
 
 -- ----------------
 -- fact_ppi_monthly
@@ -152,5 +153,45 @@ FROM stg_supplier_products sp
 JOIN dim_supplier ds
   ON ds.supplier_id = sp.supplier_id;
 
+
+-- ------------------------------------------------------------
+-- fact_inventory_demand_monthly (date_key × product_key)
+-- ------------------------------------------------------------
+TRUNCATE fact_inventory_demand_monthly;
+
+INSERT INTO fact_inventory_demand_monthly (
+  date_key,
+  product_key,
+  monthly_demand_units,
+  safety_stock_units,
+  on_hand_units,
+  on_order_units,
+  backorder_units,
+  reorder_point_units,
+  unit_value,
+  unit_holding_cost_per_month,
+  lead_time_months,
+  stockout_probability,
+  fixed_ordering_cost
+)
+SELECT
+  d.date_key,
+  dp.product_key,
+  sid.monthly_demand_units,
+  sid.safety_stock_units,
+  sid.on_hand_units,
+  sid.on_order_units,
+  sid.backorder_units,
+  sid.reorder_point_units,
+  sid.unit_value,
+  sid.unit_holding_cost_per_month,
+  sid.lead_time_months,
+  sid.stockout_probability,
+  sid.fixed_ordering_cost
+FROM stg_inventory_demand sid
+JOIN dim_date d ON d.year = EXTRACT(YEAR FROM sid.date)::INT
+ AND d.month = EXTRACT(MONTH FROM sid.date)::INT
+JOIN dim_product dp ON dp.product = sid.product
+WHERE sid.date IS NOT NULL AND sid.product IS NOT NULL;
 
 COMMIT;
