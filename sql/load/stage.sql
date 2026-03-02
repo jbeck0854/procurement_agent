@@ -134,3 +134,27 @@ CREATE TABLE stg_supplier_products (
   hts8_tariff TEXT -- HTS8 code that applies to the product for the supplier (or 'None')
 
 );
+
+
+-- Inventory + Demand (Synthetic)
+DROP TABLE IF EXISTS stg_inventory_demand;
+CREATE TABLE stg_inventory_demand (
+  date                         DATE,
+  product                      TEXT,
+
+  monthly_demand_units         INT,
+
+  unit_value                   NUMERIC(12,6),
+  unit_holding_cost_per_month  NUMERIC(12,6),
+
+  safety_stock_units           INT,
+  on_hand_units                INT,
+  on_order_units               INT,
+  backorder_units              INT,
+  reorder_point_units          INT,
+
+  lead_time_months             NUMERIC(10,6),
+  stockout_probability         NUMERIC(18,12),
+
+  fixed_ordering_cost          INT
+);
