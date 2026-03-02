@@ -8,8 +8,9 @@ BEGIN;
 TRUNCATE
   dim_supplier,
   dim_product_country,
-  dim_product
-RESTART IDENTITY;
+  dim_product,
+  dim_inventory_policy
+RESTART IDENTITY CASCADE;
 
 -- ------------------------------------------------------------
 -- 1) dim_country (ISO3 only + any aggregates like OAC)
@@ -187,6 +188,30 @@ JOIN dim_product dp ON dp.product = CASE trim(sp.product)
     END;
 
 
+-- ------------------------------------------------------------
+-- dim_inventory_policy load 
+-- ------------------------------------------------------------
+INSERT INTO dim_inventory_policy (
+  product_key,
+  unit_value,
+  unit_holding_cost_per_month,
+  lead_time_months,
+  stockout_probability,
+  fixed_ordering_cost
+)
+SELECT DISTINCT
+  dp.product_key,
+  sid.unit_value,
+  sid.unit_holding_cost_per_month,
+  sid.lead_time_months,
+  sid.stockout_probability,
+  sid.fixed_ordering_cost
+FROM stg_inventory_demand sid
+JOIN dim_product dp ON dp.product = sid.product;
+
+
 COMMIT;
+
+
 
 -- DONE

@@ -111,5 +111,31 @@ CREATE TABLE dim_supplier (
 
 );
 
+-- Inventory policy / planning dimension (synthetic)
+-- Holds stable configuration attributes used by monthly inventory/demand facts
+
+DROP TABLE IF EXISTS dim_inventory_policy CASCADE;
+CREATE TABLE dim_inventory_policy (
+    inventory_policy_key SERIAL PRIMARY KEY,
+
+    product_key INT NOT NULL REFERENCES dim_product(product_key),
+
+    unit_value                  NUMERIC(12,6) NOT NULL,
+    unit_holding_cost_per_month NUMERIC(12,6) NOT NULL,
+    lead_time_months            NUMERIC(10,6) NOT NULL,
+    stockout_probability        NUMERIC(18,12) NOT NULL,
+    fixed_ordering_cost         INT NOT NULL,
+
+    -- A product could have multiple inventory policies (e.g., different combinations of the above attributes), but we want to prevent exact duplicates that would be redundant for analysis
+    CONSTRAINT uq_inventory_policy UNIQUE (
+        product_key,
+        unit_value,
+        unit_holding_cost_per_month,
+        lead_time_months,
+        stockout_probability,
+        fixed_ordering_cost
+    )
+);
+
 -- DONE
 
