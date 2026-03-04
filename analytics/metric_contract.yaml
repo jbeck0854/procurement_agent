@@ -1,0 +1,261 @@
+version: "1.0"
+contract_name: "Supplier Decision Intelligence Metric Contract"
+notes:
+  - "Defines deterministic scoring + ranking for supplier/product recommendations."
+  - "Inputs assume joins across dim_supplier and fact_supplier_product_profile."
+  - "When normalize a metric (scale it to 0-1), it is done only among suppliers that produce the same product - not across all suppliers in the DB."
+  - "This allows us to understand who the best suppliers are for each individual products."
+
+data_requirements:
+  source:
+    primary_view: "vw_supplier_complete_profile"
+    supporting_views:
+      - "vw_supplier_pricing_profile"
+      - "vw_supplier_risk_profile"
+    purpose:
+      vw_supplier_complete_profile: "Canonical scoring input (risk + value + tariff info) at supplier-product grain."
+      vw_supplier_pricing_profile: "Debug view for cost/tariff/value fields."
+      vw_supplier_risk_profile: "Debug view for supplier risk fields."
+    grain:
+      vw_supplier_complete_profile: "1 row per suppier_id for a given product." 
+
+  # Required columns expected from vw_supplier_product_pricing
+  required_columns:
+    - supplier_id
+    - country_code
+    - product
+
+    # logistics + disruption inputs
+    - lead_time_mean
+    - lead_time_variance
+    - disruption_probability
+    - compliance_eligibility
+    - logistics_reliability
+
+    # cost/value inputs
+    - baseline_price
+    - bulk_discount
+    - bulk_units
+    - price_volatility
+
+    # quality + tariff inputs
+    - probability_of_defect
+    - mfn_text_rate_pct
+
+    # Optional / explainability-only columns (do not block scoring if missing)
+    - hts8
+    - tariff_description
+    - how_measured
+
+  null_policy:
+    strategy: "drop_row"
+    # If any of these are null, drop supplier from scoring and return warning
+    columns:
+      - probability_of_defect
+      - bulk_discount
+      - bulk_units
+      - baseline_price
+      - price_volatility
+  
+  tariff_policy:
+    enabled_when: "assumptions.tariff.enabled == true"
+    rate_field: "mfn_text_rate_pct"
+    missing_rate_default_pct: 0.0
+    note: "If hts8 is null or rate missing, default tariff rate to 0.0 for demo stability."
+
+normalization:
+  scope: "by_product"   # "global" or "by_product"
+  method: "minmax" # x = (x - min) / [(max - min) + E]
+  epsilon: 1.0e-9 # prevents risk of dividion by zero in min-max normalization
+  clip:
+    enabled: true
+    lower_quantile: 0.01
+    upper_quantile: 0.99
+
+constraints:
+  compliance_gate:
+    enabled: true
+    field: "compliance_eligibility"
+    threshold: 0.60
+    rule: ">= threshold"
+    rationale: "Exclude suppliers unlikely to meet compliance requirements (governance + customs-derived)."
+
+assumptions:
+  quantity_units: "units" # tells pipeline variable Q is interpreted as units (vs kg, liters, etc) for bulk pricing logic etc
+  currency: "USD" # tells pipeline all price fields are in USD for consistent interpretation and potential future currency conversion logic
+  tariff:
+    enabled: true # whether to apply tariff rates in landed cost calculation
+    description: "Tariff rates are applied as ad valorem percentages to effective unit price (post-bulk pricing) to estimate landed cost."
+
+metrics:
+  # ------------------------
+  # Base / helper metrics
+  # ------------------------
+  lead_time_cv:
+    type: "derived"
+    direction: "lower_is_better"
+    formula:
+      op: "divide"
+      numerator: "lead_time_variance"
+      denominator: "lead_time_mean"
+    output_range: "unbounded"
+    meaning: "Coefficient of variation proxy: variability relative to mean lead time."
+
+  risk_disruption:
+    type: "raw"
+    direction: "higher_is_worse"
+    field: "disruption_probability"
+    output_range: "[0,1]"
+    meaning: "Probability of disruption (synthetic, derived from WGI + LPI features (political stability and absence of violence, control of corruption, infrastructure, logistics competence; weighted and normalized); clamped)."
+
+  risk_logistics:
+    type: "derived"
+    direction: "higher_is_worse"
+    formula:
+      op: "subtract"
+      left: 1.0
+      right: "logistics_reliability"
+    output_range: "[0,1]"
+    meaning: "Logistics risk (risk_logistics) as inverse of reliability (reliability is 0–1 from weighted LPI pillars)."
+
+  risk_quality:
+    type: "raw"
+    direction: "higher_is_worse"
+    field: "probability_of_defect"
+    output_range: "[0,1]"
+    meaning: "Probability of defect (synthetic, driven by overall difficulty of manufacturing + misalignment of manufacturer origin (commonly known for producing quality component or not; weighted) + noise)."
+
+  risk_cost_instability:
+    type: "raw"
+    direction: "higher_is_worse"
+    field: "price_volatility"
+    output_range: "[0,1]"
+    meaning: "Cost instability proxy; derived using rolling (5 year window) of product price std normalization (grouped by country) normalized + weighted blended w/ disruption probability."
+
+  risk_leadtime:
+    type: "composite"
+    direction: "higher_is_worse"
+    components:
+      - metric: "lead_time_mean"
+        weight: 0.70
+        normalize: true
+      - metric: "lead_time_cv"
+        weight: 0.30
+        normalize: true
+    output_range: "[0,1]"
+    meaning: "Lead-time risk combining mean leadtime and relative variability (lead time coefficient of variation)."
+
+  # ------------------------
+  # Commercial metrics
+  # ------------------------
+  effective_unit_price:
+    type: "derived"
+    direction: "lower_is_better"
+    params:
+      quantity_field: "__Q__"         # populated at runtime
+    formula:
+      op: "bulk_price"
+      baseline_price: "baseline_price"
+      bulk_discount: "bulk_discount"
+      bulk_units: "bulk_units"
+      quantity: "__Q__"
+    output_range: ">=0"
+    meaning: "Price after applying bulk discount if quantity >= MOQ (bulk_units)."
+
+  landed_unit_cost:
+    type: "derived"
+    direction: "lower_is_better"
+    formula:
+      op: "landed_cost_pct"
+      effective_price: "effective_unit_price"
+      tariff_rate_pct: "mfn_text_rate_pct"
+    output_range: ">=0"
+    meaning: "Effective unit price adjusted by ad valorem MFN tariff rate to estimate landed cost."
+
+  # ------------------------
+  # Composite scoring
+  # ------------------------
+  risk_score:
+    type: "composite"
+    direction: "higher_is_worse"
+    scale: "0_to_100"
+    components:
+      - metric: "risk_disruption"
+        weight: 0.30
+        normalize: false
+      - metric: "risk_leadtime"
+        weight: 0.25
+        normalize: false
+      - metric: "risk_logistics"
+        weight: 0.20
+        normalize: false
+      - metric: "risk_cost_instability"
+        weight: 0.15
+        normalize: false
+      - metric: "risk_quality"
+        weight: 0.10
+        normalize: true
+    meaning: "Aggregate risk score across disruption, lead-time, logistics, cost instability, and quality."
+
+  risk_adjusted_cost:
+    type: "composite"
+    direction: "lower_is_better"
+    params:
+      lambda_risk: 0.50             # risk aversion (0..1-ish); runtime override allowed
+    components:
+      - metric: "landed_unit_cost"
+        weight: 1.00
+        normalize: true
+      - metric: "risk_score"
+        weight: "__LAMBDA_RISK__"   # runtime override
+        normalize: true
+    meaning: "Risk-adjusted cost: normalized effective cost + λ * normalized risk."
+
+ranking:
+  enabled: true
+  primary_metric: "risk_adjusted_cost"
+  ascending: true
+  top_k_default: 5
+  tie_breakers:
+    - metric: "risk_disruption"
+      ascending: true
+    - metric: "risk_leadtime"
+      ascending: true
+    - metric: "risk_logistics"
+      ascending: true
+    - metric: "landed_unit_cost"
+      ascending: true
+
+explainability: # when results presented, includes these fields so users can understand the decision
+  enabled: true
+  return_fields: # fields returned alongside the score for explainability; can be raw input fields or derived metrics (must be defined in this contract). Context fields
+    raw:
+      - supplier_id: SupplierID
+      - country_code: CountryCode
+      - product: Product
+      - lead_time_mean: LeadTimeMean
+      - lead_time_variance: LeadTimeVariance
+      - disruption_probability: DisruptionProbability
+      - compliance_eligibility: ComplianceEligibility
+      - logistics_reliability: LogisticsReliability
+      - probability_of_defect: ProbabilityOfDefect
+      - baseline_price: BaselinePrice
+      - price_volatility: PriceVolatility
+      - bulk_discount: BulkDiscount
+      - bulk_units: UnitsNeededForBulk
+      - mfn_text_rate_pct: TariffRatePct
+      - hts8: HTS8_TariffCode
+      - tariff_description: TariffDescription
+    derived:
+      - lead_time_cv: LeadTimeCoefficientOfVariation
+      - risk_disruption: DisruptionRisk
+      - risk_logistics: LogisticsRisk
+      - risk_quality: QualityRisk
+      - risk_cost_instability: CostInstabilityRisk
+      - risk_leadtime: LeadTimeRisk
+      - effective_unit_price: EffectiveUnitPrice
+      - landed_unit_cost: LandedUnitCost
+      - risk_score: RiskScore
+      - risk_adjusted_cost: RiskAdjustedCost
+  driver_count: 3 # when showing explainability, also return top N "drivers" (input fields or derived metrics that most influenced the score); runtime override allowed
+  driver_method: "largest_weighted_components" # method to determine drivers; options could include "largest_weighted_components" (for composite metrics, show components with largest weight*value), "largest_shap_values" (if SHAP values calculated), etc.
