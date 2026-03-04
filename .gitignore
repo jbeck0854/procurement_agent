@@ -1,13 +1,13 @@
-# Python
+# ---- Data (keep folder structure, ignore contents) ----
+data/raw/structured/**/*
+!data/raw/structured/**/.gitkeep
+
+data/cleaned/structured/**/*
+!data/cleaned/structured/**/.gitkeep
+
+# ---- Common junk ----
+.DS_Store
 __pycache__/
 *.pyc
 .venv/
-
-# Mac
-.DS_Store
-
-# VSCode settings
-.vscode/
-
-# Environment files
 .env
