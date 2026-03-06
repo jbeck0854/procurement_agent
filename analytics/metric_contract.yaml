@@ -43,6 +43,7 @@ data_requirements:
     - mfn_text_rate_pct
 
     # Optional / explainability-only columns (do not block scoring if missing)
+  optional_columns:
     - hts8
     - tariff_description
     - how_measured
@@ -257,5 +258,18 @@ explainability: # when results presented, includes these fields so users can und
       - landed_unit_cost: LandedUnitCost
       - risk_score: RiskScore
       - risk_adjusted_cost: RiskAdjustedCost
+      - top_adjusted_cost_drivers: TopAdjustedCostDrivers # NEW
+      - top_risk_drivers: TopRiskDrivers # if using nested driver method NEW
   driver_count: 3 # when showing explainability, also return top N "drivers" (input fields or derived metrics that most influenced the score); runtime override allowed
-  driver_method: "largest_weighted_components" # method to determine drivers; options could include "largest_weighted_components" (for composite metrics, show components with largest weight*value), "largest_shap_values" (if SHAP values calculated), etc.
+  driver_method: "both"
+  #driver_method: "largest_weighted_components" 
+  driver_metrics_for_composites: # if using "largest_weighted_components" method, which metrics to consider as potential drivers for composite metrics (e.g., risk_score and risk_adjusted_cost) NEWLY ADDED
+    risk_score:
+      - risk_disruption
+      - risk_leadtime
+      - risk_logistics
+      - risk_cost_instability
+      - risk_quality
+    risk_adjusted_cost:
+      - landed_unit_cost
+      - risk_score
