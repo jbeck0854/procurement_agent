@@ -182,7 +182,7 @@ Explainability is **enabled** and returns:
 
 - Raw input fields (supplier ID, country, product, cost fields, risk fields, tariff fields)
 - Derived metrics (lead time CV, risk metrics, effective price, landed cost, composite scores)
-- Top **3 drivers** of the final score, based on weighted component contributions
+- Top **2 drivers** of the final score, `risk_adjusted_score`, based on weighted component contributions and, separately, the **top 3 drivers** of the `risk_score`
 
 This makes the scoring transparent and judge‑friendly.
 
