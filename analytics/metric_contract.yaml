@@ -4,7 +4,7 @@ notes:
   - "Defines deterministic scoring + ranking for supplier/product recommendations."
   - "Inputs assume joins across dim_supplier and fact_supplier_product_profile."
   - "When normalize a metric (scale it to 0-1), it is done only among suppliers that produce the same product - not across all suppliers in the DB."
-  - "This allows us to understand who the best suppliers are for each individual products."
+  - "This allows the system to identify the best suppliers for each individual product."
 
 data_requirements:
   source:
@@ -27,7 +27,7 @@ data_requirements:
 
     # logistics + disruption inputs
     - lead_time_mean
-    - lead_time_variance
+    - lead_time_stddev
     - disruption_probability
     - compliance_eligibility
     - logistics_reliability
@@ -44,6 +44,7 @@ data_requirements:
 
     # Optional / explainability-only columns (do not block scoring if missing)
   optional_columns:
+    - lead_time_variance
     - hts8
     - tariff_description
     - how_measured
@@ -52,6 +53,11 @@ data_requirements:
     strategy: "drop_row"
     # If any of these are null, drop supplier from scoring and return warning
     columns:
+      - lead_time_mean
+      - lead_time_stddev
+      - disruption_probability
+      - compliance_eligibility
+      - logistics_reliability
       - probability_of_defect
       - bulk_discount
       - bulk_units
@@ -97,7 +103,7 @@ metrics:
     direction: "lower_is_better"
     formula:
       op: "divide"
-      numerator: "lead_time_variance"
+      numerator: "lead_time_stddev"
       denominator: "lead_time_mean"
     output_range: "unbounded"
     meaning: "Coefficient of variation proxy: variability relative to mean lead time."
@@ -235,6 +241,7 @@ explainability: # when results presented, includes these fields so users can und
       - country_code: CountryCode
       - product: Product
       - lead_time_mean: LeadTimeMean
+      - lead_time_stddev: LeadTimeStdDev
       - lead_time_variance: LeadTimeVariance
       - disruption_probability: DisruptionProbability
       - compliance_eligibility: ComplianceEligibility

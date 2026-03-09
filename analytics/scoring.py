@@ -14,7 +14,6 @@ import yaml
 
 # Columns that are optional for explainability only.
 # Missing them should never block scoring.
-OPTIONAL_EXPLAINABILITY_COLS = {"hts8", "tariff_description", "how_measured"}
 
 
 def _require_columns(df: pd.DataFrame, cols: list[str]) -> None: 
@@ -137,6 +136,10 @@ class MetricContract:
     @property # @property is a decorator that allows you to define a method that can be called/accessed like an attribute. This is useful for providing read-only access to certain parts of the raw configuration while still allowing for any necessary processing or validation when accessing those parts.
     def required_columns(self) -> list[str]: # after the method definition, you can access this as contract.required_columns instead of contract.required_columns() to get the list of required columns from the contract.
         return self.raw["data_requirements"]["required_columns"] # This property accesses the raw dictionary to retrieve the list of required columns specified under the data_requirements section of the YAML contract. It assumes that the YAML structure includes a data_requirements key with a nested required_columns key that contains a list of column names.
+    
+    @property
+    def optional_columns(self) -> list[str]:
+        return self.raw['data_requirements'].get('optional_columns', []) # This property retrieves the list of optional columns from the raw dictionary. It uses the get method to safely access the optional_columns key, providing an empty list as a default value if the key is not present in the YAML contract. This allows for flexibility in the contract definition, where optional columns can be omitted without causing errors when accessing this property.
 
     @property
     def null_policy(self) -> dict[str, Any]: # describes structure of the null_policy dictionary and what to expect as a return. keys are strings and values can be of any type (e.g., values could be lists, strings, dictionaries, etc)
@@ -216,9 +219,10 @@ class SupplierScorer:
 
     def _required_non_optional(self) -> list[str]:
         """
-        Return required columns excluding optional explainability only columns.
+        Return required columns excluding optional columns defined in the contract
         This ensures missing explainability columns do not block scoring, while still enforcing all other required fields are present."""
-        return [c for c in self.c.required_columns if c not in OPTIONAL_EXPLAINABILITY_COLS]
+        optional = set(self.c.optional_columns)
+        return [c for c in self.c.required_columns if c not in optional]
 
     def _norm_cfg(self) -> tuple[list[str] | None, str, float, bool, float, float]:
         """
@@ -329,7 +333,7 @@ class SupplierScorer:
         # Compute base/derived metrics YAML (same formulas as defined in the contract, but now contract-aligned)
         # -----------------------------------------
         # lead_time_cv
-        df["lead_time_cv"] = pd.to_numeric(df["lead_time_variance"], errors="coerce").astype(float) / (
+        df["lead_time_cv"] = pd.to_numeric(df["lead_time_stddev"], errors="coerce").astype(float) / (
             pd.to_numeric(df["lead_time_mean"], errors="coerce").astype(float) + 1e-9
         )
 
