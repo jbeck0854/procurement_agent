@@ -31,6 +31,7 @@ SELECT
   p.product,
 
   s.lead_time_mean,
+  s.lead_time_stddev,
   s.lead_time_variance,
   s.disruption_probability,
   s.compliance_eligibility,
@@ -49,6 +50,7 @@ SELECT
 
     -- risk inputs (dim_supplier)
     s.lead_time_mean,
+    s.lead_time_stddev,
     s.lead_time_variance,
     s.disruption_probability,
     s.compliance_eligibility,

@@ -91,6 +91,7 @@ CREATE TABLE stg_suppliers (
   country_code CHAR(3),
   supplier_id TEXT,
   lead_time_mean NUMERIC,
+  lead_time_stddev NUMERIC,
   lead_time_variance NUMERIC,
   disruption_probability NUMERIC,
   compliance_eligibility NUMERIC,
@@ -118,6 +119,7 @@ CREATE TABLE stg_supplier_products (
   supplier_id TEXT,
 
   lead_time_mean NUMERIC,
+  lead_time_stddev NUMERIC,
   lead_time_variance NUMERIC,
   disruption_probability NUMERIC,
   compliance_eligibility NUMERIC,

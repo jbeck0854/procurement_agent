@@ -103,7 +103,8 @@ CREATE TABLE dim_supplier (
     product_key INT NOT NULL REFERENCES dim_product(product_key),
 
     lead_time_mean NUMERIC(5,3) NOT NULL, -- in days
-    lead_time_variance NUMERIC(5,3) NOT NULL, -- in days
+    lead_time_stddev NUMERIC(5,3) NOT NULL,
+    lead_time_variance NUMERIC(5,3) NOT NULL,
     disruption_probability NUMERIC(4,3) NOT NULL,
     compliance_eligibility NUMERIC(4,3) NOT NULL, -- higher score better
     logistics_reliability NUMERIC(4,3) NOT NULL -- higher score better

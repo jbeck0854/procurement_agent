@@ -176,8 +176,8 @@ JOIN dim_product dp ON dp.product = sp.product;
 -- ------------------------------------------------------------
 -- dim_supplier load
 -- ------------------------------------------------------------
-INSERT INTO dim_supplier (supplier_id, country_code, product_key, lead_time_mean, lead_time_variance, disruption_probability, compliance_eligibility, logistics_reliability)
-SELECT s.supplier_id, s.country_code, dp.product_key, s.lead_time_mean, s.lead_time_variance, s.disruption_probability, s.compliance_eligibility, s.logistics_reliability
+INSERT INTO dim_supplier (supplier_id, country_code, product_key, lead_time_mean, lead_time_stddev, lead_time_variance, disruption_probability, compliance_eligibility, logistics_reliability)
+SELECT s.supplier_id, s.country_code, dp.product_key, s.lead_time_mean, s.lead_time_stddev, s.lead_time_variance, s.disruption_probability, s.compliance_eligibility, s.logistics_reliability
 FROM stg_suppliers s 
 JOIN stg_supplier_products sp ON sp.supplier_id = s.supplier_id
 JOIN dim_product dp ON dp.product = CASE trim(sp.product)
