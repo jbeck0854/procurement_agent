@@ -110,7 +110,6 @@ The weights vary substantially by country.
 Examples:
 
 - China, Malaysia, Thailand, and Singapore are weighted heavily toward **IC Components**
-- The United States is weighted heavily toward **Microprocessors**
 - Germany and Japan are weighted more heavily toward **Power Devices**
 - Lower-strength countries are weighted more toward **Transistors** and simpler component production
 
@@ -139,7 +138,7 @@ Examples:
 These countries are more likely to receive:
 - Microprocessors
 - Power Devices
-- some Transistors
+- Transistors
 - lower IC Components in certain cases
 
 ### Tier 2 — Moderate Semiconductor Presence
