@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from .calibration import calibrate_decision_tiers
+
 # ================================
 # Helper utilities
 # These functions perform small, focused tasks used repeatedly
@@ -448,6 +450,9 @@ class SupplierScorer:
             total = total + w * s # we update the cumulative risk-adjusted cost by adding the weighted contribution of the current component. The metric value s (normalized if specified) is multiplied by its weight w and added to the existing total Series. This process is repeated for each component, resulting in a final total that represents the combined risk-adjusted cost based on all specified components and their weights.
 
         df["risk_adjusted_cost"] = total
+
+        # call the calibrate_decision_tiers function from calibration.py
+        df = calibrate_decision_tiers(df)
 
 
         # ---------------------------------------------

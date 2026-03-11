@@ -265,7 +265,8 @@ explainability: # when results presented, includes these fields so users can und
       - landed_unit_cost: LandedUnitCost
       - risk_penalty: RiskPenalty
       - risk_adjusted_cost: RiskAdjustedCost
-      - top_adjusted_cost_drivers: TopAdjustedCostDrivers # NEW
+      - decision_tier: DecisionTier 
+      - top_adjusted_cost_drivers: TopAdjustedCostDrivers 
       - top_risk_drivers: TopRiskDrivers # if using nested driver method NEW
   driver_count: 3 # when showing explainability, also return top N "drivers" (input fields or derived metrics that most influenced the score); runtime override allowed
   driver_method: "both"
