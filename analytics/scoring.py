@@ -70,31 +70,31 @@ def _normalize(
     """
     Normalize a column either globally or within groups (e.g., by product) using the specified method (e.g., min-max).
     Normalization rules come directly from the metric contract YAML, allowing for flexible configuration without code changes.
+
+    This is used so suppliers can be compared fairly within the same product category (or across full dataset if contract modified)
     """
 
-    # If normalization is scoped by certain columns (e.g., by product), we apply the normalization function within each group defined by those columns.
-    # This ensures suppliers are only compared to suppliers that manufacture the same product.
+    def _norm_series(s: pd.Series) -> pd.Series:
+        """
+        Normalize one pandas Series.
+        This helper is reused for both global and group normalization depending on the scope defined in the contract.
+        """
+        s = pd.to_numeric(s, errors="coerce").astype(float) # ensure the series is numeric and of float type for accurate normalization calculations. Non-numeric values will be converted to NaN.
+
+        if clip_enabled:
+            s = _clip_series(s, q_low, q_high) # if clipping is enabled in the contract, we apply quantile-based clipping to the series before normalization. This helps to mitigate the influence of outliers on the normalization process by capping values at specified lower and upper quantiles.
+        
+        if method == "minmax":
+            return _minmax(s, eps) # if the normalization method specified in the contract is "minmax", we apply min-max normalization to the series using the _minmax helper function. This scales the values to a 0-1 range based on the minimum and maximum values in the series, with an epsilon added to prevent division by zero when all values are identical.
+        
+        raise ValueError(f"Unsupported normalization method: {method}") # if the method specified in the contract is not recognized, we raise a ValueError to indicate that the normalization method is unsupported. This ensures that any misconfiguration in the contract is caught early with a clear error message.
+    
+    # If scope_cols is defined (e.g., ["product"]), we perform normalization within each group defined by those columns. Otherwise, we normalize across the entire dataset.
     if scope_cols:
-        def _group_norm(g: pd.DataFrame) -> pd.Series:
-            s = g[col] # extract the column to be normalized from the group
-            if clip_enabled:
-                s = _clip_series(s, q_low, q_high)
-            if method == "minmax":
-                return _minmax(s, eps)
-            raise ValueError(f"Unsupported normalization method: {method}")
-
-        return df.groupby(scope_cols, group_keys=False).apply(_group_norm) # 
-        # df.groupby(["product"], group_keys=False) groups the DataFrame by the "product" column, creating separate groups for each unique product.
-        # The group_keys=False argument prevents the group labels (e.g., product names) from becoming part of the index in the output, 
-        # which helps maintain a cleaner DataFrame structure after applying the normalization function.
-
-    # Otherwise, we apply normalization to the entire column across all rows.
-    s = df[col]
-    if clip_enabled:
-        s = _clip_series(s, q_low, q_high)
-    if method == "minmax":
-        return _minmax(s, eps)
-    raise ValueError(f"Unsupported normalization method: {method}")
+        return df.groupby(scope_cols)[col].transform(_norm_series) # if scope_cols is provided, we group the DataFrame by those columns and apply the _norm_series function to the specified column within each group. The transform method ensures that the normalized values are aligned with the original DataFrame's index, allowing us to return a Series of normalized values that corresponds to each row in the original DataFrame.
+    
+    # Otherwise, we normalize the entire column without grouping.
+    return _norm_series(df[col]) # if scope_cols is not provided, we simply apply the _norm_series function to the entire specified column of the DataFrame, resulting in a Series of normalized values for that column across all rows.
 
 
 def _bulk_price(
