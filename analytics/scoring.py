@@ -325,7 +325,7 @@ class SupplierScorer:
             ineligible = df.iloc[0:0].copy() # create an empty ineleginle DataFrame so the code doesn't break.
 
         if df.empty: # if there are no rows left after applying the null policy and compliance gate filters, we create an empty ranked DataFrame with the expected columns and return it along with any dropped rows and warnings. This ensures that the function can still return a valid ScoreResult even when there are no eligible suppliers to score.
-            out = pd.DataFrame(columns=["supplier_id", "product", "risk_score", "risk_adjusted_cost"])
+            out = pd.DataFrame(columns=["supplier_id", "product", "risk_penalty", "risk_adjusted_cost"])
             dropped_all = pd.concat([dropped, ineligible], axis=0) if (not dropped.empty or not ineligible.empty) else pd.DataFrame()
             return ScoreResult(ranked=out, dropped_rows=dropped_all, warnings=warnings)
 
@@ -384,21 +384,21 @@ class SupplierScorer:
         df["landed_unit_cost_norm"] = _normalize(df, "landed_unit_cost", scope_cols, method, eps, clip_enabled, q_low, q_high)
 
         # ---------------------------------------------
-        # risk_score from YAML metrics.risk_score.components
+        # risk_penalty from YAML metrics.risk_penalty.components
         # ---------------------------------------------
-        risk_score_def = self._metric("risk_score")
-        comps = risk_score_def.get("components", []) # becomes list  of 5 dictionaries, each with metric, weight, and normalize keys based on the YAML contract definition for risk_score
+        risk_penalty_def = self._metric("risk_penalty")
+        comps = risk_penalty_def.get("components", []) # becomes list  of 5 dictionaries, each with metric, weight, and normalize keys based on the YAML contract definition for risk_penalty
         if not comps:
-            raise ValueError("metrics.risk_score.components missing/empty in contract")
+            raise ValueError("metrics.risk_penalty.components missing/empty in contract")
 
-        risk_score_0_1 = pd.Series(0.0, index=df.index, dtype=float) # initialize an empty Series to hold the cumulative risk score, starting at 0 for all suppliers. This Series will be updated iteratively as we add each component's contribution to the overall risk score.
-        for comp in comps: # iterate over each component defined in the risk_score composite metric in the YAML contract. Each component specifies a metric to include, its weight in the overall score, and whether it should be normalized. This loop will calculate the contribution of each component to the final risk_score based on these specifications.
+        risk_penalty_0_1 = pd.Series(0.0, index=df.index, dtype=float) # initialize an empty Series to hold the cumulative risk penalty, starting at 0 for all suppliers. This Series will be updated iteratively as we add each component's contribution to the overall risk penalty.
+        for comp in comps: # iterate over each component defined in the risk_penalty composite metric in the YAML contract. Each component specifies a metric to include, its weight in the overall score, and whether it should be normalized. This loop will calculate the contribution of each component to the final risk_penalty based on these specifications.
             m = comp["metric"]
             w = float(comp["weight"])
             norm = bool(comp.get("normalize", False))
 
             if m not in df.columns:
-                raise ValueError(f"risk_score component metric missing: {m}") # if SQL view forgot to include a required metric, scorer fails ealy with a clear error.
+                raise ValueError(f"risk_penalty component metric missing: {m}") # if SQL view forgot to include a required metric, scorer fails ealy with a clear error.
 
             s = pd.to_numeric(df[m], errors="coerce").astype(float) # extract the metric column specified by the component, convert it to numeric (coercing errors to NaN), and ensure it's of float type for accurate calculations. This prepares the metric data for normalization and weighting as part of the risk score calculation.
 
@@ -407,10 +407,10 @@ class SupplierScorer:
                 tmp["_tmp"] = s # we add the metric series s to the temporary DataFrame under the column name "_tmp". This allows us to pass this DataFrame to the _normalize function, which expects a DataFrame input. The _normalize function will then normalize the "_tmp" column according to the specified scope and method.
                 s = _normalize(tmp, "_tmp", scope_cols, method, eps, clip_enabled, q_low, q_high)
 
-            risk_score_0_1 = risk_score_0_1 + w * s # we update the cumulative risk score by adding the weighted contribution of the current component. The metric value s (normalized if specified) is multiplied by its weight w and added to the existing risk_score_0_1 Series. This process is repeated for each component, resulting in a final risk_score_0_1 that represents the combined risk score based on all specified components and their weights.
+            risk_penalty_0_1 = risk_penalty_0_1 + w * s # we update the cumulative risk penalty by adding the weighted contribution of the current component. The metric value s (normalized if specified) is multiplied by its weight w and added to the existing risk_penalty_0_1 Series. This process is repeated for each component, resulting in a final risk_penalty_0_1 that represents the combined risk penalty based on all specified components and their weights.
 
-        df["risk_score"] = (100.0 * risk_score_0_1).clip(lower=0.0, upper=100.0) # after calculating the cumulative risk score as a value between 0 and 1, we scale it to a 0-100 range by multiplying by 100. We then apply clipping to ensure that the final risk_score values do not exceed the bounds of 0 and 100, which provides a more interpretable risk score for decision-makers.
-        df["risk_score_norm"] = _normalize(df, "risk_score", scope_cols, method, eps, clip_enabled, q_low, q_high) # we also create a normalized version of the risk_score within product groups, which can be used in composite metrics that require normalized inputs. This ensures consistency in how the risk_score is incorporated into other calculations, such as the risk_adjusted_cost, based on the normalization settings defined in the contract.
+        df["risk_penalty"] = (100.0 * risk_penalty_0_1).clip(lower=0.0, upper=100.0) # after calculating the cumulative risk penalty as a value between 0 and 1, we scale it to a 0-100 range by multiplying by 100. We then apply clipping to ensure that the final risk_penalty values do not exceed the bounds of 0 and 100, which provides a more interpretable risk penalty for decision-makers.
+        df["risk_penalty_norm"] = _normalize(df, "risk_penalty", scope_cols, method, eps, clip_enabled, q_low, q_high) # we also create a normalized version of the risk_penalty within product groups, which can be used in composite metrics that require normalized inputs. This ensures consistency in how the risk_penalty is incorporated into other calculations, such as the risk_adjusted_cost, based on the normalization settings defined in the contract.
 
         # ---------------------------------------------
         # risk_adjusted_cost from YAML metrics.risk_adjusted_cost.components (+ __LAMBDA_RISK__)
@@ -494,7 +494,7 @@ class SupplierScorer:
                 primary = rank_cfg.get("primary_metric", "risk_adjusted_cost")
 
                 if primary == "risk_adjusted_cost":
-                    contrib = pd.DataFrame(index=df.index)
+                    contrib = pd.DataFrame(index=ranked.index)
 
                     for comp in rac_comps:
                         m = comp["metric"]
@@ -502,15 +502,15 @@ class SupplierScorer:
                         norm = bool(comp.get("normalize", False))
                         w = lam if (isinstance(w_raw, str) and w_raw == "__LAMBDA_RISK__") else float(w_raw)
 
-                        s = pd.to_numeric(df[m], errors="coerce").astype(float)
+                        s = pd.to_numeric(ranked[m], errors="coerce").astype(float)
                         if norm:
-                            tmp = df[["product"]].copy() if scope_cols else pd.DataFrame(index=df.index)
+                            tmp = ranked[["product"]].copy() if scope_cols else pd.DataFrame(index=ranked.index)
                             tmp["_tmp"] = s
                             s = _normalize(tmp, "_tmp", scope_cols, method, eps, clip_enabled, q_low, q_high)
 
                         contrib[m] = w * s
 
-                    df["top_adjusted_cost_drivers"] = contrib.apply(
+                    ranked["top_adjusted_cost_drivers"] = contrib.apply(
                         lambda row: row.sort_values(ascending=False).head(top_n).index.tolist(),
                         axis=1
                     )
@@ -535,7 +535,7 @@ class SupplierScorer:
                     else:
                         expanded.append(comp)
 
-                contrib_nested = pd.DataFrame(index=df.index)
+                contrib_nested = pd.DataFrame(index=ranked.index)
 
                 for comp in expanded:
                     m = comp["metric"]
@@ -543,15 +543,15 @@ class SupplierScorer:
                     norm = bool(comp.get("normalize", False))
                     w = lam if (isinstance(w_raw, str) and w_raw == "__LAMBDA_RISK__") else float(w_raw)
 
-                    s = pd.to_numeric(df[m], errors="coerce").astype(float)
+                    s = pd.to_numeric(ranked[m], errors="coerce").astype(float)
                     if norm:
-                        tmp = df[["product"]].copy() if scope_cols else pd.DataFrame(index=df.index)
+                        tmp = ranked[["product"]].copy() if scope_cols else pd.DataFrame(index=ranked.index)
                         tmp["_tmp"] = s
                         s = _normalize(tmp, "_tmp", scope_cols, method, eps, clip_enabled, q_low, q_high)
 
                     contrib_nested[m] = w * s
 
-                df["top_risk_drivers"] = contrib_nested.apply(
+                ranked["top_risk_drivers"] = contrib_nested.apply(
                     lambda row: row.sort_values(ascending=False).head(top_n).index.tolist(),
                     axis=1
                 )

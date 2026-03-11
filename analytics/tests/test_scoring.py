@@ -18,6 +18,6 @@ def test_real_supplier_fixture_runs():
     print(ranked.head())  # Print the top rows of the ranked DataFrame to visually confirm scoring worked
 
     assert not ranked.empty
-    assert 'RiskScore' in ranked.columns
+    assert 'RiskPenalty' in ranked.columns
     assert 'RiskAdjustedCost' in ranked.columns
 

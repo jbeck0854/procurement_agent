@@ -152,7 +152,7 @@ The contract defines several categories of metrics:
   Effective price adjusted by MFN tariff rate.
 
 ### Composite Scoring Metrics
-- **Risk score (`risk_score`)**  
+- **Risk score (`risk_penalty`)**  
   Weighted combination of disruption, lead‑time, logistics, cost instability, and quality risks.
 
 - **Risk‑adjusted cost (`risk_adjusted_cost`)**  

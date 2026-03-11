@@ -182,7 +182,7 @@ metrics:
   # ------------------------
   # Composite scoring
   # ------------------------
-  risk_score:
+  risk_penalty:
     type: "composite"
     direction: "higher_is_worse"
     scale: "0_to_100"
@@ -213,7 +213,7 @@ metrics:
       - metric: "landed_unit_cost"
         weight: 1.00
         normalize: true
-      - metric: "risk_score"
+      - metric: "risk_penalty"
         weight: "__LAMBDA_RISK__"   # runtime override
         normalize: true
     meaning: "Risk-adjusted cost: normalized effective cost + λ * normalized risk."
@@ -263,7 +263,7 @@ explainability: # when results presented, includes these fields so users can und
       - risk_leadtime: LeadTimeRisk
       - effective_unit_price: EffectiveUnitPrice
       - landed_unit_cost: LandedUnitCost
-      - risk_score: RiskScore
+      - risk_penalty: RiskPenalty
       - risk_adjusted_cost: RiskAdjustedCost
       - top_adjusted_cost_drivers: TopAdjustedCostDrivers # NEW
       - top_risk_drivers: TopRiskDrivers # if using nested driver method NEW
@@ -271,7 +271,7 @@ explainability: # when results presented, includes these fields so users can und
   driver_method: "both"
   #driver_method: "largest_weighted_components" 
   driver_metrics_for_composites: # if using "largest_weighted_components" method, which metrics to consider as potential drivers for composite metrics (e.g., risk_score and risk_adjusted_cost) NEWLY ADDED
-    risk_score:
+    risk_penalty:
       - risk_disruption
       - risk_leadtime
       - risk_logistics
@@ -279,4 +279,4 @@ explainability: # when results presented, includes these fields so users can und
       - risk_quality
     risk_adjusted_cost:
       - landed_unit_cost
-      - risk_score
+      - risk_penalty
