@@ -4,3 +4,5 @@ PyYAML>=6.0
 matplotlib>=3.8
 jupyter>=1.0
 ipykernel>=6.29
+psycopg2-binary>=2.9
+pytest>=7.0
