@@ -10,4 +10,5 @@ data/cleaned/structured/**/*
 __pycache__/
 *.pyc
 .venv/
+venv/
 .env

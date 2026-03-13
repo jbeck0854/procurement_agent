@@ -1,0 +1,28 @@
+# Web framework
+fastapi>=0.115
+uvicorn>=0.34
+
+# LLM
+langchain>=0.3
+langchain-openai>=0.3
+langgraph>=0.4
+
+# MCP integration
+mcp>=1.0
+langchain-mcp-adapters>=0.1
+postgres-mcp>=0.3
+
+# Database (for scoring tool direct connection)
+psycopg2-binary>=2.9
+
+# Teammate's analytics dependencies
+pandas>=2.2
+numpy>=1.26
+PyYAML>=6.0
+
+# Environment
+python-dotenv>=0.19
+
+# Frontend
+streamlit>=1.45
+nest-asyncio>=1.6
