@@ -128,8 +128,6 @@ For each product category, we:
 4. Obtain a complete monthly price series for all countries for each product
 5. Save each of the four product datasets to a CSV.
 
-Each product produces **3260 rows** (20 countries x 163 months).
-
 ---
 
 ## Combined Product Dataset
@@ -154,9 +152,7 @@ This produces a unified dataset containing:
 - `real_price`
 - `product`
 
-And is saved as: `combined_products_UPDATED.csv`
-
-NOTE: The saved dataset is found within `cleaned_data` as _________
+And is saved as: `analytics/docs/combined_products_UPDATED.csv`
 
 ---
 
@@ -169,7 +165,7 @@ The updated model now provides:
 - Four product categories with realistic cross-country cost structures
 - A unified dataset ready for joining with synthetic supplier tables
 
-These imrovements ensure:
+These improvements ensure:
 - **Fair cross-country comparisons for all countries**
 - **Realistic cost volatility modeling**
 - **Consistent inflation scaling**
