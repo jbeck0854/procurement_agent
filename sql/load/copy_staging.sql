@@ -74,7 +74,7 @@ TRUNCATE TABLE stg_products;
 
 -- synthetic suppliers and products merged
 TRUNCATE TABLE stg_supplier_products;
-\copy stg_supplier_products FROM 'cleaned_data/suppliers_products.csv' WITH (FORMAT csv, HEADER true);
+\copy stg_supplier_products FROM 'cleaned_data/suppliers_products_UPDATED.csv' WITH (FORMAT csv, HEADER true);
 
 -- synthetic inventory + demand
 TRUNCATE TABLE stg_inventory_demand;
