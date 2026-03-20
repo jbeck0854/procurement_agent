@@ -1,406 +1,176 @@
-# 01 Product Cost Model Formalization
+# 01 Updated Product Cost Model Formalization
 
 ## Overview
 
-The **Product Cost Model** generates country-level price estimates for semiconductor components used within the procurement decision intelligence agent.
+The updated **Product Cost Model** constructrs realistic, country-level monthly price series for four semiconductor component categories by combining:
 
-Because **supplier-level price data does not exist publicly**, the model constructs realistic price series using a combination of:
+- **FRED** international manufacturing PPIs
+- A unified **2012 base-year rebasing** across all regions PPIs
+- **Country-specific 2012 baseline cost assumptions for each product**
+- **Time-varying inflation scaling** using the mapped PPI series
+- **Forecasting PPI extensions** for countries whose PPI series end before 2025-12-01 (e.g., CAN, CHN)
 
-- Real **Producer Price Index (PPI)** datasets from the **U.S. Bureau of Labor Statistics (BLS)** and **Federal Reserve Economic Data (FRED)**
-- Country-level **baseline cost assumptions**
-- Time-based **inflation scaling using PPI indices**
+The notebook now produces **complete monthly price series from 2012-06-01 through 2025-12-01** for:
 
-The result is a **monthly price estimate for each product type and supplier country** that reflects:
+- Integrated circuit components
+- Microprocessors
+- Transistors
+- Power semiconductor devices
 
-- Structural cost differences between countries
-- Inflation and cost trends over time
-- Regional semiconductor manufacturing dynamics
-
-These price estimates are then interpolated to the end of 2025 (`02_product_cost_model_formalization.md`), before being selectively joined with each derived supplier. This eventual aggregation of suppliers and products is then used by the procurement agent to evaluate:
-
-- Supplier cost competitiveness
-- Cost volatility
-- Procurement cost tradeoffs across suppliers and regions
-
-
+These product-level datasets are then concatenated into a unified `combined_products.csv`.
 
 ---
 
-# Conceptual Pricing Model
+## Conceptual Pricing Model
 
-The model separates **structural manufacturing cost differences between countries** from **price changes over time**.
+The derive prices, we separate:
 
-Each country begins with a **baseline component cost assumption**, which represents the relative manufacturing cost level for that country.
+- **Structural cost differences** (captured by country-specific baseline prices)
+- **Inflation dynamics** (captured by regional PPI series)
 
-Prices then evolve over time according to the inflation behavior of semiconductor manufacturing within that region.
+Our updated **price formula**, used for all four products, is:
 
-The general price calculation is:
-
-`Price_{country,t} = BaselinePrice_{country} * (PPI_value{region,t} / PPI_value(region,base_year))`
+`Price (for country at time t) = Baseline_c x (PPI_r,t / PPI_r,2012)`
 
 Where:
-
-| Variable | Description |
+| Term | Meaning |
 |---|---|
-| `BaselinePrice_country` | Country-specific starting cost assumption for a component |
-| `PPI_region,t` | Producer Price Index value at time *t* |
-| `PPI_region,base` | Reference PPI value used as the scaling base |
+| `Baseline_c` | Country-specific structural cost level |
+| `PPI_r,t` | PPI value for the mapped region (representing a country) at time t |
+| `PPI_r,2012` | Mean PPI value for that region in 2012 (serving as the rebased anchor) |
 
-**NOTE**: PPI region is used in the fractile component of the fomula, rather than country, because some countries (e.g., Indonesia) did not have available PPI data; thus, the `OAC` region (FRED) was used to represent these countries.
-
-This approach allows the model to capture:
-
-- **Structural differences in semiconductor production costs**
-- **Real-world price inflation trends within semiconductor manufacturing**
-
-
+In our notebook, we explicity compute the (mean) `ppi_anchor_2012` for each region (which equals `PPI_r,2012`) by grouping all FRED series by `(source, country_code)` for year 2012, where `country_code` is either USA, CAN, CHN, MEX, or OAC.
 
 ---
 
-# Anchor and Base-Year Handling
+## Updated Base-Year Handling
 
-Producer Price Index datasets often begin at different points in time.
+**Universal 2012 Base Year**
+
+The notebook now enforces a **common 2012 base year for all countries**, including the U.S., by:
+
+1. Identifying that FRED USA semiconductor PPI originally uses a **2005 base year**.
+2. Computing the **mean 2012 USA PPI value** (~ 82.47)
+3. Rebasing the entire USA series using the formula: `(ppi_t / 82.47 ) * 100` so that **2012 = ~100**
+
+This ensures all the FRED PPIs share a common 2012 base year; thus, **no country is advantaged or disadvantafed** by differing PPI base years.
+
+---
+
+## Updated PPI Source Mapping
+
+In our notebook, we define a `ppi_map` that assigns each supplier country to:
+
+- A **PPI source** (always FRED in this updated notebook)
+- A **PPI region** (USA, CAN, CHN, MEX, OAC)
 
 For example:
 
-| Data Source | Example Start Year |
-|---|---|
-| BLS U.S. semiconductor PPI | 1976 |
-| FRED China semiconductor manufacturing | 2012 |
-| FRED Mexico electronics manufacturing | 2012 |
-| FRED U.S. import semiconductor index | 2005 |
+- Europe --> `(FRED, USA)`
+- Asia --> `(FRED, OAC)`
+- China -> `(FRED, CHN)`
+- Canada -> `(FRED, CAN)`
+- Mexico -> `(FRED, MEX)`
 
-Because the available PPI datasets begin in different years, the model uses a **mixed anchoring approach**.
-
-### U.S. BLS Series
-
-### PPI Base-Year Alignment and Data Source Usage
-
-The cost model uses a combination of **U.S. Bureau of Labor Statistics (BLS)** and **Federal Reserve Economic Data (FRED)** Producer Price Index datasets to generate country-level semiconductor component price series.
-
-The choice of index source depends on:
-
-1. The availability of semiconductor-specific PPI datasets
-2. The geographic region of the supplier country
-
-This hybrid approach allows the model to combine **high-quality U.S. semiconductor manufacturing price signals** with **regional manufacturing price proxies for international suppliers**.
-
-
+This mapping is applied to the suppliers to determine which PPI series each individual country uses.
 
 ---
 
-### U.S. Semiconductor Components (BLS)
+## Extending Incomplete PPI Series
 
-For semiconductor components where **U.S. BLS Producer Price Index data is available**, the model uses the **true base year of the corresponding BLS dataset** as the reference anchor for price scaling.
+To extend incomplete FRED PPI series (e.g., China ending in 2018, Canada ending in 2020), the model applies **Holt's Damped Additive Trend Exponential Smoothing**, implemented via `statsmodels.tsa.holtwinters.ExponentialSmoothing`.
 
-Each semiconductor product category was aligned with the base year defined by its underlying BLS price series to ensure that baseline price assumptions correspond to the same economic reference period used by the official PPI data.
+This method:
 
-Examples include:
+- Fits an **additive trend** to the observed PPI history.
+- Applied a **dampened trend** to prevent unrealistic long-run divergence.
+- Does **not** include a seasonal component
+- Forecasts monthly values through 2012-12-01
+- Applies guardrails to keep forecasts within +/-10-20% of the last observed value
+- Falls back to a mild constant growwth model when fewer than 12 actual actual observations exist.
 
-| Product Category | Base Year Used | Source |
-|---|---|---|
-| Integrated circuit components | 1998 | BLS Integrated circuit components PPI |
-| Microprocessors | 2007 | BLS Microprocessors and microcontrollers PPI |
-| Transistors | 1981 | BLS Transistors, diodes, and lesser components PPI |
-
-For these three component categories, **U.S. prices evolve directly according to the BLS semiconductor manufacturing PPI series**.
-
-
+This produces a smooth, economically plausible extensions of each regional PPI series while avoiding explosive or collapsing trajectories.
 
 ---
 
-### International Semiconductor Price Dynamics (FRED)
+## Supplier x Date Grid
 
-Equivalently grained semiconductor component PPI datasets are **not widely available for most countries outside the United States**.
+In our notebook, we constuct a fully mapped grid that links:
+- All supplier countries (20 total)
+- All monthly dates from **2012-06-01 --> 2025-12-01**
 
-To approximate semiconductor cost inflation across global suppliers, the model therefore uses **FRED datasets representing semiconductor or electronics manufacturing price indices in major production regions**.
+This produces a **3260-row panel per product**.
 
-These indices are applied as **regional proxies** for supplier countries with similar manufacturing ecosystems.
-
-Examples include:
-
-| Region Represented | FRED Dataset Type |
-|---|---|
-| China | Semiconductor manufacturing PPI |
-| Other Asian Countries (OAC) | Regional semiconductor manufacturing index |
-| Canada | Computer and electronic manufacturing PPI |
-| Mexico | Computer and electronic manufacturing PPI |
-
-These indices capture the **price evolution of semiconductor and electronics manufacturing inputs within major production hubs**.
-
-
+The grid is then merged with the ppi series data so that each of the 20 countries is mapped to a specific FRED and "region" PPI series, which supplies a ppi_value for each country (based on the region it is mapped to) for all months between 2012-0-01 and 2025-12-01.
 
 ---
 
-### European Semiconductor Producers (Proxy Method)
+## Baseline Price Dictionaries
 
-Direct semiconductor PPI datasets were not available for several **European semiconductor manufacturing countries** included in the supplier dataset (e.g., Germany, France, Belgium, Finland, and the United Kingdom).
+Each product category has its own **2012 baseline price dictionary**, defined directly in the notebook:
 
-To model semiconductor price inflation for these countries, the model uses the **U.S. semiconductor import price index available through FRED**.
+- `baseline_circuits` (for Integrated Circuit Components)
+- `baseline_microprocessors_2012`
+- `baseline_transistors_2012`
+- `baseline_power_devices_2012`
 
-This index reflects **the prices paid by U.S. firms for imported semiconductor products**, which are sourced from major global semiconductor exporters — including European manufacturers.
-
-Because European semiconductor firms such as **Infineon, STMicroelectronics, NXP, and ASML suppliers** participate heavily in global semiconductor trade flows, movements in U.S. semiconductor import prices provide a reasonable proxy for price trends affecting European semiconductor production.
-
-Using this import-based index allows the model to capture **global semiconductor trade price dynamics** even when country-specific producer price indices are unavailable.
-
-
+These reflect structural cost differences across countries.
 
 ---
 
-### Power Semiconductor Devices
+## Product-Level Price Generation
 
-The **power semiconductor device category** was modeled entirely using **FRED datasets**, as BLS did not provide a directly matching semiconductor PPI series for this component type.
+For each product category, we:
 
-The FRED semiconductor and electronics manufacturing indices used for this category share a **2012 base year**, so the model adopts **2012 as the reference year** for the power semiconductor component price series.
+1. Reuse the supplier grid containing the attached PPI values
+2. Apply a `compute_real_price_row` function
+3. Assign a product label, dependent on the product we compute real price for
+4. Obtain a complete monthly price series for all countries for each product
+5. Save each of the four product datasets to a CSV.
 
-
-
----
-
-### Resulting Data Structure
-
-The final pricing framework uses the following structure:
-
-| Country | Price Index Source |
-|---|---|
-| United States | BLS semiconductor manufacturing PPI |
-| China | FRED semiconductor manufacturing PPI |
-| Canada | FRED electronics manufacturing PPI |
-| Mexico | FRED electronics manufacturing PPI |
-| Southeast Asian producers | FRED Asian semiconductor manufacturing index |
-| European semiconductor producers | FRED U.S. semiconductor import price index (proxy) |
-
-This hybrid framework allows the model to combine:
-
-- **high-resolution semiconductor manufacturing price data for the United States**
-- **regional semiconductor manufacturing inflation signals**
-- **global semiconductor trade price dynamics**
-
-to construct consistent semiconductor component price estimates across all supplier countries represented in the procurement agent.
-
-
+Each product produces **3260 rows** (20 countries x 163 months).
 
 ---
 
-# Core Data Sources
+## Combined Product Dataset
 
-The cost model integrates multiple public datasets that capture semiconductor price behavior.
+At the end of the notebook, the four product datasets are concatenated:
 
-## Bureau of Labor Statistics (BLS)
+```python
+combined_products = pd.concat([
+    ic_components,
+    microprocessors,
+    transistors,
+    power_devices
+])
+```
 
-The **BLS Producer Price Index (PPI)** measures changes in prices received by producers for their output.
+This produces a unified dataset containing:
+- `date`
+- `country_code`
+- `ppi_source`
+- `ppi_region`
+- `ppi_value`
+- `real_price`
+- `product`
 
-These datasets provide **direct pricing signals for semiconductor manufacturing in the United States**.
+And is saved as: `combined_products_UPDATED.csv`
 
-### Semiconductor series used
-
-| Product Category | Description |
-|---|---|
-| Integrated circuit packages | Semiconductor packaging and assembly components |
-| Microprocessors and microcontrollers | Logic and computing semiconductor chips |
-| Other semiconductor devices | Transistors, diodes, and lesser semiconductor devices |
-| Aggregated semiconductor products | Broader semiconductor manufacturing indices |
-
-### Key dataset fields
-
-| Field | Description |
-|---|---|
-| `date` | Observation date |
-| `year`, `month` | Time components |
-| `ppi_value` | Producer Price Index value |
-| `series_id` | BLS series identifier |
-| `industry` | Industry classification |
-| `product` | Semiconductor product category |
-
-These BLS datasets provide long historical price coverage for semiconductor production.
+NOTE: The saved dataset is found within `cleaned_data` as _________
 
 ---
 
-## Federal Reserve Economic Data (FRED)
-
-FRED provides **international manufacturing price indicators** that serve as proxies for semiconductor cost inflation outside the United States.
-
-Examples include:
-
-| Region | Description |
-|---|---|
-| China | Semiconductor manufacturing PPI |
-| Mexico | Computer and electronics manufacturing PPI |
-| Other Asian Countries (OAC) | Regional semiconductor manufacturing index |
-| U.S. semiconductor import index | Proxy for European semiconductor cost dynamics |
-
-These indices allow the model to approximate **regional semiconductor cost inflation trends across global supply chains**.
-
-
-
----
-
-# Country-to-PPI Mapping
-
-Because most countries do not publish semiconductor-specific PPIs, the model maps supplier countries to the **most appropriate available regional proxy**.
-
-Example mapping:
-
-| Supplier Country | PPI Source | Proxy Region |
-|---|---|---|
-| USA | BLS | U.S. semiconductor manufacturing |
-| Canada | FRED | Canada electronics manufacturing |
-| China | FRED | China semiconductor manufacturing |
-| Mexico | FRED | Mexico electronics manufacturing |
-| Germany | FRED | U.S. semiconductor import proxy |
-| France | FRED | U.S. semiconductor import proxy |
-| Japan | FRED | Asian semiconductor manufacturing basket |
-| Malaysia | FRED | Asian semiconductor manufacturing basket |
-| Singapore | FRED | Asian semiconductor manufacturing basket |
-
-This reflects the reality that semiconductor cost inflation often follows **regional supply chain dynamics rather than purely national factors**.
-
-
-
----
-
-# Semiconductor Product Categories Modeled
-
-The cost model generates price series for several semiconductor component categories.
-
-## Integrated Circuit Components
-
-Includes semiconductor packaging and integrated circuit assembly components.
-
-Packaging is typically **labor-intensive**, so costs vary significantly across regions.
-
-Example supplier countries modeled:
-
-- United States
-- Japan
-- Germany
-- China
-- Malaysia
-- Singapore
-- Mexico
-
-
-
-## Microprocessors and Microcontrollers
-
-These are **higher-value semiconductor products** used in computing and embedded systems.
-
-Cost drivers include:
-
-- Fabrication technology
-- Yield rates
-- Capital intensity of fabrication facilities
-
-Advanced semiconductor ecosystems such as Japan, and Europe generally exhibit higher manufacturing costs.
-
-
-
-## Transistors and Discrete Semiconductor Devices
-
-Lower-cost semiconductor components such as:
-
-- Transistors
-- Diodes
-- Other discrete semiconductor devices
-
-These products are commonly manufactured in **high-volume Asian production hubs**.
-
-
-
-## Power Semiconductor Devices
-
-Power semiconductors are widely used in:
-
-- power management systems
-- industrial electronics
-- automotive systems
-
-Manufacturing is concentrated in:
-
-- China
-- Southeast Asia
-- European automotive semiconductor producers.
-
-
-
----
-
-# Country Baseline Prices
-
-Each country receives a **baseline cost level** for each semiconductor product category.
-
-These baseline values represent structural differences driven by:
-
-| Cost Driver | Effect |
-|---|---|
-| Labor costs | Higher wages increase manufacturing costs |
-| Manufacturing scale | Larger fabs reduce marginal costs |
-| Supply chain maturity | Mature ecosystems reduce production costs |
-| Technology capability | Advanced fabs require higher capital investment |
-
-These baseline values serve as the **starting point for time-adjusted price series**.
-
-
-
----
-
-# Price Time-Series Generation
-
-For each semiconductor product category the model performs the following steps:
-
-1. Define the set of supplier countries.
-2. Create a **supplier × date grid** covering the full time range of the PPI datasets.
-3. Map each supplier country to its assigned **PPI source and region**.
-4. Merge the corresponding PPI time series into the supplier grid.
-5. Compute the price for each country and date using the inflation scaling formula.
-
-This produces a dataset of the form:
-
-| Date | Country | Product | Estimated Price (per unit) |
-|---|---|---|---|
-| 2010-01 | Malaysia | Transistors | 0.035 |
-| 2010-01 | USA | Microprocessors | 1.18 |
-| 2010-01 | Germany | IC Components | 0.27 |
-
-The resulting datasets form a **monthly panel of semiconductor component prices by supplier country**.
-
-
-
----
-
-# Output Datasets
-
-The model produces several structured datasets that serve as our product basket.
-
-| Dataset | Description |
-|---|---|
-| `ic_components_2023.csv` | Integrated circuit component prices |
-| `microprocessors_2015.csv` | Microprocessor price estimates |
-| `transistors_2025.csv` | Discrete semiconductor device prices |
-| `power_devices_2025.csv` | Power semiconductor device prices |
-
-Each dataset contains monthly country-level price estimates.
-
-
-
----
-
-# Role in the Procurement Agent
-
-The cost model provides the **baseline pricing signal used in supplier evaluation**.
-
-These estimates are the foundation that enable the procurement agent to analyze:
-
-- Supplier cost competitiveness
-- Price volatility
-- Procurement cost tradeoffs
-- Cost-risk balancing across suppliers
-
-When combined with:
-
-- logistics performance metrics
-- geopolitical risk indicators
-- lead-time variability
-
-the agent can generate **credible supplier comparisons and procurement recommendations** for semiconductor sourcing decisions.
+## Role in the Procurement gent
+
+The updated model now provides:
+
+- Fully normalized, base-year-consistent price series
+- Complete PPI coverage through 2025
+- Four product categories with realistic cross-country cost structures
+- A unified dataset ready for joining with synthetic supplier tables
+
+These imrovements ensure:
+- **Fair cross-country comparisons for all countries**
+- **Realistic cost volatility modeling**
+- **Consistent inflation scaling**
+- **Robust downstream procurement analytics**
