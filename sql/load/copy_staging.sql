@@ -70,7 +70,7 @@ TRUNCATE TABLE stg_suppliers;
 
 -- synthetic products load
 TRUNCATE TABLE stg_products;
-\copy stg_products FROM 'cleaned_data/combined_products_2025_v2-2.csv' WITH (FORMAT csv, HEADER true);
+\copy stg_products FROM 'cleaned_data/combined_products_UPDATED.csv' WITH (FORMAT csv, HEADER true);
 
 -- synthetic suppliers and products merged
 TRUNCATE TABLE stg_supplier_products;
