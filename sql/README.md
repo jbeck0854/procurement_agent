@@ -78,6 +78,11 @@ Step 6 - Populate Fact Tables
 psql -U postgres -d procurement_agent -f sql/load/load_facts.sql
 ```
 
+Step 7 - Load Views
+```bash
+psql -U postgres -d procurement_agent -f sql/views.sql
+```
+
 # 4 Verify the Load
 
 Connect:
