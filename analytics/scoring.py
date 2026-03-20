@@ -371,10 +371,19 @@ class SupplierScorer:
         if tariff_enabled:
             # if field missing, treat as default for demo stability
             if rate_field in df.columns:
-                df["tariff_rate"] = pd.to_numeric(df[rate_field], errors="coerce").fillna(missing_default).astype(float)
+                df['tariff_rate'] = (
+                    pd.to_numeric(df[rate_field], errors='coerce').fillna(
+                        missing_default
+                    ).astype(float) / 100.0
+                )
             else:
-                df["tariff_rate"] = missing_default
-            df["landed_unit_cost"] = pd.to_numeric(df["effective_unit_price"], errors="coerce").astype(float) * (1.0 + df["tariff_rate"])
+                df['tariff_rate'] = missing_default / 100.0
+            
+            df['landed_unit_cost'] = (
+                pd.to_numeric(df['effective_unit_price'], errors='coerce').astype(
+                    float
+                ) * (1.0 + df['tariff_rate'])
+            )
         else:
             df["tariff_rate"] = 0.0
             df["landed_unit_cost"] = pd.to_numeric(df["effective_unit_price"], errors="coerce").astype(float)
