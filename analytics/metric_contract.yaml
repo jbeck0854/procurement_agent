@@ -5,6 +5,8 @@ notes:
   - "Inputs assume joins across dim_supplier and fact_supplier_product_profile."
   - "When normalize a metric (scale it to 0-1), it is done only among suppliers that produce the same product - not across all suppliers in the DB."
   - "This allows the system to identify the best suppliers for each individual product."
+  - "Supplier reliability and sourcing stability are reflected through disruption risk, lead-time performance, and logistics reliability."
+  - "As lambda_risk increases, suppliers with lower disruption exposure and more stable/shorter lead times become more attractive."
 
 data_requirements:
   source:
@@ -93,6 +95,9 @@ assumptions:
   tariff:
     enabled: true # whether to apply tariff rates in landed cost calculation
     description: "Tariff rates are applied as ad valorem percentages to effective unit price (post-bulk pricing) to estimate landed cost."
+  resilience_preferences:
+    enabled: true
+    description: "If true, suppliers that are less likely to be disrupted, deliver faster, and have stronger logistics performance will be favored-especially when risk aversion (lambda_risk) is higher."
 
 metrics:
   # ------------------------
@@ -188,21 +193,21 @@ metrics:
     scale: "0_to_100"
     components:
       - metric: "risk_disruption"
-        weight: 0.30
+        weight: 0.32
         normalize: false
       - metric: "risk_leadtime"
-        weight: 0.25
+        weight: 0.28
         normalize: false
       - metric: "risk_logistics"
         weight: 0.20
         normalize: false
       - metric: "risk_cost_instability"
-        weight: 0.15
+        weight: 0.12
         normalize: false
       - metric: "risk_quality"
-        weight: 0.10
+        weight: 0.08
         normalize: true
-    meaning: "Aggregate risk score across disruption, lead-time, logistics, cost instability, and quality."
+    meaning: "Overall risk score/penalty for a supplier. Higher values indicate suppliers that are more likely to experience disruptions, have longer or less predictable delivery times, weaker logistics performance, more volatile costs, or deliver lower quality products. Lower values indicate more reliable, higher quality, and stable suppliers."
 
   risk_adjusted_cost:
     type: "composite"
@@ -216,7 +221,7 @@ metrics:
       - metric: "risk_penalty"
         weight: "__LAMBDA_RISK__"   # runtime override
         normalize: true
-    meaning: "Risk-adjusted cost: normalized effective cost + λ * normalized risk."
+    meaning: "Risk-adjusted cost: normalized effective cost + λ * normalized risk. Overall supplier score that balances cost adn risk. Lower values indicate suppliers that offer a better tradeoff between landed cost and reliability. As lambda_risk increases, the model places more weight on risk, causing safer and more dependable suppliers to rank more favorably even if they are not the absolute cheapest."
 
 ranking:
   enabled: true
