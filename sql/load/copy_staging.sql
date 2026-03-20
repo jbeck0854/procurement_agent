@@ -46,7 +46,7 @@ FROM stg_ppi_raw;
 
 -- Commodity prices (single file)
 TRUNCATE TABLE stg_commodity_prices;
-\copy stg_commodity_prices FROM 'cleaned_data/monthly_world_bank_commodity_prices_1960_2025_v2.csv' WITH (FORMAT csv, HEADER true);
+\copy stg_commodity_prices FROM 'cleaned_data/commodity_prices_UPDATED.csv' WITH (FORMAT csv, HEADER true);
 
 -- Tariffs (single file)
 TRUNCATE TABLE stg_tariff;

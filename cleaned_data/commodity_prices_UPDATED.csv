@@ -1,0 +1,1477 @@
+date,year,month,commodity_family,commodity_variant,unit,nominal_price,source
+2012-06-01,2012,6,Crude oil,average,$/bbl,90.72825396825,World Bank Pink Sheet
+2012-07-01,2012,7,Crude oil,average,$/bbl,96.75411255411,World Bank Pink Sheet
+2012-08-01,2012,8,Crude oil,average,$/bbl,105.27363699103,World Bank Pink Sheet
+2012-09-01,2012,9,Crude oil,average,$/bbl,106.28496491228,World Bank Pink Sheet
+2012-10-01,2012,10,Crude oil,average,$/bbl,103.40786561265,World Bank Pink Sheet
+2012-11-01,2012,11,Crude oil,average,$/bbl,101.17441558442,World Bank Pink Sheet
+2012-12-01,2012,12,Crude oil,average,$/bbl,101.19366666667,World Bank Pink Sheet
+2013-01-01,2013,1,Crude oil,average,$/bbl,105.10021645022,World Bank Pink Sheet
+2013-02-01,2013,2,Crude oil,average,$/bbl,107.63743567252,World Bank Pink Sheet
+2013-03-01,2013,3,Crude oil,average,$/bbl,102.5225,World Bank Pink Sheet
+2013-04-01,2013,4,Crude oil,average,$/bbl,98.85196969697,World Bank Pink Sheet
+2013-05-01,2013,5,Crude oil,average,$/bbl,99.36663341489,World Bank Pink Sheet
+2013-06-01,2013,6,Crude oil,average,$/bbl,99.74266666667,World Bank Pink Sheet
+2013-07-01,2013,7,Crude oil,average,$/bbl,105.25790513834,World Bank Pink Sheet
+2013-08-01,2013,8,Crude oil,average,$/bbl,108.15763636364,World Bank Pink Sheet
+2013-09-01,2013,9,Crude oil,average,$/bbl,108.75773015873,World Bank Pink Sheet
+2013-10-01,2013,10,Crude oil,average,$/bbl,105.42713438735,World Bank Pink Sheet
+2013-11-01,2013,11,Crude oil,average,$/bbl,102.62649122807,World Bank Pink Sheet
+2013-12-01,2013,12,Crude oil,average,$/bbl,105.48165079365,World Bank Pink Sheet
+2014-01-01,2014,1,Crude oil,average,$/bbl,102.09666666667,World Bank Pink Sheet
+2014-02-01,2014,2,Crude oil,average,$/bbl,104.82666666667,World Bank Pink Sheet
+2014-03-01,2014,3,Crude oil,average,$/bbl,104.04,World Bank Pink Sheet
+2014-04-01,2014,4,Crude oil,average,$/bbl,104.86666666667,World Bank Pink Sheet
+2014-05-01,2014,5,Crude oil,average,$/bbl,105.71333333333,World Bank Pink Sheet
+2014-06-01,2014,6,Crude oil,average,$/bbl,108.37333333333,World Bank Pink Sheet
+2014-07-01,2014,7,Crude oil,average,$/bbl,105.22666666667,World Bank Pink Sheet
+2014-08-01,2014,8,Crude oil,average,$/bbl,100.05,World Bank Pink Sheet
+2014-09-01,2014,9,Crude oil,average,$/bbl,95.85,World Bank Pink Sheet
+2014-10-01,2014,10,Crude oil,average,$/bbl,86.08,World Bank Pink Sheet
+2014-11-01,2014,11,Crude oil,average,$/bbl,76.99333333333,World Bank Pink Sheet
+2014-12-01,2014,12,Crude oil,average,$/bbl,60.70333333333,World Bank Pink Sheet
+2015-01-01,2015,1,Crude oil,average,$/bbl,47.10666666667,World Bank Pink Sheet
+2015-02-01,2015,2,Crude oil,average,$/bbl,54.79,World Bank Pink Sheet
+2015-03-01,2015,3,Crude oil,average,$/bbl,52.82666666667,World Bank Pink Sheet
+2015-04-01,2015,4,Crude oil,average,$/bbl,57.54333333333,World Bank Pink Sheet
+2015-05-01,2015,5,Crude oil,average,$/bbl,62.50666666667,World Bank Pink Sheet
+2015-06-01,2015,6,Crude oil,average,$/bbl,61.30666666667,World Bank Pink Sheet
+2015-07-01,2015,7,Crude oil,average,$/bbl,54.34,World Bank Pink Sheet
+2015-08-01,2015,8,Crude oil,average,$/bbl,45.69,World Bank Pink Sheet
+2015-09-01,2015,9,Crude oil,average,$/bbl,46.28,World Bank Pink Sheet
+2015-10-01,2015,10,Crude oil,average,$/bbl,46.95666666667,World Bank Pink Sheet
+2015-11-01,2015,11,Crude oil,average,$/bbl,43.11333333333,World Bank Pink Sheet
+2015-12-01,2015,12,Crude oil,average,$/bbl,36.57333333333,World Bank Pink Sheet
+2016-01-01,2016,1,Crude oil,average,$/bbl,29.78,World Bank Pink Sheet
+2016-02-01,2016,2,Crude oil,average,$/bbl,31.03,World Bank Pink Sheet
+2016-03-01,2016,3,Crude oil,average,$/bbl,37.34,World Bank Pink Sheet
+2016-04-01,2016,4,Crude oil,average,$/bbl,40.75,World Bank Pink Sheet
+2016-05-01,2016,5,Crude oil,average,$/bbl,45.93666666667,World Bank Pink Sheet
+2016-06-01,2016,6,Crude oil,average,$/bbl,47.68666666667,World Bank Pink Sheet
+2016-07-01,2016,7,Crude oil,average,$/bbl,44.12666666667,World Bank Pink Sheet
+2016-08-01,2016,8,Crude oil,average,$/bbl,44.87666666667,World Bank Pink Sheet
+2016-09-01,2016,9,Crude oil,average,$/bbl,45.04333333333,World Bank Pink Sheet
+2016-10-01,2016,10,Crude oil,average,$/bbl,49.29333333333,World Bank Pink Sheet
+2016-11-01,2016,11,Crude oil,average,$/bbl,45.26,World Bank Pink Sheet
+2016-12-01,2016,12,Crude oil,average,$/bbl,52.62,World Bank Pink Sheet
+2017-01-01,2017,1,Crude oil,average,$/bbl,53.59,World Bank Pink Sheet
+2017-02-01,2017,2,Crude oil,average,$/bbl,54.35333333333,World Bank Pink Sheet
+2017-03-01,2017,3,Crude oil,average,$/bbl,50.90333333333,World Bank Pink Sheet
+2017-04-01,2017,4,Crude oil,average,$/bbl,52.16333333333,World Bank Pink Sheet
+2017-05-01,2017,5,Crude oil,average,$/bbl,49.89333333333,World Bank Pink Sheet
+2017-06-01,2017,6,Crude oil,average,$/bbl,46.16666666667,World Bank Pink Sheet
+2017-07-01,2017,7,Crude oil,average,$/bbl,47.65666666667,World Bank Pink Sheet
+2017-08-01,2017,8,Crude oil,average,$/bbl,49.94333333333,World Bank Pink Sheet
+2017-09-01,2017,9,Crude oil,average,$/bbl,52.95,World Bank Pink Sheet
+2017-10-01,2017,10,Crude oil,average,$/bbl,54.92,World Bank Pink Sheet
+2017-11-01,2017,11,Crude oil,average,$/bbl,59.93333333333,World Bank Pink Sheet
+2017-12-01,2017,12,Crude oil,average,$/bbl,61.18666666667,World Bank Pink Sheet
+2018-01-01,2018,1,Crude oil,average,$/bbl,66.22666666667,World Bank Pink Sheet
+2018-02-01,2018,2,Crude oil,average,$/bbl,63.46,World Bank Pink Sheet
+2018-03-01,2018,3,Crude oil,average,$/bbl,64.16666666667,World Bank Pink Sheet
+2018-04-01,2018,4,Crude oil,average,$/bbl,68.79333333333,World Bank Pink Sheet
+2018-05-01,2018,5,Crude oil,average,$/bbl,73.43,World Bank Pink Sheet
+2018-06-01,2018,6,Crude oil,average,$/bbl,71.97666666667,World Bank Pink Sheet
+2018-07-01,2018,7,Crude oil,average,$/bbl,72.66666666667,World Bank Pink Sheet
+2018-08-01,2018,8,Crude oil,average,$/bbl,71.08333333333,World Bank Pink Sheet
+2018-09-01,2018,9,Crude oil,average,$/bbl,75.36333333333,World Bank Pink Sheet
+2018-10-01,2018,10,Crude oil,average,$/bbl,76.72666666667,World Bank Pink Sheet
+2018-11-01,2018,11,Crude oil,average,$/bbl,62.31666666667,World Bank Pink Sheet
+2018-12-01,2018,12,Crude oil,average,$/bbl,53.96,World Bank Pink Sheet
+2019-01-01,2019,1,Crude oil,average,$/bbl,56.58333333333,World Bank Pink Sheet
+2019-02-01,2019,2,Crude oil,average,$/bbl,61.13333333333,World Bank Pink Sheet
+2019-03-01,2019,3,Crude oil,average,$/bbl,63.78666666667,World Bank Pink Sheet
+2019-04-01,2019,4,Crude oil,average,$/bbl,68.57666666667,World Bank Pink Sheet
+2019-05-01,2019,5,Crude oil,average,$/bbl,66.83333333333,World Bank Pink Sheet
+2019-06-01,2019,6,Crude oil,average,$/bbl,59.76,World Bank Pink Sheet
+2019-07-01,2019,7,Crude oil,average,$/bbl,61.47666666667,World Bank Pink Sheet
+2019-08-01,2019,8,Crude oil,average,$/bbl,57.67,World Bank Pink Sheet
+2019-09-01,2019,9,Crude oil,average,$/bbl,60.04,World Bank Pink Sheet
+2019-10-01,2019,10,Crude oil,average,$/bbl,57.27333333333,World Bank Pink Sheet
+2019-11-01,2019,11,Crude oil,average,$/bbl,60.40333333333,World Bank Pink Sheet
+2019-12-01,2019,12,Crude oil,average,$/bbl,63.35333333333,World Bank Pink Sheet
+2020-01-01,2020,1,Crude oil,average,$/bbl,61.62666666667,World Bank Pink Sheet
+2020-02-01,2020,2,Crude oil,average,$/bbl,53.34666666667,World Bank Pink Sheet
+2020-03-01,2020,3,Crude oil,average,$/bbl,32.20333333333,World Bank Pink Sheet
+2020-04-01,2020,4,Crude oil,average,$/bbl,21.04333333333,World Bank Pink Sheet
+2020-05-01,2020,5,Crude oil,average,$/bbl,30.38,World Bank Pink Sheet
+2020-06-01,2020,6,Crude oil,average,$/bbl,39.45666666667,World Bank Pink Sheet
+2020-07-01,2020,7,Crude oil,average,$/bbl,42.06666666667,World Bank Pink Sheet
+2020-08-01,2020,8,Crude oil,average,$/bbl,43.44333333333,World Bank Pink Sheet
+2020-09-01,2020,9,Crude oil,average,$/bbl,40.59666666667,World Bank Pink Sheet
+2020-10-01,2020,10,Crude oil,average,$/bbl,39.9,World Bank Pink Sheet
+2020-11-01,2020,11,Crude oil,average,$/bbl,42.30333333333,World Bank Pink Sheet
+2020-12-01,2020,12,Crude oil,average,$/bbl,48.72666666667,World Bank Pink Sheet
+2021-01-01,2021,1,Crude oil,average,$/bbl,53.60333333333,World Bank Pink Sheet
+2021-02-01,2021,2,Crude oil,average,$/bbl,60.46333333333,World Bank Pink Sheet
+2021-03-01,2021,3,Crude oil,average,$/bbl,63.83,World Bank Pink Sheet
+2021-04-01,2021,4,Crude oil,average,$/bbl,62.95,World Bank Pink Sheet
+2021-05-01,2021,5,Crude oil,average,$/bbl,66.4,World Bank Pink Sheet
+2021-06-01,2021,6,Crude oil,average,$/bbl,71.80333333333,World Bank Pink Sheet
+2021-07-01,2021,7,Crude oil,average,$/bbl,73.28333333333,World Bank Pink Sheet
+2021-08-01,2021,8,Crude oil,average,$/bbl,68.86666666667,World Bank Pink Sheet
+2021-09-01,2021,9,Crude oil,average,$/bbl,72.8,World Bank Pink Sheet
+2021-10-01,2021,10,Crude oil,average,$/bbl,82.06333333333,World Bank Pink Sheet
+2021-11-01,2021,11,Crude oil,average,$/bbl,79.91666666667,World Bank Pink Sheet
+2021-12-01,2021,12,Crude oil,average,$/bbl,72.86666666667,World Bank Pink Sheet
+2022-01-01,2022,1,Crude oil,average,$/bbl,83.92,World Bank Pink Sheet
+2022-02-01,2022,2,Crude oil,average,$/bbl,93.54333333333,World Bank Pink Sheet
+2022-03-01,2022,3,Crude oil,average,$/bbl,112.39666666667,World Bank Pink Sheet
+2022-04-01,2022,4,Crude oil,average,$/bbl,103.41333333333,World Bank Pink Sheet
+2022-05-01,2022,5,Crude oil,average,$/bbl,110.09666666667,World Bank Pink Sheet
+2022-06-01,2022,6,Crude oil,average,$/bbl,116.8,World Bank Pink Sheet
+2022-07-01,2022,7,Crude oil,average,$/bbl,105.08333333333,World Bank Pink Sheet
+2022-08-01,2022,8,Crude oil,average,$/bbl,95.97333333333,World Bank Pink Sheet
+2022-09-01,2022,9,Crude oil,average,$/bbl,88.22,World Bank Pink Sheet
+2022-10-01,2022,10,Crude oil,average,$/bbl,90.32666666667,World Bank Pink Sheet
+2022-11-01,2022,11,Crude oil,average,$/bbl,87.37666666667,World Bank Pink Sheet
+2022-12-01,2022,12,Crude oil,average,$/bbl,78.06666666667,World Bank Pink Sheet
+2023-01-01,2023,1,Crude oil,average,$/bbl,80.41,World Bank Pink Sheet
+2023-02-01,2023,2,Crude oil,average,$/bbl,80.25333333333,World Bank Pink Sheet
+2023-03-01,2023,3,Crude oil,average,$/bbl,76.47333333333,World Bank Pink Sheet
+2023-04-01,2023,4,Crude oil,average,$/bbl,82.46,World Bank Pink Sheet
+2023-05-01,2023,5,Crude oil,average,$/bbl,74.12333333333,World Bank Pink Sheet
+2023-06-01,2023,6,Crude oil,average,$/bbl,73.26333333333,World Bank Pink Sheet
+2023-07-01,2023,7,Crude oil,average,$/bbl,78.98333333333,World Bank Pink Sheet
+2023-08-01,2023,8,Crude oil,average,$/bbl,84.72433333333,World Bank Pink Sheet
+2023-09-01,2023,9,Crude oil,average,$/bbl,92.22,World Bank Pink Sheet
+2023-10-01,2023,10,Crude oil,average,$/bbl,89.08366666667,World Bank Pink Sheet
+2023-11-01,2023,11,Crude oil,average,$/bbl,81.35433333333,World Bank Pink Sheet
+2023-12-01,2023,12,Crude oil,average,$/bbl,75.71933333333,World Bank Pink Sheet
+2024-01-01,2024,1,Crude oil,average,$/bbl,77.67233333333,World Bank Pink Sheet
+2024-02-01,2024,2,Crude oil,average,$/bbl,80.548,World Bank Pink Sheet
+2024-03-01,2024,3,Crude oil,average,$/bbl,83.54566666667,World Bank Pink Sheet
+2024-04-01,2024,4,Crude oil,average,$/bbl,88.01133333333,World Bank Pink Sheet
+2024-05-01,2024,5,Crude oil,average,$/bbl,81.445,World Bank Pink Sheet
+2024-06-01,2024,6,Crude oil,average,$/bbl,81.205,World Bank Pink Sheet
+2024-07-01,2024,7,Crude oil,average,$/bbl,83.25866666667,World Bank Pink Sheet
+2024-08-01,2024,8,Crude oil,average,$/bbl,78.121,World Bank Pink Sheet
+2024-09-01,2024,9,Crude oil,average,$/bbl,72.42433333333,World Bank Pink Sheet
+2024-10-01,2024,10,Crude oil,average,$/bbl,73.97066666667,World Bank Pink Sheet
+2024-11-01,2024,11,Crude oil,average,$/bbl,72.29166666667,World Bank Pink Sheet
+2024-12-01,2024,12,Crude oil,average,$/bbl,72.311,World Bank Pink Sheet
+2025-01-01,2025,1,Crude oil,average,$/bbl,78.162,World Bank Pink Sheet
+2025-02-01,2025,2,Crude oil,average,$/bbl,73.819,World Bank Pink Sheet
+2025-03-01,2025,3,Crude oil,average,$/bbl,70.70133333333,World Bank Pink Sheet
+2025-04-01,2025,4,Crude oil,average,$/bbl,65.905,World Bank Pink Sheet
+2025-05-01,2025,5,Crude oil,average,$/bbl,62.74866666667,World Bank Pink Sheet
+2025-06-01,2025,6,Crude oil,average,$/bbl,69.14666666667,World Bank Pink Sheet
+2025-07-01,2025,7,Crude oil,average,$/bbl,69.19033333333,World Bank Pink Sheet
+2025-08-01,2025,8,Crude oil,average,$/bbl,66.71766666667,World Bank Pink Sheet
+2025-09-01,2025,9,Crude oil,average,$/bbl,66.457,World Bank Pink Sheet
+2025-10-01,2025,10,Crude oil,average,$/bbl,63.04033333333,World Bank Pink Sheet
+2025-11-01,2025,11,Crude oil,average,$/bbl,62.33633333333,World Bank Pink Sheet
+2025-12-01,2025,12,Crude oil,average,$/bbl,60.88,World Bank Pink Sheet
+2026-01-01,2026,1,Crude oil,average,$/bbl,63.652,World Bank Pink Sheet
+2012-06-01,2012,6,Crude oil,Brent,$/bbl,95.58904761905,World Bank Pink Sheet
+2012-07-01,2012,7,Crude oil,Brent,$/bbl,103.14090909091,World Bank Pink Sheet
+2012-08-01,2012,8,Crude oil,Brent,$/bbl,113.34,World Bank Pink Sheet
+2012-09-01,2012,9,Crude oil,Brent,$/bbl,113.3825,World Bank Pink Sheet
+2012-10-01,2012,10,Crude oil,Brent,$/bbl,111.97347826087,World Bank Pink Sheet
+2012-11-01,2012,11,Crude oil,Brent,$/bbl,109.71181818182,World Bank Pink Sheet
+2012-12-01,2012,12,Crude oil,Brent,$/bbl,109.6765,World Bank Pink Sheet
+2013-01-01,2013,1,Crude oil,Brent,$/bbl,112.97363636364,World Bank Pink Sheet
+2013-02-01,2013,2,Crude oil,Brent,$/bbl,116.5195,World Bank Pink Sheet
+2013-03-01,2013,3,Crude oil,Brent,$/bbl,109.24,World Bank Pink Sheet
+2013-04-01,2013,4,Crude oil,Brent,$/bbl,102.87545454546,World Bank Pink Sheet
+2013-05-01,2013,5,Crude oil,Brent,$/bbl,103.02695652174,World Bank Pink Sheet
+2013-06-01,2013,6,Crude oil,Brent,$/bbl,103.11,World Bank Pink Sheet
+2013-07-01,2013,7,Crude oil,Brent,$/bbl,107.71608695652,World Bank Pink Sheet
+2013-08-01,2013,8,Crude oil,Brent,$/bbl,110.96454545455,World Bank Pink Sheet
+2013-09-01,2013,9,Crude oil,Brent,$/bbl,111.62142857143,World Bank Pink Sheet
+2013-10-01,2013,10,Crude oil,Brent,$/bbl,109.47869565217,World Bank Pink Sheet
+2013-11-01,2013,11,Crude oil,Brent,$/bbl,108.07619047619,World Bank Pink Sheet
+2013-12-01,2013,12,Crude oil,Brent,$/bbl,110.674,World Bank Pink Sheet
+2014-01-01,2014,1,Crude oil,Brent,$/bbl,107.42,World Bank Pink Sheet
+2014-02-01,2014,2,Crude oil,Brent,$/bbl,108.81,World Bank Pink Sheet
+2014-03-01,2014,3,Crude oil,Brent,$/bbl,107.4,World Bank Pink Sheet
+2014-04-01,2014,4,Crude oil,Brent,$/bbl,107.79,World Bank Pink Sheet
+2014-05-01,2014,5,Crude oil,Brent,$/bbl,109.68,World Bank Pink Sheet
+2014-06-01,2014,6,Crude oil,Brent,$/bbl,111.87,World Bank Pink Sheet
+2014-07-01,2014,7,Crude oil,Brent,$/bbl,106.98,World Bank Pink Sheet
+2014-08-01,2014,8,Crude oil,Brent,$/bbl,101.92,World Bank Pink Sheet
+2014-09-01,2014,9,Crude oil,Brent,$/bbl,97.34,World Bank Pink Sheet
+2014-10-01,2014,10,Crude oil,Brent,$/bbl,87.27,World Bank Pink Sheet
+2014-11-01,2014,11,Crude oil,Brent,$/bbl,78.44,World Bank Pink Sheet
+2014-12-01,2014,12,Crude oil,Brent,$/bbl,62.33,World Bank Pink Sheet
+2015-01-01,2015,1,Crude oil,Brent,$/bbl,48.07,World Bank Pink Sheet
+2015-02-01,2015,2,Crude oil,Brent,$/bbl,57.93,World Bank Pink Sheet
+2015-03-01,2015,3,Crude oil,Brent,$/bbl,55.79,World Bank Pink Sheet
+2015-04-01,2015,4,Crude oil,Brent,$/bbl,59.39,World Bank Pink Sheet
+2015-05-01,2015,5,Crude oil,Brent,$/bbl,64.56,World Bank Pink Sheet
+2015-06-01,2015,6,Crude oil,Brent,$/bbl,62.34,World Bank Pink Sheet
+2015-07-01,2015,7,Crude oil,Brent,$/bbl,55.87,World Bank Pink Sheet
+2015-08-01,2015,8,Crude oil,Brent,$/bbl,46.99,World Bank Pink Sheet
+2015-09-01,2015,9,Crude oil,Brent,$/bbl,47.24,World Bank Pink Sheet
+2015-10-01,2015,10,Crude oil,Brent,$/bbl,48.12,World Bank Pink Sheet
+2015-11-01,2015,11,Crude oil,Brent,$/bbl,44.42,World Bank Pink Sheet
+2015-12-01,2015,12,Crude oil,Brent,$/bbl,37.72,World Bank Pink Sheet
+2016-01-01,2016,1,Crude oil,Brent,$/bbl,30.8,World Bank Pink Sheet
+2016-02-01,2016,2,Crude oil,Brent,$/bbl,33.2,World Bank Pink Sheet
+2016-03-01,2016,3,Crude oil,Brent,$/bbl,39.07,World Bank Pink Sheet
+2016-04-01,2016,4,Crude oil,Brent,$/bbl,42.25,World Bank Pink Sheet
+2016-05-01,2016,5,Crude oil,Brent,$/bbl,47.13,World Bank Pink Sheet
+2016-06-01,2016,6,Crude oil,Brent,$/bbl,48.48,World Bank Pink Sheet
+2016-07-01,2016,7,Crude oil,Brent,$/bbl,45.07,World Bank Pink Sheet
+2016-08-01,2016,8,Crude oil,Brent,$/bbl,46.14,World Bank Pink Sheet
+2016-09-01,2016,9,Crude oil,Brent,$/bbl,46.19,World Bank Pink Sheet
+2016-10-01,2016,10,Crude oil,Brent,$/bbl,49.73,World Bank Pink Sheet
+2016-11-01,2016,11,Crude oil,Brent,$/bbl,46.44,World Bank Pink Sheet
+2016-12-01,2016,12,Crude oil,Brent,$/bbl,54.07,World Bank Pink Sheet
+2017-01-01,2017,1,Crude oil,Brent,$/bbl,54.89,World Bank Pink Sheet
+2017-02-01,2017,2,Crude oil,Brent,$/bbl,55.49,World Bank Pink Sheet
+2017-03-01,2017,3,Crude oil,Brent,$/bbl,51.97,World Bank Pink Sheet
+2017-04-01,2017,4,Crude oil,Brent,$/bbl,52.98,World Bank Pink Sheet
+2017-05-01,2017,5,Crude oil,Brent,$/bbl,50.87,World Bank Pink Sheet
+2017-06-01,2017,6,Crude oil,Brent,$/bbl,46.89,World Bank Pink Sheet
+2017-07-01,2017,7,Crude oil,Brent,$/bbl,48.69,World Bank Pink Sheet
+2017-08-01,2017,8,Crude oil,Brent,$/bbl,51.37,World Bank Pink Sheet
+2017-09-01,2017,9,Crude oil,Brent,$/bbl,55.16,World Bank Pink Sheet
+2017-10-01,2017,10,Crude oil,Brent,$/bbl,57.62,World Bank Pink Sheet
+2017-11-01,2017,11,Crude oil,Brent,$/bbl,62.57,World Bank Pink Sheet
+2017-12-01,2017,12,Crude oil,Brent,$/bbl,64.21,World Bank Pink Sheet
+2018-01-01,2018,1,Crude oil,Brent,$/bbl,68.99,World Bank Pink Sheet
+2018-02-01,2018,2,Crude oil,Brent,$/bbl,65.42,World Bank Pink Sheet
+2018-03-01,2018,3,Crude oil,Brent,$/bbl,66.45,World Bank Pink Sheet
+2018-04-01,2018,4,Crude oil,Brent,$/bbl,71.63,World Bank Pink Sheet
+2018-05-01,2018,5,Crude oil,Brent,$/bbl,76.65,World Bank Pink Sheet
+2018-06-01,2018,6,Crude oil,Brent,$/bbl,75.19,World Bank Pink Sheet
+2018-07-01,2018,7,Crude oil,Brent,$/bbl,74.44,World Bank Pink Sheet
+2018-08-01,2018,8,Crude oil,Brent,$/bbl,73.13,World Bank Pink Sheet
+2018-09-01,2018,9,Crude oil,Brent,$/bbl,78.86,World Bank Pink Sheet
+2018-10-01,2018,10,Crude oil,Brent,$/bbl,80.47,World Bank Pink Sheet
+2018-11-01,2018,11,Crude oil,Brent,$/bbl,65.17,World Bank Pink Sheet
+2018-12-01,2018,12,Crude oil,Brent,$/bbl,56.46,World Bank Pink Sheet
+2019-01-01,2019,1,Crude oil,Brent,$/bbl,59.27,World Bank Pink Sheet
+2019-02-01,2019,2,Crude oil,Brent,$/bbl,64.13,World Bank Pink Sheet
+2019-03-01,2019,3,Crude oil,Brent,$/bbl,66.41,World Bank Pink Sheet
+2019-04-01,2019,4,Crude oil,Brent,$/bbl,71.2,World Bank Pink Sheet
+2019-05-01,2019,5,Crude oil,Brent,$/bbl,70.53,World Bank Pink Sheet
+2019-06-01,2019,6,Crude oil,Brent,$/bbl,63.3,World Bank Pink Sheet
+2019-07-01,2019,7,Crude oil,Brent,$/bbl,64.0,World Bank Pink Sheet
+2019-08-01,2019,8,Crude oil,Brent,$/bbl,59.25,World Bank Pink Sheet
+2019-09-01,2019,9,Crude oil,Brent,$/bbl,62.33,World Bank Pink Sheet
+2019-10-01,2019,10,Crude oil,Brent,$/bbl,59.37,World Bank Pink Sheet
+2019-11-01,2019,11,Crude oil,Brent,$/bbl,62.74,World Bank Pink Sheet
+2019-12-01,2019,12,Crude oil,Brent,$/bbl,65.85,World Bank Pink Sheet
+2020-01-01,2020,1,Crude oil,Brent,$/bbl,63.6,World Bank Pink Sheet
+2020-02-01,2020,2,Crude oil,Brent,$/bbl,55.0,World Bank Pink Sheet
+2020-03-01,2020,3,Crude oil,Brent,$/bbl,32.98,World Bank Pink Sheet
+2020-04-01,2020,4,Crude oil,Brent,$/bbl,23.34,World Bank Pink Sheet
+2020-05-01,2020,5,Crude oil,Brent,$/bbl,31.02,World Bank Pink Sheet
+2020-06-01,2020,6,Crude oil,Brent,$/bbl,39.93,World Bank Pink Sheet
+2020-07-01,2020,7,Crude oil,Brent,$/bbl,42.81,World Bank Pink Sheet
+2020-08-01,2020,8,Crude oil,Brent,$/bbl,44.26,World Bank Pink Sheet
+2020-09-01,2020,9,Crude oil,Brent,$/bbl,41.09,World Bank Pink Sheet
+2020-10-01,2020,10,Crude oil,Brent,$/bbl,40.47,World Bank Pink Sheet
+2020-11-01,2020,11,Crude oil,Brent,$/bbl,43.23,World Bank Pink Sheet
+2020-12-01,2020,12,Crude oil,Brent,$/bbl,49.87,World Bank Pink Sheet
+2021-01-01,2021,1,Crude oil,Brent,$/bbl,54.55,World Bank Pink Sheet
+2021-02-01,2021,2,Crude oil,Brent,$/bbl,61.96,World Bank Pink Sheet
+2021-03-01,2021,3,Crude oil,Brent,$/bbl,65.19,World Bank Pink Sheet
+2021-04-01,2021,4,Crude oil,Brent,$/bbl,64.77,World Bank Pink Sheet
+2021-05-01,2021,5,Crude oil,Brent,$/bbl,68.04,World Bank Pink Sheet
+2021-06-01,2021,6,Crude oil,Brent,$/bbl,73.07,World Bank Pink Sheet
+2021-07-01,2021,7,Crude oil,Brent,$/bbl,74.39,World Bank Pink Sheet
+2021-08-01,2021,8,Crude oil,Brent,$/bbl,70.02,World Bank Pink Sheet
+2021-09-01,2021,9,Crude oil,Brent,$/bbl,74.6,World Bank Pink Sheet
+2021-10-01,2021,10,Crude oil,Brent,$/bbl,83.65,World Bank Pink Sheet
+2021-11-01,2021,11,Crude oil,Brent,$/bbl,80.77,World Bank Pink Sheet
+2021-12-01,2021,12,Crude oil,Brent,$/bbl,74.31,World Bank Pink Sheet
+2022-01-01,2022,1,Crude oil,Brent,$/bbl,85.53,World Bank Pink Sheet
+2022-02-01,2022,2,Crude oil,Brent,$/bbl,95.76,World Bank Pink Sheet
+2022-03-01,2022,3,Crude oil,Brent,$/bbl,115.59,World Bank Pink Sheet
+2022-04-01,2022,4,Crude oil,Brent,$/bbl,105.78,World Bank Pink Sheet
+2022-05-01,2022,5,Crude oil,Brent,$/bbl,112.37,World Bank Pink Sheet
+2022-06-01,2022,6,Crude oil,Brent,$/bbl,120.08,World Bank Pink Sheet
+2022-07-01,2022,7,Crude oil,Brent,$/bbl,108.92,World Bank Pink Sheet
+2022-08-01,2022,8,Crude oil,Brent,$/bbl,98.6,World Bank Pink Sheet
+2022-09-01,2022,9,Crude oil,Brent,$/bbl,90.16,World Bank Pink Sheet
+2022-10-01,2022,10,Crude oil,Brent,$/bbl,93.13,World Bank Pink Sheet
+2022-11-01,2022,11,Crude oil,Brent,$/bbl,91.07,World Bank Pink Sheet
+2022-12-01,2022,12,Crude oil,Brent,$/bbl,80.9,World Bank Pink Sheet
+2023-01-01,2023,1,Crude oil,Brent,$/bbl,83.09,World Bank Pink Sheet
+2023-02-01,2023,2,Crude oil,Brent,$/bbl,82.71,World Bank Pink Sheet
+2023-03-01,2023,3,Crude oil,Brent,$/bbl,78.53,World Bank Pink Sheet
+2023-04-01,2023,4,Crude oil,Brent,$/bbl,84.11,World Bank Pink Sheet
+2023-05-01,2023,5,Crude oil,Brent,$/bbl,75.7,World Bank Pink Sheet
+2023-06-01,2023,6,Crude oil,Brent,$/bbl,74.89,World Bank Pink Sheet
+2023-07-01,2023,7,Crude oil,Brent,$/bbl,80.1,World Bank Pink Sheet
+2023-08-01,2023,8,Crude oil,Brent,$/bbl,86.163,World Bank Pink Sheet
+2023-09-01,2023,9,Crude oil,Brent,$/bbl,94.0,World Bank Pink Sheet
+2023-10-01,2023,10,Crude oil,Brent,$/bbl,91.061,World Bank Pink Sheet
+2023-11-01,2023,11,Crude oil,Brent,$/bbl,83.183,World Bank Pink Sheet
+2023-12-01,2023,12,Crude oil,Brent,$/bbl,77.858,World Bank Pink Sheet
+2024-01-01,2024,1,Crude oil,Brent,$/bbl,80.227,World Bank Pink Sheet
+2024-02-01,2024,2,Crude oil,Brent,$/bbl,83.764,World Bank Pink Sheet
+2024-03-01,2024,3,Crude oil,Brent,$/bbl,85.447,World Bank Pink Sheet
+2024-04-01,2024,4,Crude oil,Brent,$/bbl,90.054,World Bank Pink Sheet
+2024-05-01,2024,5,Crude oil,Brent,$/bbl,81.995,World Bank Pink Sheet
+2024-06-01,2024,6,Crude oil,Brent,$/bbl,82.555,World Bank Pink Sheet
+2024-07-01,2024,7,Crude oil,Brent,$/bbl,85.296,World Bank Pink Sheet
+2024-08-01,2024,8,Crude oil,Brent,$/bbl,80.863,World Bank Pink Sheet
+2024-09-01,2024,9,Crude oil,Brent,$/bbl,74.293,World Bank Pink Sheet
+2024-10-01,2024,10,Crude oil,Brent,$/bbl,75.662,World Bank Pink Sheet
+2024-11-01,2024,11,Crude oil,Brent,$/bbl,74.395,World Bank Pink Sheet
+2024-12-01,2024,12,Crude oil,Brent,$/bbl,73.833,World Bank Pink Sheet
+2025-01-01,2025,1,Crude oil,Brent,$/bbl,79.206,World Bank Pink Sheet
+2025-02-01,2025,2,Crude oil,Brent,$/bbl,75.157,World Bank Pink Sheet
+2025-03-01,2025,3,Crude oil,Brent,$/bbl,72.574,World Bank Pink Sheet
+2025-04-01,2025,4,Crude oil,Brent,$/bbl,67.745,World Bank Pink Sheet
+2025-05-01,2025,5,Crude oil,Brent,$/bbl,64.206,World Bank Pink Sheet
+2025-06-01,2025,6,Crude oil,Brent,$/bbl,71.45,World Bank Pink Sheet
+2025-07-01,2025,7,Crude oil,Brent,$/bbl,70.951,World Bank Pink Sheet
+2025-08-01,2025,8,Crude oil,Brent,$/bbl,68.203,World Bank Pink Sheet
+2025-09-01,2025,9,Crude oil,Brent,$/bbl,67.951,World Bank Pink Sheet
+2025-10-01,2025,10,Crude oil,Brent,$/bbl,64.651,World Bank Pink Sheet
+2025-11-01,2025,11,Crude oil,Brent,$/bbl,63.609,World Bank Pink Sheet
+2025-12-01,2025,12,Crude oil,Brent,$/bbl,62.72,World Bank Pink Sheet
+2026-01-01,2026,1,Crude oil,Brent,$/bbl,66.766,World Bank Pink Sheet
+2012-06-01,2012,6,Crude oil,Dubai,$/bbl,94.23619047619,World Bank Pink Sheet
+2012-07-01,2012,7,Crude oil,Dubai,$/bbl,99.22,World Bank Pink Sheet
+2012-08-01,2012,8,Crude oil,Dubai,$/bbl,108.37047619048,World Bank Pink Sheet
+2012-09-01,2012,9,Crude oil,Dubai,$/bbl,110.9645,World Bank Pink Sheet
+2012-10-01,2012,10,Crude oil,Dubai,$/bbl,108.73272727273,World Bank Pink Sheet
+2012-11-01,2012,11,Crude oil,Dubai,$/bbl,107.13333333333,World Bank Pink Sheet
+2012-12-01,2012,12,Crude oil,Dubai,$/bbl,105.689,World Bank Pink Sheet
+2013-01-01,2013,1,Crude oil,Dubai,$/bbl,107.58272727273,World Bank Pink Sheet
+2013-02-01,2013,2,Crude oil,Dubai,$/bbl,111.09333333333,World Bank Pink Sheet
+2013-03-01,2013,3,Crude oil,Dubai,$/bbl,105.415,World Bank Pink Sheet
+2013-04-01,2013,4,Crude oil,Dubai,$/bbl,101.66136363636,World Bank Pink Sheet
+2013-05-01,2013,5,Crude oil,Dubai,$/bbl,100.31476190476,World Bank Pink Sheet
+2013-06-01,2013,6,Crude oil,Dubai,$/bbl,100.3285,World Bank Pink Sheet
+2013-07-01,2013,7,Crude oil,Dubai,$/bbl,103.36217391304,World Bank Pink Sheet
+2013-08-01,2013,8,Crude oil,Dubai,$/bbl,106.962,World Bank Pink Sheet
+2013-09-01,2013,9,Crude oil,Dubai,$/bbl,108.40476190476,World Bank Pink Sheet
+2013-10-01,2013,10,Crude oil,Dubai,$/bbl,106.30227272727,World Bank Pink Sheet
+2013-11-01,2013,11,Crude oil,Dubai,$/bbl,105.85380952381,World Bank Pink Sheet
+2013-12-01,2013,12,Crude oil,Dubai,$/bbl,107.91952380952,World Bank Pink Sheet
+2014-01-01,2014,1,Crude oil,Dubai,$/bbl,104.01,World Bank Pink Sheet
+2014-02-01,2014,2,Crude oil,Dubai,$/bbl,104.94,World Bank Pink Sheet
+2014-03-01,2014,3,Crude oil,Dubai,$/bbl,104.15,World Bank Pink Sheet
+2014-04-01,2014,4,Crude oil,Dubai,$/bbl,104.73,World Bank Pink Sheet
+2014-05-01,2014,5,Crude oil,Dubai,$/bbl,105.6,World Bank Pink Sheet
+2014-06-01,2014,6,Crude oil,Dubai,$/bbl,108.01,World Bank Pink Sheet
+2014-07-01,2014,7,Crude oil,Dubai,$/bbl,105.76,World Bank Pink Sheet
+2014-08-01,2014,8,Crude oil,Dubai,$/bbl,101.85,World Bank Pink Sheet
+2014-09-01,2014,9,Crude oil,Dubai,$/bbl,96.99,World Bank Pink Sheet
+2014-10-01,2014,10,Crude oil,Dubai,$/bbl,86.57,World Bank Pink Sheet
+2014-11-01,2014,11,Crude oil,Dubai,$/bbl,76.73,World Bank Pink Sheet
+2014-12-01,2014,12,Crude oil,Dubai,$/bbl,60.52,World Bank Pink Sheet
+2015-01-01,2015,1,Crude oil,Dubai,$/bbl,45.98,World Bank Pink Sheet
+2015-02-01,2015,2,Crude oil,Dubai,$/bbl,55.83,World Bank Pink Sheet
+2015-03-01,2015,3,Crude oil,Dubai,$/bbl,54.91,World Bank Pink Sheet
+2015-04-01,2015,4,Crude oil,Dubai,$/bbl,58.8,World Bank Pink Sheet
+2015-05-01,2015,5,Crude oil,Dubai,$/bbl,63.69,World Bank Pink Sheet
+2015-06-01,2015,6,Crude oil,Dubai,$/bbl,61.78,World Bank Pink Sheet
+2015-07-01,2015,7,Crude oil,Dubai,$/bbl,56.25,World Bank Pink Sheet
+2015-08-01,2015,8,Crude oil,Dubai,$/bbl,47.22,World Bank Pink Sheet
+2015-09-01,2015,9,Crude oil,Dubai,$/bbl,46.15,World Bank Pink Sheet
+2015-10-01,2015,10,Crude oil,Dubai,$/bbl,46.55,World Bank Pink Sheet
+2015-11-01,2015,11,Crude oil,Dubai,$/bbl,42.22,World Bank Pink Sheet
+2015-12-01,2015,12,Crude oil,Dubai,$/bbl,34.77,World Bank Pink Sheet
+2016-01-01,2016,1,Crude oil,Dubai,$/bbl,27.0,World Bank Pink Sheet
+2016-02-01,2016,2,Crude oil,Dubai,$/bbl,29.5,World Bank Pink Sheet
+2016-03-01,2016,3,Crude oil,Dubai,$/bbl,35.18,World Bank Pink Sheet
+2016-04-01,2016,4,Crude oil,Dubai,$/bbl,39.04,World Bank Pink Sheet
+2016-05-01,2016,5,Crude oil,Dubai,$/bbl,43.95,World Bank Pink Sheet
+2016-06-01,2016,6,Crude oil,Dubai,$/bbl,45.83,World Bank Pink Sheet
+2016-07-01,2016,7,Crude oil,Dubai,$/bbl,42.62,World Bank Pink Sheet
+2016-08-01,2016,8,Crude oil,Dubai,$/bbl,43.74,World Bank Pink Sheet
+2016-09-01,2016,9,Crude oil,Dubai,$/bbl,43.74,World Bank Pink Sheet
+2016-10-01,2016,10,Crude oil,Dubai,$/bbl,48.26,World Bank Pink Sheet
+2016-11-01,2016,11,Crude oil,Dubai,$/bbl,43.77,World Bank Pink Sheet
+2016-12-01,2016,12,Crude oil,Dubai,$/bbl,51.78,World Bank Pink Sheet
+2017-01-01,2017,1,Crude oil,Dubai,$/bbl,53.37,World Bank Pink Sheet
+2017-02-01,2017,2,Crude oil,Dubai,$/bbl,54.17,World Bank Pink Sheet
+2017-03-01,2017,3,Crude oil,Dubai,$/bbl,51.16,World Bank Pink Sheet
+2017-04-01,2017,4,Crude oil,Dubai,$/bbl,52.45,World Bank Pink Sheet
+2017-05-01,2017,5,Crude oil,Dubai,$/bbl,50.31,World Bank Pink Sheet
+2017-06-01,2017,6,Crude oil,Dubai,$/bbl,46.44,World Bank Pink Sheet
+2017-07-01,2017,7,Crude oil,Dubai,$/bbl,47.63,World Bank Pink Sheet
+2017-08-01,2017,8,Crude oil,Dubai,$/bbl,50.43,World Bank Pink Sheet
+2017-09-01,2017,9,Crude oil,Dubai,$/bbl,53.86,World Bank Pink Sheet
+2017-10-01,2017,10,Crude oil,Dubai,$/bbl,55.58,World Bank Pink Sheet
+2017-11-01,2017,11,Crude oil,Dubai,$/bbl,60.58,World Bank Pink Sheet
+2017-12-01,2017,12,Crude oil,Dubai,$/bbl,61.41,World Bank Pink Sheet
+2018-01-01,2018,1,Crude oil,Dubai,$/bbl,66.02,World Bank Pink Sheet
+2018-02-01,2018,2,Crude oil,Dubai,$/bbl,62.79,World Bank Pink Sheet
+2018-03-01,2018,3,Crude oil,Dubai,$/bbl,63.29,World Bank Pink Sheet
+2018-04-01,2018,4,Crude oil,Dubai,$/bbl,68.43,World Bank Pink Sheet
+2018-05-01,2018,5,Crude oil,Dubai,$/bbl,73.66,World Bank Pink Sheet
+2018-06-01,2018,6,Crude oil,Dubai,$/bbl,73.22,World Bank Pink Sheet
+2018-07-01,2018,7,Crude oil,Dubai,$/bbl,72.72,World Bank Pink Sheet
+2018-08-01,2018,8,Crude oil,Dubai,$/bbl,72.13,World Bank Pink Sheet
+2018-09-01,2018,9,Crude oil,Dubai,$/bbl,77.02,World Bank Pink Sheet
+2018-10-01,2018,10,Crude oil,Dubai,$/bbl,78.96,World Bank Pink Sheet
+2018-11-01,2018,11,Crude oil,Dubai,$/bbl,65.11,World Bank Pink Sheet
+2018-12-01,2018,12,Crude oil,Dubai,$/bbl,56.47,World Bank Pink Sheet
+2019-01-01,2019,1,Crude oil,Dubai,$/bbl,58.96,World Bank Pink Sheet
+2019-02-01,2019,2,Crude oil,Dubai,$/bbl,64.32,World Bank Pink Sheet
+2019-03-01,2019,3,Crude oil,Dubai,$/bbl,66.8,World Bank Pink Sheet
+2019-04-01,2019,4,Crude oil,Dubai,$/bbl,70.66,World Bank Pink Sheet
+2019-05-01,2019,5,Crude oil,Dubai,$/bbl,69.13,World Bank Pink Sheet
+2019-06-01,2019,6,Crude oil,Dubai,$/bbl,61.3,World Bank Pink Sheet
+2019-07-01,2019,7,Crude oil,Dubai,$/bbl,62.91,World Bank Pink Sheet
+2019-08-01,2019,8,Crude oil,Dubai,$/bbl,58.92,World Bank Pink Sheet
+2019-09-01,2019,9,Crude oil,Dubai,$/bbl,60.84,World Bank Pink Sheet
+2019-10-01,2019,10,Crude oil,Dubai,$/bbl,58.47,World Bank Pink Sheet
+2019-11-01,2019,11,Crude oil,Dubai,$/bbl,61.41,World Bank Pink Sheet
+2019-12-01,2019,12,Crude oil,Dubai,$/bbl,64.41,World Bank Pink Sheet
+2020-01-01,2020,1,Crude oil,Dubai,$/bbl,63.76,World Bank Pink Sheet
+2020-02-01,2020,2,Crude oil,Dubai,$/bbl,54.51,World Bank Pink Sheet
+2020-03-01,2020,3,Crude oil,Dubai,$/bbl,33.75,World Bank Pink Sheet
+2020-04-01,2020,4,Crude oil,Dubai,$/bbl,23.27,World Bank Pink Sheet
+2020-05-01,2020,5,Crude oil,Dubai,$/bbl,31.56,World Bank Pink Sheet
+2020-06-01,2020,6,Crude oil,Dubai,$/bbl,40.14,World Bank Pink Sheet
+2020-07-01,2020,7,Crude oil,Dubai,$/bbl,42.64,World Bank Pink Sheet
+2020-08-01,2020,8,Crude oil,Dubai,$/bbl,43.71,World Bank Pink Sheet
+2020-09-01,2020,9,Crude oil,Dubai,$/bbl,41.1,World Bank Pink Sheet
+2020-10-01,2020,10,Crude oil,Dubai,$/bbl,39.7,World Bank Pink Sheet
+2020-11-01,2020,11,Crude oil,Dubai,$/bbl,42.58,World Bank Pink Sheet
+2020-12-01,2020,12,Crude oil,Dubai,$/bbl,49.26,World Bank Pink Sheet
+2021-01-01,2021,1,Crude oil,Dubai,$/bbl,54.16,World Bank Pink Sheet
+2021-02-01,2021,2,Crude oil,Dubai,$/bbl,60.37,World Bank Pink Sheet
+2021-03-01,2021,3,Crude oil,Dubai,$/bbl,63.95,World Bank Pink Sheet
+2021-04-01,2021,4,Crude oil,Dubai,$/bbl,62.37,World Bank Pink Sheet
+2021-05-01,2021,5,Crude oil,Dubai,$/bbl,65.98,World Bank Pink Sheet
+2021-06-01,2021,6,Crude oil,Dubai,$/bbl,70.96,World Bank Pink Sheet
+2021-07-01,2021,7,Crude oil,Dubai,$/bbl,73.0,World Bank Pink Sheet
+2021-08-01,2021,8,Crude oil,Dubai,$/bbl,68.85,World Bank Pink Sheet
+2021-09-01,2021,9,Crude oil,Dubai,$/bbl,72.24,World Bank Pink Sheet
+2021-10-01,2021,10,Crude oil,Dubai,$/bbl,81.22,World Bank Pink Sheet
+2021-11-01,2021,11,Crude oil,Dubai,$/bbl,79.8,World Bank Pink Sheet
+2021-12-01,2021,12,Crude oil,Dubai,$/bbl,72.76,World Bank Pink Sheet
+2022-01-01,2022,1,Crude oil,Dubai,$/bbl,83.11,World Bank Pink Sheet
+2022-02-01,2022,2,Crude oil,Dubai,$/bbl,93.13,World Bank Pink Sheet
+2022-03-01,2022,3,Crude oil,Dubai,$/bbl,113.11,World Bank Pink Sheet
+2022-04-01,2022,4,Crude oil,Dubai,$/bbl,102.68,World Bank Pink Sheet
+2022-05-01,2022,5,Crude oil,Dubai,$/bbl,108.32,World Bank Pink Sheet
+2022-06-01,2022,6,Crude oil,Dubai,$/bbl,115.73,World Bank Pink Sheet
+2022-07-01,2022,7,Crude oil,Dubai,$/bbl,106.48,World Bank Pink Sheet
+2022-08-01,2022,8,Crude oil,Dubai,$/bbl,97.75,World Bank Pink Sheet
+2022-09-01,2022,9,Crude oil,Dubai,$/bbl,90.63,World Bank Pink Sheet
+2022-10-01,2022,10,Crude oil,Dubai,$/bbl,90.59,World Bank Pink Sheet
+2022-11-01,2022,11,Crude oil,Dubai,$/bbl,86.28,World Bank Pink Sheet
+2022-12-01,2022,12,Crude oil,Dubai,$/bbl,76.78,World Bank Pink Sheet
+2023-01-01,2023,1,Crude oil,Dubai,$/bbl,80.03,World Bank Pink Sheet
+2023-02-01,2023,2,Crude oil,Dubai,$/bbl,81.21,World Bank Pink Sheet
+2023-03-01,2023,3,Crude oil,Dubai,$/bbl,77.52,World Bank Pink Sheet
+2023-04-01,2023,4,Crude oil,Dubai,$/bbl,83.83,World Bank Pink Sheet
+2023-05-01,2023,5,Crude oil,Dubai,$/bbl,75.08,World Bank Pink Sheet
+2023-06-01,2023,6,Crude oil,Dubai,$/bbl,74.67,World Bank Pink Sheet
+2023-07-01,2023,7,Crude oil,Dubai,$/bbl,80.46,World Bank Pink Sheet
+2023-08-01,2023,8,Crude oil,Dubai,$/bbl,86.61,World Bank Pink Sheet
+2023-09-01,2023,9,Crude oil,Dubai,$/bbl,93.08,World Bank Pink Sheet
+2023-10-01,2023,10,Crude oil,Dubai,$/bbl,90.62,World Bank Pink Sheet
+2023-11-01,2023,11,Crude oil,Dubai,$/bbl,83.45,World Bank Pink Sheet
+2023-12-01,2023,12,Crude oil,Dubai,$/bbl,77.22,World Bank Pink Sheet
+2024-01-01,2024,1,Crude oil,Dubai,$/bbl,78.86,World Bank Pink Sheet
+2024-02-01,2024,2,Crude oil,Dubai,$/bbl,81.18,World Bank Pink Sheet
+2024-03-01,2024,3,Crude oil,Dubai,$/bbl,84.7,World Bank Pink Sheet
+2024-04-01,2024,4,Crude oil,Dubai,$/bbl,89.39,World Bank Pink Sheet
+2024-05-01,2024,5,Crude oil,Dubai,$/bbl,83.53,World Bank Pink Sheet
+2024-06-01,2024,6,Crude oil,Dubai,$/bbl,82.17,World Bank Pink Sheet
+2024-07-01,2024,7,Crude oil,Dubai,$/bbl,83.94,World Bank Pink Sheet
+2024-08-01,2024,8,Crude oil,Dubai,$/bbl,77.95,World Bank Pink Sheet
+2024-09-01,2024,9,Crude oil,Dubai,$/bbl,73.43,World Bank Pink Sheet
+2024-10-01,2024,10,Crude oil,Dubai,$/bbl,74.65,World Bank Pink Sheet
+2024-11-01,2024,11,Crude oil,Dubai,$/bbl,72.79,World Bank Pink Sheet
+2024-12-01,2024,12,Crude oil,Dubai,$/bbl,73.31,World Bank Pink Sheet
+2025-01-01,2025,1,Crude oil,Dubai,$/bbl,80.14,World Bank Pink Sheet
+2025-02-01,2025,2,Crude oil,Dubai,$/bbl,74.97,World Bank Pink Sheet
+2025-03-01,2025,3,Crude oil,Dubai,$/bbl,71.71,World Bank Pink Sheet
+2025-04-01,2025,4,Crude oil,Dubai,$/bbl,66.89,World Bank Pink Sheet
+2025-05-01,2025,5,Crude oil,Dubai,$/bbl,63.01,World Bank Pink Sheet
+2025-06-01,2025,6,Crude oil,Dubai,$/bbl,68.5,World Bank Pink Sheet
+2025-07-01,2025,7,Crude oil,Dubai,$/bbl,69.23,World Bank Pink Sheet
+2025-08-01,2025,8,Crude oil,Dubai,$/bbl,67.87,World Bank Pink Sheet
+2025-09-01,2025,9,Crude oil,Dubai,$/bbl,67.75,World Bank Pink Sheet
+2025-10-01,2025,10,Crude oil,Dubai,$/bbl,64.3,World Bank Pink Sheet
+2025-11-01,2025,11,Crude oil,Dubai,$/bbl,63.83,World Bank Pink Sheet
+2025-12-01,2025,12,Crude oil,Dubai,$/bbl,61.98,World Bank Pink Sheet
+2026-01-01,2026,1,Crude oil,Dubai,$/bbl,63.91,World Bank Pink Sheet
+2012-06-01,2012,6,Crude oil,WTI,$/bbl,82.35952380952,World Bank Pink Sheet
+2012-07-01,2012,7,Crude oil,WTI,$/bbl,87.90142857143,World Bank Pink Sheet
+2012-08-01,2012,8,Crude oil,WTI,$/bbl,94.11043478261,World Bank Pink Sheet
+2012-09-01,2012,9,Crude oil,WTI,$/bbl,94.50789473684,World Bank Pink Sheet
+2012-10-01,2012,10,Crude oil,WTI,$/bbl,89.51739130435,World Bank Pink Sheet
+2012-11-01,2012,11,Crude oil,WTI,$/bbl,86.6780952381,World Bank Pink Sheet
+2012-12-01,2012,12,Crude oil,WTI,$/bbl,88.2155,World Bank Pink Sheet
+2013-01-01,2013,1,Crude oil,WTI,$/bbl,94.74428571429,World Bank Pink Sheet
+2013-02-01,2013,2,Crude oil,WTI,$/bbl,95.29947368421,World Bank Pink Sheet
+2013-03-01,2013,3,Crude oil,WTI,$/bbl,92.9125,World Bank Pink Sheet
+2013-04-01,2013,4,Crude oil,WTI,$/bbl,92.01909090909,World Bank Pink Sheet
+2013-05-01,2013,5,Crude oil,WTI,$/bbl,94.75818181818,World Bank Pink Sheet
+2013-06-01,2013,6,Crude oil,WTI,$/bbl,95.7895,World Bank Pink Sheet
+2013-07-01,2013,7,Crude oil,WTI,$/bbl,104.69545454546,World Bank Pink Sheet
+2013-08-01,2013,8,Crude oil,WTI,$/bbl,106.54636363636,World Bank Pink Sheet
+2013-09-01,2013,9,Crude oil,WTI,$/bbl,106.247,World Bank Pink Sheet
+2013-10-01,2013,10,Crude oil,WTI,$/bbl,100.50043478261,World Bank Pink Sheet
+2013-11-01,2013,11,Crude oil,WTI,$/bbl,93.94947368421,World Bank Pink Sheet
+2013-12-01,2013,12,Crude oil,WTI,$/bbl,97.85142857143,World Bank Pink Sheet
+2014-01-01,2014,1,Crude oil,WTI,$/bbl,94.86,World Bank Pink Sheet
+2014-02-01,2014,2,Crude oil,WTI,$/bbl,100.73,World Bank Pink Sheet
+2014-03-01,2014,3,Crude oil,WTI,$/bbl,100.57,World Bank Pink Sheet
+2014-04-01,2014,4,Crude oil,WTI,$/bbl,102.08,World Bank Pink Sheet
+2014-05-01,2014,5,Crude oil,WTI,$/bbl,101.86,World Bank Pink Sheet
+2014-06-01,2014,6,Crude oil,WTI,$/bbl,105.24,World Bank Pink Sheet
+2014-07-01,2014,7,Crude oil,WTI,$/bbl,102.94,World Bank Pink Sheet
+2014-08-01,2014,8,Crude oil,WTI,$/bbl,96.38,World Bank Pink Sheet
+2014-09-01,2014,9,Crude oil,WTI,$/bbl,93.22,World Bank Pink Sheet
+2014-10-01,2014,10,Crude oil,WTI,$/bbl,84.4,World Bank Pink Sheet
+2014-11-01,2014,11,Crude oil,WTI,$/bbl,75.81,World Bank Pink Sheet
+2014-12-01,2014,12,Crude oil,WTI,$/bbl,59.26,World Bank Pink Sheet
+2015-01-01,2015,1,Crude oil,WTI,$/bbl,47.27,World Bank Pink Sheet
+2015-02-01,2015,2,Crude oil,WTI,$/bbl,50.61,World Bank Pink Sheet
+2015-03-01,2015,3,Crude oil,WTI,$/bbl,47.78,World Bank Pink Sheet
+2015-04-01,2015,4,Crude oil,WTI,$/bbl,54.44,World Bank Pink Sheet
+2015-05-01,2015,5,Crude oil,WTI,$/bbl,59.27,World Bank Pink Sheet
+2015-06-01,2015,6,Crude oil,WTI,$/bbl,59.8,World Bank Pink Sheet
+2015-07-01,2015,7,Crude oil,WTI,$/bbl,50.9,World Bank Pink Sheet
+2015-08-01,2015,8,Crude oil,WTI,$/bbl,42.86,World Bank Pink Sheet
+2015-09-01,2015,9,Crude oil,WTI,$/bbl,45.45,World Bank Pink Sheet
+2015-10-01,2015,10,Crude oil,WTI,$/bbl,46.2,World Bank Pink Sheet
+2015-11-01,2015,11,Crude oil,WTI,$/bbl,42.7,World Bank Pink Sheet
+2015-12-01,2015,12,Crude oil,WTI,$/bbl,37.23,World Bank Pink Sheet
+2016-01-01,2016,1,Crude oil,WTI,$/bbl,31.54,World Bank Pink Sheet
+2016-02-01,2016,2,Crude oil,WTI,$/bbl,30.39,World Bank Pink Sheet
+2016-03-01,2016,3,Crude oil,WTI,$/bbl,37.77,World Bank Pink Sheet
+2016-04-01,2016,4,Crude oil,WTI,$/bbl,40.96,World Bank Pink Sheet
+2016-05-01,2016,5,Crude oil,WTI,$/bbl,46.73,World Bank Pink Sheet
+2016-06-01,2016,6,Crude oil,WTI,$/bbl,48.75,World Bank Pink Sheet
+2016-07-01,2016,7,Crude oil,WTI,$/bbl,44.69,World Bank Pink Sheet
+2016-08-01,2016,8,Crude oil,WTI,$/bbl,44.75,World Bank Pink Sheet
+2016-09-01,2016,9,Crude oil,WTI,$/bbl,45.2,World Bank Pink Sheet
+2016-10-01,2016,10,Crude oil,WTI,$/bbl,49.89,World Bank Pink Sheet
+2016-11-01,2016,11,Crude oil,WTI,$/bbl,45.57,World Bank Pink Sheet
+2016-12-01,2016,12,Crude oil,WTI,$/bbl,52.01,World Bank Pink Sheet
+2017-01-01,2017,1,Crude oil,WTI,$/bbl,52.51,World Bank Pink Sheet
+2017-02-01,2017,2,Crude oil,WTI,$/bbl,53.4,World Bank Pink Sheet
+2017-03-01,2017,3,Crude oil,WTI,$/bbl,49.58,World Bank Pink Sheet
+2017-04-01,2017,4,Crude oil,WTI,$/bbl,51.06,World Bank Pink Sheet
+2017-05-01,2017,5,Crude oil,WTI,$/bbl,48.5,World Bank Pink Sheet
+2017-06-01,2017,6,Crude oil,WTI,$/bbl,45.17,World Bank Pink Sheet
+2017-07-01,2017,7,Crude oil,WTI,$/bbl,46.65,World Bank Pink Sheet
+2017-08-01,2017,8,Crude oil,WTI,$/bbl,48.03,World Bank Pink Sheet
+2017-09-01,2017,9,Crude oil,WTI,$/bbl,49.83,World Bank Pink Sheet
+2017-10-01,2017,10,Crude oil,WTI,$/bbl,51.56,World Bank Pink Sheet
+2017-11-01,2017,11,Crude oil,WTI,$/bbl,56.65,World Bank Pink Sheet
+2017-12-01,2017,12,Crude oil,WTI,$/bbl,57.94,World Bank Pink Sheet
+2018-01-01,2018,1,Crude oil,WTI,$/bbl,63.67,World Bank Pink Sheet
+2018-02-01,2018,2,Crude oil,WTI,$/bbl,62.17,World Bank Pink Sheet
+2018-03-01,2018,3,Crude oil,WTI,$/bbl,62.76,World Bank Pink Sheet
+2018-04-01,2018,4,Crude oil,WTI,$/bbl,66.32,World Bank Pink Sheet
+2018-05-01,2018,5,Crude oil,WTI,$/bbl,69.98,World Bank Pink Sheet
+2018-06-01,2018,6,Crude oil,WTI,$/bbl,67.52,World Bank Pink Sheet
+2018-07-01,2018,7,Crude oil,WTI,$/bbl,70.84,World Bank Pink Sheet
+2018-08-01,2018,8,Crude oil,WTI,$/bbl,67.99,World Bank Pink Sheet
+2018-09-01,2018,9,Crude oil,WTI,$/bbl,70.21,World Bank Pink Sheet
+2018-10-01,2018,10,Crude oil,WTI,$/bbl,70.75,World Bank Pink Sheet
+2018-11-01,2018,11,Crude oil,WTI,$/bbl,56.67,World Bank Pink Sheet
+2018-12-01,2018,12,Crude oil,WTI,$/bbl,48.95,World Bank Pink Sheet
+2019-01-01,2019,1,Crude oil,WTI,$/bbl,51.52,World Bank Pink Sheet
+2019-02-01,2019,2,Crude oil,WTI,$/bbl,54.95,World Bank Pink Sheet
+2019-03-01,2019,3,Crude oil,WTI,$/bbl,58.15,World Bank Pink Sheet
+2019-04-01,2019,4,Crude oil,WTI,$/bbl,63.87,World Bank Pink Sheet
+2019-05-01,2019,5,Crude oil,WTI,$/bbl,60.84,World Bank Pink Sheet
+2019-06-01,2019,6,Crude oil,WTI,$/bbl,54.68,World Bank Pink Sheet
+2019-07-01,2019,7,Crude oil,WTI,$/bbl,57.52,World Bank Pink Sheet
+2019-08-01,2019,8,Crude oil,WTI,$/bbl,54.84,World Bank Pink Sheet
+2019-09-01,2019,9,Crude oil,WTI,$/bbl,56.95,World Bank Pink Sheet
+2019-10-01,2019,10,Crude oil,WTI,$/bbl,53.98,World Bank Pink Sheet
+2019-11-01,2019,11,Crude oil,WTI,$/bbl,57.06,World Bank Pink Sheet
+2019-12-01,2019,12,Crude oil,WTI,$/bbl,59.8,World Bank Pink Sheet
+2020-01-01,2020,1,Crude oil,WTI,$/bbl,57.52,World Bank Pink Sheet
+2020-02-01,2020,2,Crude oil,WTI,$/bbl,50.53,World Bank Pink Sheet
+2020-03-01,2020,3,Crude oil,WTI,$/bbl,29.88,World Bank Pink Sheet
+2020-04-01,2020,4,Crude oil,WTI,$/bbl,16.52,World Bank Pink Sheet
+2020-05-01,2020,5,Crude oil,WTI,$/bbl,28.56,World Bank Pink Sheet
+2020-06-01,2020,6,Crude oil,WTI,$/bbl,38.3,World Bank Pink Sheet
+2020-07-01,2020,7,Crude oil,WTI,$/bbl,40.75,World Bank Pink Sheet
+2020-08-01,2020,8,Crude oil,WTI,$/bbl,42.36,World Bank Pink Sheet
+2020-09-01,2020,9,Crude oil,WTI,$/bbl,39.6,World Bank Pink Sheet
+2020-10-01,2020,10,Crude oil,WTI,$/bbl,39.53,World Bank Pink Sheet
+2020-11-01,2020,11,Crude oil,WTI,$/bbl,41.1,World Bank Pink Sheet
+2020-12-01,2020,12,Crude oil,WTI,$/bbl,47.05,World Bank Pink Sheet
+2021-01-01,2021,1,Crude oil,WTI,$/bbl,52.1,World Bank Pink Sheet
+2021-02-01,2021,2,Crude oil,WTI,$/bbl,59.06,World Bank Pink Sheet
+2021-03-01,2021,3,Crude oil,WTI,$/bbl,62.35,World Bank Pink Sheet
+2021-04-01,2021,4,Crude oil,WTI,$/bbl,61.71,World Bank Pink Sheet
+2021-05-01,2021,5,Crude oil,WTI,$/bbl,65.18,World Bank Pink Sheet
+2021-06-01,2021,6,Crude oil,WTI,$/bbl,71.38,World Bank Pink Sheet
+2021-07-01,2021,7,Crude oil,WTI,$/bbl,72.46,World Bank Pink Sheet
+2021-08-01,2021,8,Crude oil,WTI,$/bbl,67.73,World Bank Pink Sheet
+2021-09-01,2021,9,Crude oil,WTI,$/bbl,71.56,World Bank Pink Sheet
+2021-10-01,2021,10,Crude oil,WTI,$/bbl,81.32,World Bank Pink Sheet
+2021-11-01,2021,11,Crude oil,WTI,$/bbl,79.18,World Bank Pink Sheet
+2021-12-01,2021,12,Crude oil,WTI,$/bbl,71.53,World Bank Pink Sheet
+2022-01-01,2022,1,Crude oil,WTI,$/bbl,83.12,World Bank Pink Sheet
+2022-02-01,2022,2,Crude oil,WTI,$/bbl,91.74,World Bank Pink Sheet
+2022-03-01,2022,3,Crude oil,WTI,$/bbl,108.49,World Bank Pink Sheet
+2022-04-01,2022,4,Crude oil,WTI,$/bbl,101.78,World Bank Pink Sheet
+2022-05-01,2022,5,Crude oil,WTI,$/bbl,109.6,World Bank Pink Sheet
+2022-06-01,2022,6,Crude oil,WTI,$/bbl,114.59,World Bank Pink Sheet
+2022-07-01,2022,7,Crude oil,WTI,$/bbl,99.85,World Bank Pink Sheet
+2022-08-01,2022,8,Crude oil,WTI,$/bbl,91.57,World Bank Pink Sheet
+2022-09-01,2022,9,Crude oil,WTI,$/bbl,83.87,World Bank Pink Sheet
+2022-10-01,2022,10,Crude oil,WTI,$/bbl,87.26,World Bank Pink Sheet
+2022-11-01,2022,11,Crude oil,WTI,$/bbl,84.78,World Bank Pink Sheet
+2022-12-01,2022,12,Crude oil,WTI,$/bbl,76.52,World Bank Pink Sheet
+2023-01-01,2023,1,Crude oil,WTI,$/bbl,78.11,World Bank Pink Sheet
+2023-02-01,2023,2,Crude oil,WTI,$/bbl,76.84,World Bank Pink Sheet
+2023-03-01,2023,3,Crude oil,WTI,$/bbl,73.37,World Bank Pink Sheet
+2023-04-01,2023,4,Crude oil,WTI,$/bbl,79.44,World Bank Pink Sheet
+2023-05-01,2023,5,Crude oil,WTI,$/bbl,71.59,World Bank Pink Sheet
+2023-06-01,2023,6,Crude oil,WTI,$/bbl,70.23,World Bank Pink Sheet
+2023-07-01,2023,7,Crude oil,WTI,$/bbl,76.39,World Bank Pink Sheet
+2023-08-01,2023,8,Crude oil,WTI,$/bbl,81.4,World Bank Pink Sheet
+2023-09-01,2023,9,Crude oil,WTI,$/bbl,89.58,World Bank Pink Sheet
+2023-10-01,2023,10,Crude oil,WTI,$/bbl,85.57,World Bank Pink Sheet
+2023-11-01,2023,11,Crude oil,WTI,$/bbl,77.43,World Bank Pink Sheet
+2023-12-01,2023,12,Crude oil,WTI,$/bbl,72.08,World Bank Pink Sheet
+2024-01-01,2024,1,Crude oil,WTI,$/bbl,73.93,World Bank Pink Sheet
+2024-02-01,2024,2,Crude oil,WTI,$/bbl,76.7,World Bank Pink Sheet
+2024-03-01,2024,3,Crude oil,WTI,$/bbl,80.49,World Bank Pink Sheet
+2024-04-01,2024,4,Crude oil,WTI,$/bbl,84.59,World Bank Pink Sheet
+2024-05-01,2024,5,Crude oil,WTI,$/bbl,78.81,World Bank Pink Sheet
+2024-06-01,2024,6,Crude oil,WTI,$/bbl,78.89,World Bank Pink Sheet
+2024-07-01,2024,7,Crude oil,WTI,$/bbl,80.54,World Bank Pink Sheet
+2024-08-01,2024,8,Crude oil,WTI,$/bbl,75.55,World Bank Pink Sheet
+2024-09-01,2024,9,Crude oil,WTI,$/bbl,69.55,World Bank Pink Sheet
+2024-10-01,2024,10,Crude oil,WTI,$/bbl,71.6,World Bank Pink Sheet
+2024-11-01,2024,11,Crude oil,WTI,$/bbl,69.69,World Bank Pink Sheet
+2024-12-01,2024,12,Crude oil,WTI,$/bbl,69.79,World Bank Pink Sheet
+2025-01-01,2025,1,Crude oil,WTI,$/bbl,75.14,World Bank Pink Sheet
+2025-02-01,2025,2,Crude oil,WTI,$/bbl,71.33,World Bank Pink Sheet
+2025-03-01,2025,3,Crude oil,WTI,$/bbl,67.82,World Bank Pink Sheet
+2025-04-01,2025,4,Crude oil,WTI,$/bbl,63.08,World Bank Pink Sheet
+2025-05-01,2025,5,Crude oil,WTI,$/bbl,61.03,World Bank Pink Sheet
+2025-06-01,2025,6,Crude oil,WTI,$/bbl,67.49,World Bank Pink Sheet
+2025-07-01,2025,7,Crude oil,WTI,$/bbl,67.39,World Bank Pink Sheet
+2025-08-01,2025,8,Crude oil,WTI,$/bbl,64.08,World Bank Pink Sheet
+2025-09-01,2025,9,Crude oil,WTI,$/bbl,63.67,World Bank Pink Sheet
+2025-10-01,2025,10,Crude oil,WTI,$/bbl,60.17,World Bank Pink Sheet
+2025-11-01,2025,11,Crude oil,WTI,$/bbl,59.57,World Bank Pink Sheet
+2025-12-01,2025,12,Crude oil,WTI,$/bbl,57.94,World Bank Pink Sheet
+2026-01-01,2026,1,Crude oil,WTI,$/bbl,60.28,World Bank Pink Sheet
+2012-06-01,2012,6,Natural gas,US,$/mmbtu,2.4552,World Bank Pink Sheet
+2012-07-01,2012,7,Natural gas,US,$/mmbtu,2.9455,World Bank Pink Sheet
+2012-08-01,2012,8,Natural gas,US,$/mmbtu,2.8383,World Bank Pink Sheet
+2012-09-01,2012,9,Natural gas,US,$/mmbtu,2.8415,World Bank Pink Sheet
+2012-10-01,2012,10,Natural gas,US,$/mmbtu,3.3174,World Bank Pink Sheet
+2012-11-01,2012,11,Natural gas,US,$/mmbtu,3.538,World Bank Pink Sheet
+2012-12-01,2012,12,Natural gas,US,$/mmbtu,3.3395,World Bank Pink Sheet
+2013-01-01,2013,1,Natural gas,US,$/mmbtu,3.328,World Bank Pink Sheet
+2013-02-01,2013,2,Natural gas,US,$/mmbtu,3.3292,World Bank Pink Sheet
+2013-03-01,2013,3,Natural gas,US,$/mmbtu,3.8069,World Bank Pink Sheet
+2013-04-01,2013,4,Natural gas,US,$/mmbtu,4.1669,World Bank Pink Sheet
+2013-05-01,2013,5,Natural gas,US,$/mmbtu,4.0403,World Bank Pink Sheet
+2013-06-01,2013,6,Natural gas,US,$/mmbtu,3.8254,World Bank Pink Sheet
+2013-07-01,2013,7,Natural gas,US,$/mmbtu,3.6227,World Bank Pink Sheet
+2013-08-01,2013,8,Natural gas,US,$/mmbtu,3.4251,World Bank Pink Sheet
+2013-09-01,2013,9,Natural gas,US,$/mmbtu,3.6154,World Bank Pink Sheet
+2013-10-01,2013,10,Natural gas,US,$/mmbtu,3.6739,World Bank Pink Sheet
+2013-11-01,2013,11,Natural gas,US,$/mmbtu,3.6174,World Bank Pink Sheet
+2013-12-01,2013,12,Natural gas,US,$/mmbtu,4.2366,World Bank Pink Sheet
+2014-01-01,2014,1,Natural gas,US,$/mmbtu,4.7008,World Bank Pink Sheet
+2014-02-01,2014,2,Natural gas,US,$/mmbtu,5.9733,World Bank Pink Sheet
+2014-03-01,2014,3,Natural gas,US,$/mmbtu,4.8783,World Bank Pink Sheet
+2014-04-01,2014,4,Natural gas,US,$/mmbtu,4.6339,World Bank Pink Sheet
+2014-05-01,2014,5,Natural gas,US,$/mmbtu,4.5625,World Bank Pink Sheet
+2014-06-01,2014,6,Natural gas,US,$/mmbtu,4.5692,World Bank Pink Sheet
+2014-07-01,2014,7,Natural gas,US,$/mmbtu,4.0099,World Bank Pink Sheet
+2014-08-01,2014,8,Natural gas,US,$/mmbtu,3.884,World Bank Pink Sheet
+2014-09-01,2014,9,Natural gas,US,$/mmbtu,3.917,World Bank Pink Sheet
+2014-10-01,2014,10,Natural gas,US,$/mmbtu,3.7719,World Bank Pink Sheet
+2014-11-01,2014,11,Natural gas,US,$/mmbtu,4.1003,World Bank Pink Sheet
+2014-12-01,2014,12,Natural gas,US,$/mmbtu,3.4328,World Bank Pink Sheet
+2015-01-01,2015,1,Natural gas,US,$/mmbtu,2.9743,World Bank Pink Sheet
+2015-02-01,2015,2,Natural gas,US,$/mmbtu,2.8478,World Bank Pink Sheet
+2015-03-01,2015,3,Natural gas,US,$/mmbtu,2.8006,World Bank Pink Sheet
+2015-04-01,2015,4,Natural gas,US,$/mmbtu,2.5797,World Bank Pink Sheet
+2015-05-01,2015,5,Natural gas,US,$/mmbtu,2.8383,World Bank Pink Sheet
+2015-06-01,2015,6,Natural gas,US,$/mmbtu,2.7692,World Bank Pink Sheet
+2015-07-01,2015,7,Natural gas,US,$/mmbtu,2.83,World Bank Pink Sheet
+2015-08-01,2015,8,Natural gas,US,$/mmbtu,2.763,World Bank Pink Sheet
+2015-09-01,2015,9,Natural gas,US,$/mmbtu,2.6461,World Bank Pink Sheet
+2015-10-01,2015,10,Natural gas,US,$/mmbtu,2.3152,World Bank Pink Sheet
+2015-11-01,2015,11,Natural gas,US,$/mmbtu,2.0775,World Bank Pink Sheet
+2015-12-01,2015,12,Natural gas,US,$/mmbtu,1.9228,World Bank Pink Sheet
+2016-01-01,2016,1,Natural gas,US,$/mmbtu,2.2744,World Bank Pink Sheet
+2016-02-01,2016,2,Natural gas,US,$/mmbtu,1.9572,World Bank Pink Sheet
+2016-03-01,2016,3,Natural gas,US,$/mmbtu,1.7017,World Bank Pink Sheet
+2016-04-01,2016,4,Natural gas,US,$/mmbtu,1.9047,World Bank Pink Sheet
+2016-05-01,2016,5,Natural gas,US,$/mmbtu,1.922,World Bank Pink Sheet
+2016-06-01,2016,6,Natural gas,US,$/mmbtu,2.5666,World Bank Pink Sheet
+2016-07-01,2016,7,Natural gas,US,$/mmbtu,2.7879,World Bank Pink Sheet
+2016-08-01,2016,8,Natural gas,US,$/mmbtu,2.7913,World Bank Pink Sheet
+2016-09-01,2016,9,Natural gas,US,$/mmbtu,2.9689,World Bank Pink Sheet
+2016-10-01,2016,10,Natural gas,US,$/mmbtu,2.9492,World Bank Pink Sheet
+2016-11-01,2016,11,Natural gas,US,$/mmbtu,2.5009,World Bank Pink Sheet
+2016-12-01,2016,12,Natural gas,US,$/mmbtu,3.5818,World Bank Pink Sheet
+2017-01-01,2017,1,Natural gas,US,$/mmbtu,3.2608,World Bank Pink Sheet
+2017-02-01,2017,2,Natural gas,US,$/mmbtu,2.8233,World Bank Pink Sheet
+2017-03-01,2017,3,Natural gas,US,$/mmbtu,2.8875,World Bank Pink Sheet
+2017-04-01,2017,4,Natural gas,US,$/mmbtu,3.082,World Bank Pink Sheet
+2017-05-01,2017,5,Natural gas,US,$/mmbtu,3.1248,World Bank Pink Sheet
+2017-06-01,2017,6,Natural gas,US,$/mmbtu,2.941,World Bank Pink Sheet
+2017-07-01,2017,7,Natural gas,US,$/mmbtu,2.9614,World Bank Pink Sheet
+2017-08-01,2017,8,Natural gas,US,$/mmbtu,2.8757,World Bank Pink Sheet
+2017-09-01,2017,9,Natural gas,US,$/mmbtu,2.963,World Bank Pink Sheet
+2017-10-01,2017,10,Natural gas,US,$/mmbtu,2.8638,World Bank Pink Sheet
+2017-11-01,2017,11,Natural gas,US,$/mmbtu,2.9913,World Bank Pink Sheet
+2017-12-01,2017,12,Natural gas,US,$/mmbtu,2.7583,World Bank Pink Sheet
+2018-01-01,2018,1,Natural gas,US,$/mmbtu,3.8556,World Bank Pink Sheet
+2018-02-01,2018,2,Natural gas,US,$/mmbtu,2.6708,World Bank Pink Sheet
+2018-03-01,2018,3,Natural gas,US,$/mmbtu,2.6989,World Bank Pink Sheet
+2018-04-01,2018,4,Natural gas,US,$/mmbtu,2.7791,World Bank Pink Sheet
+2018-05-01,2018,5,Natural gas,US,$/mmbtu,2.7972,World Bank Pink Sheet
+2018-06-01,2018,6,Natural gas,US,$/mmbtu,2.9523,World Bank Pink Sheet
+2018-07-01,2018,7,Natural gas,US,$/mmbtu,2.8251,World Bank Pink Sheet
+2018-08-01,2018,8,Natural gas,US,$/mmbtu,2.9572,World Bank Pink Sheet
+2018-09-01,2018,9,Natural gas,US,$/mmbtu,2.9847,World Bank Pink Sheet
+2018-10-01,2018,10,Natural gas,US,$/mmbtu,3.284,World Bank Pink Sheet
+2018-11-01,2018,11,Natural gas,US,$/mmbtu,4.1293,World Bank Pink Sheet
+2018-12-01,2018,12,Natural gas,US,$/mmbtu,3.9825,World Bank Pink Sheet
+2019-01-01,2019,1,Natural gas,US,$/mmbtu,3.0795,World Bank Pink Sheet
+2019-02-01,2019,2,Natural gas,US,$/mmbtu,2.7171,World Bank Pink Sheet
+2019-03-01,2019,3,Natural gas,US,$/mmbtu,2.935,World Bank Pink Sheet
+2019-04-01,2019,4,Natural gas,US,$/mmbtu,2.646,World Bank Pink Sheet
+2019-05-01,2019,5,Natural gas,US,$/mmbtu,2.6279,World Bank Pink Sheet
+2019-06-01,2019,6,Natural gas,US,$/mmbtu,2.3965,World Bank Pink Sheet
+2019-07-01,2019,7,Natural gas,US,$/mmbtu,2.36,World Bank Pink Sheet
+2019-08-01,2019,8,Natural gas,US,$/mmbtu,2.2243,World Bank Pink Sheet
+2019-09-01,2019,9,Natural gas,US,$/mmbtu,2.58,World Bank Pink Sheet
+2019-10-01,2019,10,Natural gas,US,$/mmbtu,2.3313,World Bank Pink Sheet
+2019-11-01,2019,11,Natural gas,US,$/mmbtu,2.6505,World Bank Pink Sheet
+2019-12-01,2019,12,Natural gas,US,$/mmbtu,2.2425,World Bank Pink Sheet
+2020-01-01,2020,1,Natural gas,US,$/mmbtu,2.0305,World Bank Pink Sheet
+2020-02-01,2020,2,Natural gas,US,$/mmbtu,1.9158,World Bank Pink Sheet
+2020-03-01,2020,3,Natural gas,US,$/mmbtu,1.7927,World Bank Pink Sheet
+2020-04-01,2020,4,Natural gas,US,$/mmbtu,1.7386,World Bank Pink Sheet
+2020-05-01,2020,5,Natural gas,US,$/mmbtu,1.7525,World Bank Pink Sheet
+2020-06-01,2020,6,Natural gas,US,$/mmbtu,1.6128,World Bank Pink Sheet
+2020-07-01,2020,7,Natural gas,US,$/mmbtu,1.7352,World Bank Pink Sheet
+2020-08-01,2020,8,Natural gas,US,$/mmbtu,2.3017,World Bank Pink Sheet
+2020-09-01,2020,9,Natural gas,US,$/mmbtu,1.9186,World Bank Pink Sheet
+2020-10-01,2020,10,Natural gas,US,$/mmbtu,2.2473,World Bank Pink Sheet
+2020-11-01,2020,11,Natural gas,US,$/mmbtu,2.5881,World Bank Pink Sheet
+2020-12-01,2020,12,Natural gas,US,$/mmbtu,2.5387,World Bank Pink Sheet
+2021-01-01,2021,1,Natural gas,US,$/mmbtu,2.6655,World Bank Pink Sheet
+2021-02-01,2021,2,Natural gas,US,$/mmbtu,5.0651,World Bank Pink Sheet
+2021-03-01,2021,3,Natural gas,US,$/mmbtu,2.5645,World Bank Pink Sheet
+2021-04-01,2021,4,Natural gas,US,$/mmbtu,2.61,World Bank Pink Sheet
+2021-05-01,2021,5,Natural gas,US,$/mmbtu,2.8884,World Bank Pink Sheet
+2021-06-01,2021,6,Natural gas,US,$/mmbtu,3.2318,World Bank Pink Sheet
+2021-07-01,2021,7,Natural gas,US,$/mmbtu,3.8036,World Bank Pink Sheet
+2021-08-01,2021,8,Natural gas,US,$/mmbtu,4.0486,World Bank Pink Sheet
+2021-09-01,2021,9,Natural gas,US,$/mmbtu,5.1111,World Bank Pink Sheet
+2021-10-01,2021,10,Natural gas,US,$/mmbtu,5.478,World Bank Pink Sheet
+2021-11-01,2021,11,Natural gas,US,$/mmbtu,5.0176,World Bank Pink Sheet
+2021-12-01,2021,12,Natural gas,US,$/mmbtu,3.7327,World Bank Pink Sheet
+2022-01-01,2022,1,Natural gas,US,$/mmbtu,4.3325,World Bank Pink Sheet
+2022-02-01,2022,2,Natural gas,US,$/mmbtu,4.6577,World Bank Pink Sheet
+2022-03-01,2022,3,Natural gas,US,$/mmbtu,4.8839,World Bank Pink Sheet
+2022-04-01,2022,4,Natural gas,US,$/mmbtu,6.5306,World Bank Pink Sheet
+2022-05-01,2022,5,Natural gas,US,$/mmbtu,8.1373,World Bank Pink Sheet
+2022-06-01,2022,6,Natural gas,US,$/mmbtu,7.674,World Bank Pink Sheet
+2022-07-01,2022,7,Natural gas,US,$/mmbtu,7.2561,World Bank Pink Sheet
+2022-08-01,2022,8,Natural gas,US,$/mmbtu,8.7854,World Bank Pink Sheet
+2022-09-01,2022,9,Natural gas,US,$/mmbtu,7.7629,World Bank Pink Sheet
+2022-10-01,2022,10,Natural gas,US,$/mmbtu,5.6195,World Bank Pink Sheet
+2022-11-01,2022,11,Natural gas,US,$/mmbtu,5.2769,World Bank Pink Sheet
+2022-12-01,2022,12,Natural gas,US,$/mmbtu,5.503,World Bank Pink Sheet
+2023-01-01,2023,1,Natural gas,US,$/mmbtu,3.2728,World Bank Pink Sheet
+2023-02-01,2023,2,Natural gas,US,$/mmbtu,2.3836,World Bank Pink Sheet
+2023-03-01,2023,3,Natural gas,US,$/mmbtu,2.3049,World Bank Pink Sheet
+2023-04-01,2023,4,Natural gas,US,$/mmbtu,2.1611,World Bank Pink Sheet
+2023-05-01,2023,5,Natural gas,US,$/mmbtu,2.1464,World Bank Pink Sheet
+2023-06-01,2023,6,Natural gas,US,$/mmbtu,2.1834,World Bank Pink Sheet
+2023-07-01,2023,7,Natural gas,US,$/mmbtu,2.554,World Bank Pink Sheet
+2023-08-01,2023,8,Natural gas,US,$/mmbtu,2.5845,World Bank Pink Sheet
+2023-09-01,2023,9,Natural gas,US,$/mmbtu,2.6395,World Bank Pink Sheet
+2023-10-01,2023,10,Natural gas,US,$/mmbtu,2.9886,World Bank Pink Sheet
+2023-11-01,2023,11,Natural gas,US,$/mmbtu,2.7084,World Bank Pink Sheet
+2023-12-01,2023,12,Natural gas,US,$/mmbtu,2.5265,World Bank Pink Sheet
+2024-01-01,2024,1,Natural gas,US,$/mmbtu,3.1806,World Bank Pink Sheet
+2024-02-01,2024,2,Natural gas,US,$/mmbtu,1.7211,World Bank Pink Sheet
+2024-03-01,2024,3,Natural gas,US,$/mmbtu,1.4999,World Bank Pink Sheet
+2024-04-01,2024,4,Natural gas,US,$/mmbtu,1.5967,World Bank Pink Sheet
+2024-05-01,2024,5,Natural gas,US,$/mmbtu,2.1314,World Bank Pink Sheet
+2024-06-01,2024,6,Natural gas,US,$/mmbtu,2.5123,World Bank Pink Sheet
+2024-07-01,2024,7,Natural gas,US,$/mmbtu,2.0751,World Bank Pink Sheet
+2024-08-01,2024,8,Natural gas,US,$/mmbtu,1.9903,World Bank Pink Sheet
+2024-09-01,2024,9,Natural gas,US,$/mmbtu,2.2508,World Bank Pink Sheet
+2024-10-01,2024,10,Natural gas,US,$/mmbtu,2.2077,World Bank Pink Sheet
+2024-11-01,2024,11,Natural gas,US,$/mmbtu,2.1045,World Bank Pink Sheet
+2024-12-01,2024,12,Natural gas,US,$/mmbtu,3.0229,World Bank Pink Sheet
+2025-01-01,2025,1,Natural gas,US,$/mmbtu,4.0991,World Bank Pink Sheet
+2025-02-01,2025,2,Natural gas,US,$/mmbtu,4.2226,World Bank Pink Sheet
+2025-03-01,2025,3,Natural gas,US,$/mmbtu,4.1281,World Bank Pink Sheet
+2025-04-01,2025,4,Natural gas,US,$/mmbtu,3.3998,World Bank Pink Sheet
+2025-05-01,2025,5,Natural gas,US,$/mmbtu,3.1152,World Bank Pink Sheet
+2025-06-01,2025,6,Natural gas,US,$/mmbtu,3.022,World Bank Pink Sheet
+2025-07-01,2025,7,Natural gas,US,$/mmbtu,3.1922,World Bank Pink Sheet
+2025-08-01,2025,8,Natural gas,US,$/mmbtu,2.9105,World Bank Pink Sheet
+2025-09-01,2025,9,Natural gas,US,$/mmbtu,2.9733,World Bank Pink Sheet
+2025-10-01,2025,10,Natural gas,US,$/mmbtu,3.1973,World Bank Pink Sheet
+2025-11-01,2025,11,Natural gas,US,$/mmbtu,3.7912,World Bank Pink Sheet
+2025-12-01,2025,12,Natural gas,US,$/mmbtu,4.2514,World Bank Pink Sheet
+2026-01-01,2026,1,Natural gas,US,$/mmbtu,7.5832,World Bank Pink Sheet
+2012-06-01,2012,6,Natural gas,Europe,$/mmbtu,11.49,World Bank Pink Sheet
+2012-07-01,2012,7,Natural gas,Europe,$/mmbtu,11.13,World Bank Pink Sheet
+2012-08-01,2012,8,Natural gas,Europe,$/mmbtu,11.18,World Bank Pink Sheet
+2012-09-01,2012,9,Natural gas,Europe,$/mmbtu,11.08,World Bank Pink Sheet
+2012-10-01,2012,10,Natural gas,Europe,$/mmbtu,11.58,World Bank Pink Sheet
+2012-11-01,2012,11,Natural gas,Europe,$/mmbtu,11.83,World Bank Pink Sheet
+2012-12-01,2012,12,Natural gas,Europe,$/mmbtu,11.79,World Bank Pink Sheet
+2013-01-01,2013,1,Natural gas,Europe,$/mmbtu,11.87,World Bank Pink Sheet
+2013-02-01,2013,2,Natural gas,Europe,$/mmbtu,11.77,World Bank Pink Sheet
+2013-03-01,2013,3,Natural gas,Europe,$/mmbtu,11.87,World Bank Pink Sheet
+2013-04-01,2013,4,Natural gas,Europe,$/mmbtu,12.88,World Bank Pink Sheet
+2013-05-01,2013,5,Natural gas,Europe,$/mmbtu,12.29,World Bank Pink Sheet
+2013-06-01,2013,6,Natural gas,Europe,$/mmbtu,11.92,World Bank Pink Sheet
+2013-07-01,2013,7,Natural gas,Europe,$/mmbtu,11.6,World Bank Pink Sheet
+2013-08-01,2013,8,Natural gas,Europe,$/mmbtu,11.64,World Bank Pink Sheet
+2013-09-01,2013,9,Natural gas,Europe,$/mmbtu,11.25,World Bank Pink Sheet
+2013-10-01,2013,10,Natural gas,Europe,$/mmbtu,11.37,World Bank Pink Sheet
+2013-11-01,2013,11,Natural gas,Europe,$/mmbtu,11.42,World Bank Pink Sheet
+2013-12-01,2013,12,Natural gas,Europe,$/mmbtu,11.55,World Bank Pink Sheet
+2014-01-01,2014,1,Natural gas,Europe,$/mmbtu,11.59,World Bank Pink Sheet
+2014-02-01,2014,2,Natural gas,Europe,$/mmbtu,11.3,World Bank Pink Sheet
+2014-03-01,2014,3,Natural gas,Europe,$/mmbtu,10.88,World Bank Pink Sheet
+2014-04-01,2014,4,Natural gas,Europe,$/mmbtu,10.73,World Bank Pink Sheet
+2014-05-01,2014,5,Natural gas,Europe,$/mmbtu,10.2,World Bank Pink Sheet
+2014-06-01,2014,6,Natural gas,Europe,$/mmbtu,9.77,World Bank Pink Sheet
+2014-07-01,2014,7,Natural gas,Europe,$/mmbtu,9.27,World Bank Pink Sheet
+2014-08-01,2014,8,Natural gas,Europe,$/mmbtu,9.14,World Bank Pink Sheet
+2014-09-01,2014,9,Natural gas,Europe,$/mmbtu,9.24,World Bank Pink Sheet
+2014-10-01,2014,10,Natural gas,Europe,$/mmbtu,9.77,World Bank Pink Sheet
+2014-11-01,2014,11,Natural gas,Europe,$/mmbtu,8.9,World Bank Pink Sheet
+2014-12-01,2014,12,Natural gas,Europe,$/mmbtu,9.83,World Bank Pink Sheet
+2015-01-01,2015,1,Natural gas,Europe,$/mmbtu,9.25,World Bank Pink Sheet
+2015-02-01,2015,2,Natural gas,Europe,$/mmbtu,8.27,World Bank Pink Sheet
+2015-03-01,2015,3,Natural gas,Europe,$/mmbtu,8.27,World Bank Pink Sheet
+2015-04-01,2015,4,Natural gas,Europe,$/mmbtu,6.77444566675,World Bank Pink Sheet
+2015-05-01,2015,5,Natural gas,Europe,$/mmbtu,6.68399731108,World Bank Pink Sheet
+2015-06-01,2015,6,Natural gas,Europe,$/mmbtu,6.66672592954,World Bank Pink Sheet
+2015-07-01,2015,7,Natural gas,Europe,$/mmbtu,6.69403713465,World Bank Pink Sheet
+2015-08-01,2015,8,Natural gas,Europe,$/mmbtu,6.34573758328,World Bank Pink Sheet
+2015-09-01,2015,9,Natural gas,Europe,$/mmbtu,6.27869866034,World Bank Pink Sheet
+2015-10-01,2015,10,Natural gas,Europe,$/mmbtu,6.0269578206,World Bank Pink Sheet
+2015-11-01,2015,11,Natural gas,Europe,$/mmbtu,5.50083385123,World Bank Pink Sheet
+2015-12-01,2015,12,Natural gas,Europe,$/mmbtu,5.09276298262,World Bank Pink Sheet
+2016-01-01,2016,1,Natural gas,Europe,$/mmbtu,4.39818627541,World Bank Pink Sheet
+2016-02-01,2016,2,Natural gas,Europe,$/mmbtu,3.96837858928,World Bank Pink Sheet
+2016-03-01,2016,3,Natural gas,Europe,$/mmbtu,3.9101802431,World Bank Pink Sheet
+2016-04-01,2016,4,Natural gas,Europe,$/mmbtu,3.97007508979,World Bank Pink Sheet
+2016-05-01,2016,5,Natural gas,Europe,$/mmbtu,4.32919186506,World Bank Pink Sheet
+2016-06-01,2016,6,Natural gas,Europe,$/mmbtu,4.75572046689,World Bank Pink Sheet
+2016-07-01,2016,7,Natural gas,Europe,$/mmbtu,4.67473769135,World Bank Pink Sheet
+2016-08-01,2016,8,Natural gas,Europe,$/mmbtu,4.0474899302,World Bank Pink Sheet
+2016-09-01,2016,9,Natural gas,Europe,$/mmbtu,4.25361416995,World Bank Pink Sheet
+2016-10-01,2016,10,Natural gas,Europe,$/mmbtu,5.33681888345,World Bank Pink Sheet
+2016-11-01,2016,11,Natural gas,Europe,$/mmbtu,5.69317950115,World Bank Pink Sheet
+2016-12-01,2016,12,Natural gas,Europe,$/mmbtu,5.4235014224,World Bank Pink Sheet
+2017-01-01,2017,1,Natural gas,Europe,$/mmbtu,6.1443492548,World Bank Pink Sheet
+2017-02-01,2017,2,Natural gas,Europe,$/mmbtu,6.0515836448,World Bank Pink Sheet
+2017-03-01,2017,3,Natural gas,Europe,$/mmbtu,5.00094507654,World Bank Pink Sheet
+2017-04-01,2017,4,Natural gas,Europe,$/mmbtu,5.0109139183,World Bank Pink Sheet
+2017-05-01,2017,5,Natural gas,Europe,$/mmbtu,5.05843597847,World Bank Pink Sheet
+2017-06-01,2017,6,Natural gas,Europe,$/mmbtu,4.88676678563,World Bank Pink Sheet
+2017-07-01,2017,7,Natural gas,Europe,$/mmbtu,5.00392083226,World Bank Pink Sheet
+2017-08-01,2017,8,Natural gas,Europe,$/mmbtu,5.47660118187,World Bank Pink Sheet
+2017-09-01,2017,9,Natural gas,Europe,$/mmbtu,5.96114997199,World Bank Pink Sheet
+2017-10-01,2017,10,Natural gas,Europe,$/mmbtu,6.17632034854,World Bank Pink Sheet
+2017-11-01,2017,11,Natural gas,Europe,$/mmbtu,6.69459903982,World Bank Pink Sheet
+2017-12-01,2017,12,Natural gas,Europe,$/mmbtu,7.13893361413,World Bank Pink Sheet
+2018-01-01,2018,1,Natural gas,Europe,$/mmbtu,6.66225501314,World Bank Pink Sheet
+2018-02-01,2018,2,Natural gas,Europe,$/mmbtu,6.7187497665,World Bank Pink Sheet
+2018-03-01,2018,3,Natural gas,Europe,$/mmbtu,6.69738764036,World Bank Pink Sheet
+2018-04-01,2018,4,Natural gas,Europe,$/mmbtu,6.92785820242,World Bank Pink Sheet
+2018-05-01,2018,5,Natural gas,Europe,$/mmbtu,7.48735405732,World Bank Pink Sheet
+2018-06-01,2018,6,Natural gas,Europe,$/mmbtu,7.44894284404,World Bank Pink Sheet
+2018-07-01,2018,7,Natural gas,Europe,$/mmbtu,7.59883923025,World Bank Pink Sheet
+2018-08-01,2018,8,Natural gas,Europe,$/mmbtu,8.08490993844,World Bank Pink Sheet
+2018-09-01,2018,9,Natural gas,Europe,$/mmbtu,9.52157703121,World Bank Pink Sheet
+2018-10-01,2018,10,Natural gas,Europe,$/mmbtu,8.79096072974,World Bank Pink Sheet
+2018-11-01,2018,11,Natural gas,Europe,$/mmbtu,8.26507901291,World Bank Pink Sheet
+2018-12-01,2018,12,Natural gas,Europe,$/mmbtu,7.97624238009,World Bank Pink Sheet
+2019-01-01,2019,1,Natural gas,Europe,$/mmbtu,7.26234323345,World Bank Pink Sheet
+2019-02-01,2019,2,Natural gas,Europe,$/mmbtu,6.0057971222,World Bank Pink Sheet
+2019-03-01,2019,3,Natural gas,Europe,$/mmbtu,5.17873567413,World Bank Pink Sheet
+2019-04-01,2019,4,Natural gas,Europe,$/mmbtu,4.92218081968,World Bank Pink Sheet
+2019-05-01,2019,5,Natural gas,Europe,$/mmbtu,4.34105529405,World Bank Pink Sheet
+2019-06-01,2019,6,Natural gas,Europe,$/mmbtu,3.58800651227,World Bank Pink Sheet
+2019-07-01,2019,7,Natural gas,Europe,$/mmbtu,3.62037140561,World Bank Pink Sheet
+2019-08-01,2019,8,Natural gas,Europe,$/mmbtu,3.67677516041,World Bank Pink Sheet
+2019-09-01,2019,9,Natural gas,Europe,$/mmbtu,4.20525568494,World Bank Pink Sheet
+2019-10-01,2019,10,Natural gas,Europe,$/mmbtu,5.05721785787,World Bank Pink Sheet
+2019-11-01,2019,11,Natural gas,Europe,$/mmbtu,5.15000421731,World Bank Pink Sheet
+2019-12-01,2019,12,Natural gas,Europe,$/mmbtu,4.62047221239,World Bank Pink Sheet
+2020-01-01,2020,1,Natural gas,Europe,$/mmbtu,3.63338434727,World Bank Pink Sheet
+2020-02-01,2020,2,Natural gas,Europe,$/mmbtu,2.90777364106,World Bank Pink Sheet
+2020-03-01,2020,3,Natural gas,Europe,$/mmbtu,2.71886838175,World Bank Pink Sheet
+2020-04-01,2020,4,Natural gas,Europe,$/mmbtu,2.12031866732,World Bank Pink Sheet
+2020-05-01,2020,5,Natural gas,Europe,$/mmbtu,1.57516497792,World Bank Pink Sheet
+2020-06-01,2020,6,Natural gas,Europe,$/mmbtu,1.75217111218,World Bank Pink Sheet
+2020-07-01,2020,7,Natural gas,Europe,$/mmbtu,1.80103549647,World Bank Pink Sheet
+2020-08-01,2020,8,Natural gas,Europe,$/mmbtu,2.86189667673,World Bank Pink Sheet
+2020-09-01,2020,9,Natural gas,Europe,$/mmbtu,3.95213946267,World Bank Pink Sheet
+2020-10-01,2020,10,Natural gas,Europe,$/mmbtu,4.88959040816,World Bank Pink Sheet
+2020-11-01,2020,11,Natural gas,Europe,$/mmbtu,4.83583900516,World Bank Pink Sheet
+2020-12-01,2020,12,Natural gas,Europe,$/mmbtu,5.85610629604,World Bank Pink Sheet
+2021-01-01,2021,1,Natural gas,Europe,$/mmbtu,7.2683017493,World Bank Pink Sheet
+2021-02-01,2021,2,Natural gas,Europe,$/mmbtu,6.15850716652,World Bank Pink Sheet
+2021-03-01,2021,3,Natural gas,Europe,$/mmbtu,6.12706957935,World Bank Pink Sheet
+2021-04-01,2021,4,Natural gas,Europe,$/mmbtu,7.14681628809,World Bank Pink Sheet
+2021-05-01,2021,5,Natural gas,Europe,$/mmbtu,8.90875692439,World Bank Pink Sheet
+2021-06-01,2021,6,Natural gas,Europe,$/mmbtu,10.30105100564,World Bank Pink Sheet
+2021-07-01,2021,7,Natural gas,Europe,$/mmbtu,12.50994243239,World Bank Pink Sheet
+2021-08-01,2021,8,Natural gas,Europe,$/mmbtu,15.42647593843,World Bank Pink Sheet
+2021-09-01,2021,9,Natural gas,Europe,$/mmbtu,22.84059607792,World Bank Pink Sheet
+2021-10-01,2021,10,Natural gas,Europe,$/mmbtu,31.05246636754,World Bank Pink Sheet
+2021-11-01,2021,11,Natural gas,Europe,$/mmbtu,27.62343200775,World Bank Pink Sheet
+2021-12-01,2021,12,Natural gas,Europe,$/mmbtu,38.02711984318,World Bank Pink Sheet
+2022-01-01,2022,1,Natural gas,Europe,$/mmbtu,28.26067331655,World Bank Pink Sheet
+2022-02-01,2022,2,Natural gas,Europe,$/mmbtu,27.2297159067,World Bank Pink Sheet
+2022-03-01,2022,3,Natural gas,Europe,$/mmbtu,42.39297079612,World Bank Pink Sheet
+2022-04-01,2022,4,Natural gas,Europe,$/mmbtu,32.20418722871,World Bank Pink Sheet
+2022-05-01,2022,5,Natural gas,Europe,$/mmbtu,29.17072267381,World Bank Pink Sheet
+2022-06-01,2022,6,Natural gas,Europe,$/mmbtu,33.55773104275,World Bank Pink Sheet
+2022-07-01,2022,7,Natural gas,Europe,$/mmbtu,51.33003047298,World Bank Pink Sheet
+2022-08-01,2022,8,Natural gas,Europe,$/mmbtu,70.04363980339,World Bank Pink Sheet
+2022-09-01,2022,9,Natural gas,Europe,$/mmbtu,59.10262225038,World Bank Pink Sheet
+2022-10-01,2022,10,Natural gas,Europe,$/mmbtu,39.02204993845,World Bank Pink Sheet
+2022-11-01,2022,11,Natural gas,Europe,$/mmbtu,35.72328224044,World Bank Pink Sheet
+2022-12-01,2022,12,Natural gas,Europe,$/mmbtu,36.04426003614,World Bank Pink Sheet
+2023-01-01,2023,1,Natural gas,Europe,$/mmbtu,20.18397092135,World Bank Pink Sheet
+2023-02-01,2023,2,Natural gas,Europe,$/mmbtu,16.53713727891,World Bank Pink Sheet
+2023-03-01,2023,3,Natural gas,Europe,$/mmbtu,13.81207686229,World Bank Pink Sheet
+2023-04-01,2023,4,Natural gas,Europe,$/mmbtu,13.52052961513,World Bank Pink Sheet
+2023-05-01,2023,5,Natural gas,Europe,$/mmbtu,10.10875599841,World Bank Pink Sheet
+2023-06-01,2023,6,Natural gas,Europe,$/mmbtu,10.35062473915,World Bank Pink Sheet
+2023-07-01,2023,7,Natural gas,Europe,$/mmbtu,9.54528398968,World Bank Pink Sheet
+2023-08-01,2023,8,Natural gas,Europe,$/mmbtu,11.19194456369,World Bank Pink Sheet
+2023-09-01,2023,9,Natural gas,Europe,$/mmbtu,11.54929514615,World Bank Pink Sheet
+2023-10-01,2023,10,Natural gas,Europe,$/mmbtu,14.56950705657,World Bank Pink Sheet
+2023-11-01,2023,11,Natural gas,Europe,$/mmbtu,14.48505487638,World Bank Pink Sheet
+2023-12-01,2023,12,Natural gas,Europe,$/mmbtu,11.50665790666,World Bank Pink Sheet
+2024-01-01,2024,1,Natural gas,Europe,$/mmbtu,9.55961355312,World Bank Pink Sheet
+2024-02-01,2024,2,Natural gas,Europe,$/mmbtu,8.14838086764,World Bank Pink Sheet
+2024-03-01,2024,3,Natural gas,Europe,$/mmbtu,8.55372632183,World Bank Pink Sheet
+2024-04-01,2024,4,Natural gas,Europe,$/mmbtu,9.08511900567,World Bank Pink Sheet
+2024-05-01,2024,5,Natural gas,Europe,$/mmbtu,10.12306554509,World Bank Pink Sheet
+2024-06-01,2024,6,Natural gas,Europe,$/mmbtu,10.86897789978,World Bank Pink Sheet
+2024-07-01,2024,7,Natural gas,Europe,$/mmbtu,10.34681932853,World Bank Pink Sheet
+2024-08-01,2024,8,Natural gas,Europe,$/mmbtu,12.37459819711,World Bank Pink Sheet
+2024-09-01,2024,9,Natural gas,Europe,$/mmbtu,11.7842591911,World Bank Pink Sheet
+2024-10-01,2024,10,Natural gas,Europe,$/mmbtu,12.92013302544,World Bank Pink Sheet
+2024-11-01,2024,11,Natural gas,Europe,$/mmbtu,13.92640045783,World Bank Pink Sheet
+2024-12-01,2024,12,Natural gas,Europe,$/mmbtu,13.85662099801,World Bank Pink Sheet
+2025-01-01,2025,1,Natural gas,Europe,$/mmbtu,14.66351159521,World Bank Pink Sheet
+2025-02-01,2025,2,Natural gas,Europe,$/mmbtu,15.34053214373,World Bank Pink Sheet
+2025-03-01,2025,3,Natural gas,Europe,$/mmbtu,13.23540689614,World Bank Pink Sheet
+2025-04-01,2025,4,Natural gas,Europe,$/mmbtu,11.59029271163,World Bank Pink Sheet
+2025-05-01,2025,5,Natural gas,Europe,$/mmbtu,11.66346590514,World Bank Pink Sheet
+2025-06-01,2025,6,Natural gas,Europe,$/mmbtu,12.36749611794,World Bank Pink Sheet
+2025-07-01,2025,7,Natural gas,Europe,$/mmbtu,11.62054157322,World Bank Pink Sheet
+2025-08-01,2025,8,Natural gas,Europe,$/mmbtu,11.14799164024,World Bank Pink Sheet
+2025-09-01,2025,9,Natural gas,Europe,$/mmbtu,11.11631534669,World Bank Pink Sheet
+2025-10-01,2025,10,Natural gas,Europe,$/mmbtu,10.88817270675,World Bank Pink Sheet
+2025-11-01,2025,11,Natural gas,Europe,$/mmbtu,10.42040288015,World Bank Pink Sheet
+2025-12-01,2025,12,Natural gas,Europe,$/mmbtu,9.48260496782,World Bank Pink Sheet
+2026-01-01,2026,1,Natural gas,Europe,$/mmbtu,11.75574513439,World Bank Pink Sheet
+2012-06-01,2012,6,Natural gas index,,2010=100,96.09045041368,World Bank Pink Sheet
+2012-07-01,2012,7,Natural gas index,,2010=100,100.9494357434,World Bank Pink Sheet
+2012-08-01,2012,8,Natural gas index,,2010=100,99.63469196716,World Bank Pink Sheet
+2012-09-01,2012,9,Natural gas index,,2010=100,98.5816339007,World Bank Pink Sheet
+2012-10-01,2012,10,Natural gas index,,2010=100,105.70108533749,World Bank Pink Sheet
+2012-11-01,2012,11,Natural gas index,,2010=100,109.3651582862,World Bank Pink Sheet
+2012-12-01,2012,12,Natural gas index,,2010=100,107.04231243184,World Bank Pink Sheet
+2013-01-01,2013,1,Natural gas index,,2010=100,107.60817859655,World Bank Pink Sheet
+2013-02-01,2013,2,Natural gas index,,2010=100,107.54029997678,World Bank Pink Sheet
+2013-03-01,2013,3,Natural gas index,,2010=100,113.68108766747,World Bank Pink Sheet
+2013-04-01,2013,4,Natural gas index,,2010=100,122.80678946534,World Bank Pink Sheet
+2013-05-01,2013,5,Natural gas index,,2010=100,118.47814461874,World Bank Pink Sheet
+2013-06-01,2013,6,Natural gas index,,2010=100,114.37378667724,World Bank Pink Sheet
+2013-07-01,2013,7,Natural gas index,,2010=100,110.0929564116,World Bank Pink Sheet
+2013-08-01,2013,8,Natural gas index,,2010=100,107.49741317685,World Bank Pink Sheet
+2013-09-01,2013,9,Natural gas index,,2010=100,107.52065160478,World Bank Pink Sheet
+2013-10-01,2013,10,Natural gas index,,2010=100,109.03186360077,World Bank Pink Sheet
+2013-11-01,2013,11,Natural gas index,,2010=100,108.65121105615,World Bank Pink Sheet
+2013-12-01,2013,12,Natural gas index,,2010=100,117.45234821935,World Bank Pink Sheet
+2014-01-01,2014,1,Natural gas index,,2010=100,123.47593413513,World Bank Pink Sheet
+2014-02-01,2014,2,Natural gas index,,2010=100,137.61069871914,World Bank Pink Sheet
+2014-03-01,2014,3,Natural gas index,,2010=100,122.1747631506,World Bank Pink Sheet
+2014-04-01,2014,4,Natural gas index,,2010=100,118.65642551875,World Bank Pink Sheet
+2014-05-01,2014,5,Natural gas index,,2010=100,114.95136110006,World Bank Pink Sheet
+2014-06-01,2014,6,Natural gas index,,2010=100,112.85978969451,World Bank Pink Sheet
+2014-07-01,2014,7,Natural gas index,,2010=100,103.06692548226,World Bank Pink Sheet
+2014-08-01,2014,8,Natural gas index,,2010=100,101.27992523273,World Bank Pink Sheet
+2014-09-01,2014,9,Natural gas index,,2010=100,101.76310720819,World Bank Pink Sheet
+2014-10-01,2014,10,Natural gas index,,2010=100,103.01527984123,World Bank Pink Sheet
+2014-11-01,2014,11,Natural gas index,,2010=100,102.66395932005,World Bank Pink Sheet
+2014-12-01,2014,12,Natural gas index,,2010=100,98.9997770052,World Bank Pink Sheet
+2015-01-01,2015,1,Natural gas index,,2010=100,91.05910463256,World Bank Pink Sheet
+2015-02-01,2015,2,Natural gas index,,2010=100,83.52026289137,World Bank Pink Sheet
+2015-03-01,2015,3,Natural gas index,,2010=100,82.15949876813,World Bank Pink Sheet
+2015-04-01,2015,4,Natural gas index,,2010=100,70.94130906679,World Bank Pink Sheet
+2015-05-01,2015,5,Natural gas index,,2010=100,72.56776885162,World Bank Pink Sheet
+2015-06-01,2015,6,Natural gas index,,2010=100,71.54643535464,World Bank Pink Sheet
+2015-07-01,2015,7,Natural gas index,,2010=100,72.62187601156,World Bank Pink Sheet
+2015-08-01,2015,8,Natural gas index,,2010=100,70.36977413644,World Bank Pink Sheet
+2015-09-01,2015,9,Natural gas index,,2010=100,68.96423290149,World Bank Pink Sheet
+2015-10-01,2015,10,Natural gas index,,2010=100,63.61405010089,World Bank Pink Sheet
+2015-11-01,2015,11,Natural gas index,,2010=100,57.82542281205,World Bank Pink Sheet
+2015-12-01,2015,12,Natural gas index,,2010=100,53.71191147546,World Bank Pink Sheet
+2016-01-01,2016,1,Natural gas index,,2010=100,54.22025368757,World Bank Pink Sheet
+2016-02-01,2016,2,Natural gas index,,2010=100,48.43318010504,World Bank Pink Sheet
+2016-03-01,2016,3,Natural gas index,,2010=100,44.49483393195,World Bank Pink Sheet
+2016-04-01,2016,4,Natural gas index,,2010=100,46.62699317728,World Bank Pink Sheet
+2016-05-01,2016,5,Natural gas index,,2010=100,48.16755906969,World Bank Pink Sheet
+2016-06-01,2016,6,Natural gas index,,2010=100,58.11292731834,World Bank Pink Sheet
+2016-07-01,2016,7,Natural gas index,,2010=100,60.6559913692,World Bank Pink Sheet
+2016-08-01,2016,8,Natural gas index,,2010=100,57.97386228615,World Bank Pink Sheet
+2016-09-01,2016,9,Natural gas index,,2010=100,61.38218946462,World Bank Pink Sheet
+2016-10-01,2016,10,Natural gas index,,2010=100,66.36909711139,World Bank Pink Sheet
+2016-11-01,2016,11,Natural gas index,,2010=100,62.57851362767,World Bank Pink Sheet
+2016-12-01,2016,12,Natural gas index,,2010=100,74.4216778981,World Bank Pink Sheet
+2017-01-01,2017,1,Natural gas index,,2010=100,74.25577233775,World Bank Pink Sheet
+2017-02-01,2017,2,Natural gas index,,2010=100,68.75455064325,World Bank Pink Sheet
+2017-03-01,2017,3,Natural gas index,,2010=100,64.42494905975,World Bank Pink Sheet
+2017-04-01,2017,4,Natural gas index,,2010=100,67.18458307726,World Bank Pink Sheet
+2017-05-01,2017,5,Natural gas index,,2010=100,68.15631084639,World Bank Pink Sheet
+2017-06-01,2017,6,Natural gas index,,2010=100,64.96319760874,World Bank Pink Sheet
+2017-07-01,2017,7,Natural gas index,,2010=100,65.75145561549,World Bank Pink Sheet
+2017-08-01,2017,8,Natural gas index,,2010=100,66.99644970788,World Bank Pink Sheet
+2017-09-01,2017,9,Natural gas index,,2010=100,70.1748807394,World Bank Pink Sheet
+2017-10-01,2017,10,Natural gas index,,2010=100,69.7708652853,World Bank Pink Sheet
+2017-11-01,2017,11,Natural gas index,,2010=100,73.87568661553,World Bank Pink Sheet
+2017-12-01,2017,12,Natural gas index,,2010=100,73.29172746364,World Bank Pink Sheet
+2018-01-01,2018,1,Natural gas index,,2010=100,84.82162927562,World Bank Pink Sheet
+2018-02-01,2018,2,Natural gas index,,2010=100,71.03012042398,World Bank Pink Sheet
+2018-03-01,2018,3,Natural gas index,,2010=100,71.46245729274,World Bank Pink Sheet
+2018-04-01,2018,4,Natural gas index,,2010=100,73.518728055,World Bank Pink Sheet
+2018-05-01,2018,5,Natural gas index,,2010=100,76.50745948758,World Bank Pink Sheet
+2018-06-01,2018,6,Natural gas index,,2010=100,78.33801103404,World Bank Pink Sheet
+2018-07-01,2018,7,Natural gas index,,2010=100,77.50449306875,World Bank Pink Sheet
+2018-08-01,2018,8,Natural gas index,,2010=100,81.71356939636,World Bank Pink Sheet
+2018-09-01,2018,9,Natural gas index,,2010=100,89.16757001402,World Bank Pink Sheet
+2018-10-01,2018,10,Natural gas index,,2010=100,89.57079561678,World Bank Pink Sheet
+2018-11-01,2018,11,Natural gas index,,2010=100,97.36246789214,World Bank Pink Sheet
+2018-12-01,2018,12,Natural gas index,,2010=100,94.40657785135,World Bank Pink Sheet
+2019-01-01,2019,1,Natural gas index,,2010=100,80.05536606207,World Bank Pink Sheet
+2019-02-01,2019,2,Natural gas index,,2010=100,69.54504168209,World Bank Pink Sheet
+2019-03-01,2019,3,Natural gas index,,2010=100,67.91211075289,World Bank Pink Sheet
+2019-04-01,2019,4,Natural gas index,,2010=100,62.48606579812,World Bank Pink Sheet
+2019-05-01,2019,5,Natural gas index,,2010=100,59.4223353327,World Bank Pink Sheet
+2019-06-01,2019,6,Natural gas index,,2010=100,52.96252887614,World Bank Pink Sheet
+2019-07-01,2019,7,Natural gas index,,2010=100,52.73103815976,World Bank Pink Sheet
+2019-08-01,2019,8,Natural gas index,,2010=100,51.84805447932,World Bank Pink Sheet
+2019-09-01,2019,9,Natural gas index,,2010=100,58.19251376782,World Bank Pink Sheet
+2019-10-01,2019,10,Natural gas index,,2010=100,59.11549803428,World Bank Pink Sheet
+2019-11-01,2019,11,Natural gas index,,2010=100,63.47069207042,World Bank Pink Sheet
+2019-12-01,2019,12,Natural gas index,,2010=100,56.01046386333,World Bank Pink Sheet
+2020-01-01,2020,1,Natural gas index,,2010=100,48.62847791743,World Bank Pink Sheet
+2020-02-01,2020,2,Natural gas index,,2010=100,43.7911677298,World Bank Pink Sheet
+2020-03-01,2020,3,Natural gas index,,2010=100,41.61409165724,World Bank Pink Sheet
+2020-04-01,2020,4,Natural gas index,,2010=100,37.97404004066,World Bank Pink Sheet
+2020-05-01,2020,5,Natural gas index,,2010=100,35.5956619577,World Bank Pink Sheet
+2020-06-01,2020,6,Natural gas index,,2010=100,33.99228192971,World Bank Pink Sheet
+2020-07-01,2020,7,Natural gas index,,2010=100,34.90852460845,World Bank Pink Sheet
+2020-08-01,2020,8,Natural gas index,,2010=100,45.85350707672,World Bank Pink Sheet
+2020-09-01,2020,9,Natural gas index,,2010=100,46.07290912833,World Bank Pink Sheet
+2020-10-01,2020,10,Natural gas index,,2010=100,54.72115485296,World Bank Pink Sheet
+2020-11-01,2020,11,Natural gas index,,2010=100,59.06227305483,World Bank Pink Sheet
+2020-12-01,2020,12,Natural gas index,,2010=100,63.85843256317,World Bank Pink Sheet
+2021-01-01,2021,1,Natural gas index,,2010=100,73.02147932642,World Bank Pink Sheet
+2021-02-01,2021,2,Natural gas index,,2010=100,97.47802542593,World Bank Pink Sheet
+2021-03-01,2021,3,Natural gas index,,2010=100,65.61845037345,World Bank Pink Sheet
+2021-04-01,2021,4,Natural gas index,,2010=100,71.27744991295,World Bank Pink Sheet
+2021-05-01,2021,5,Natural gas index,,2010=100,83.46723327421,World Bank Pink Sheet
+2021-06-01,2021,6,Natural gas index,,2010=100,94.73065633263,World Bank Pink Sheet
+2021-07-01,2021,7,Natural gas index,,2010=100,112.6787432485,World Bank Pink Sheet
+2021-08-01,2021,8,Natural gas index,,2010=100,129.81858281675,World Bank Pink Sheet
+2021-09-01,2021,9,Natural gas index,,2010=100,178.39940517492,World Bank Pink Sheet
+2021-10-01,2021,10,Natural gas index,,2010=100,222.52925190517,World Bank Pink Sheet
+2021-11-01,2021,11,Natural gas index,,2010=100,202.58611793577,World Bank Pink Sheet
+2021-12-01,2021,12,Natural gas index,,2010=100,236.48836750687,World Bank Pink Sheet
+2022-01-01,2022,1,Natural gas index,,2010=100,196.91113953145,World Bank Pink Sheet
+2022-02-01,2022,2,Natural gas index,,2010=100,197.5236794019,World Bank Pink Sheet
+2022-03-01,2022,3,Natural gas index,,2010=100,271.07990593108,World Bank Pink Sheet
+2022-04-01,2022,4,Natural gas index,,2010=100,243.43602963927,World Bank Pink Sheet
+2022-05-01,2022,5,Natural gas index,,2010=100,248.79106483489,World Bank Pink Sheet
+2022-06-01,2022,6,Natural gas index,,2010=100,263.24491050026,World Bank Pink Sheet
+2022-07-01,2022,7,Natural gas index,,2010=100,344.9266757404,World Bank Pink Sheet
+2022-08-01,2022,8,Natural gas index,,2010=100,454.04014274839,World Bank Pink Sheet
+2022-09-01,2022,9,Natural gas index,,2010=100,391.31952732705,World Bank Pink Sheet
+2022-10-01,2022,10,Natural gas index,,2010=100,268.54710666569,World Bank Pink Sheet
+2022-11-01,2022,11,Natural gas index,,2010=100,247.17644268952,World Bank Pink Sheet
+2022-12-01,2022,12,Natural gas index,,2010=100,252.11901984185,World Bank Pink Sheet
+2023-01-01,2023,1,Natural gas index,,2010=100,149.37872119293,World Bank Pink Sheet
+2023-02-01,2023,2,Natural gas index,,2010=100,120.03831493101,World Bank Pink Sheet
+2023-03-01,2023,3,Natural gas index,,2010=100,104.51384047273,World Bank Pink Sheet
+2023-04-01,2023,4,Natural gas index,,2010=100,100.25219027939,World Bank Pink Sheet
+2023-05-01,2023,5,Natural gas index,,2010=100,83.22022900283,World Bank Pink Sheet
+2023-06-01,2023,6,Natural gas index,,2010=100,84.31052883413,World Bank Pink Sheet
+2023-07-01,2023,7,Natural gas index,,2010=100,85.19210092749,World Bank Pink Sheet
+2023-08-01,2023,8,Natural gas index,,2010=100,93.08927852791,World Bank Pink Sheet
+2023-09-01,2023,9,Natural gas index,,2010=100,95.23010326937,World Bank Pink Sheet
+2023-10-01,2023,10,Natural gas index,,2010=100,114.10461380273,World Bank Pink Sheet
+2023-11-01,2023,11,Natural gas index,,2010=100,110.370695067,World Bank Pink Sheet
+2023-12-01,2023,12,Natural gas index,,2010=100,95.16527233838,World Bank Pink Sheet
+2024-01-01,2024,1,Natural gas index,,2010=100,93.78743063756,World Bank Pink Sheet
+2024-02-01,2024,2,Natural gas index,,2010=100,68.88153866328,World Bank Pink Sheet
+2024-03-01,2024,3,Natural gas index,,2010=100,67.81120956091,World Bank Pink Sheet
+2024-04-01,2024,4,Natural gas index,,2010=100,70.62684727469,World Bank Pink Sheet
+2024-05-01,2024,5,Natural gas index,,2010=100,82.24744947083,World Bank Pink Sheet
+2024-06-01,2024,6,Natural gas index,,2010=100,90.39727822341,World Bank Pink Sheet
+2024-07-01,2024,7,Natural gas index,,2010=100,82.84976113615,World Bank Pink Sheet
+2024-08-01,2024,8,Natural gas index,,2010=100,92.02142844138,World Bank Pink Sheet
+2024-09-01,2024,9,Natural gas index,,2010=100,92.14092086318,World Bank Pink Sheet
+2024-10-01,2024,10,Natural gas index,,2010=100,96.72731980129,World Bank Pink Sheet
+2024-11-01,2024,11,Natural gas index,,2010=100,100.44877640894,World Bank Pink Sheet
+2024-12-01,2024,12,Natural gas index,,2010=100,111.14613867406,World Bank Pink Sheet
+2025-01-01,2025,1,Natural gas index,,2010=100,128.42508058688,World Bank Pink Sheet
+2025-02-01,2025,2,Natural gas index,,2010=100,132.86465426758,World Bank Pink Sheet
+2025-03-01,2025,3,Natural gas index,,2010=100,121.54928429417,World Bank Pink Sheet
+2025-04-01,2025,4,Natural gas index,,2010=100,104.975598559,World Bank Pink Sheet
+2025-05-01,2025,5,Natural gas index,,2010=100,101.62489124197,World Bank Pink Sheet
+2025-06-01,2025,6,Natural gas index,,2010=100,103.73507325207,World Bank Pink Sheet
+2025-07-01,2025,7,Natural gas index,,2010=100,102.07949972942,World Bank Pink Sheet
+2025-08-01,2025,8,Natural gas index,,2010=100,96.33038676266,World Bank Pink Sheet
+2025-09-01,2025,9,Natural gas index,,2010=100,96.72206124067,World Bank Pink Sheet
+2025-10-01,2025,10,Natural gas index,,2010=100,98.11130917241,World Bank Pink Sheet
+2025-11-01,2025,11,Natural gas index,,2010=100,103.13338689259,World Bank Pink Sheet
+2025-12-01,2025,12,Natural gas index,,2010=100,104.37607098491,World Bank Pink Sheet
+2026-01-01,2026,1,Natural gas index,,2010=100,155.62159396039,World Bank Pink Sheet
+2012-06-01,2012,6,Aluminum,,$/mt,1890.17857142857,World Bank Pink Sheet
+2012-07-01,2012,7,Aluminum,,$/mt,1876.25,World Bank Pink Sheet
+2012-08-01,2012,8,Aluminum,,$/mt,1845.37608695652,World Bank Pink Sheet
+2012-09-01,2012,9,Aluminum,,$/mt,2064.12,World Bank Pink Sheet
+2012-10-01,2012,10,Aluminum,,$/mt,1974.3,World Bank Pink Sheet
+2012-11-01,2012,11,Aluminum,,$/mt,1948.82954545455,World Bank Pink Sheet
+2012-12-01,2012,12,Aluminum,,$/mt,2086.76315789474,World Bank Pink Sheet
+2013-01-01,2013,1,Aluminum,,$/mt,2037.75,World Bank Pink Sheet
+2013-02-01,2013,2,Aluminum,,$/mt,2053.595,World Bank Pink Sheet
+2013-03-01,2013,3,Aluminum,,$/mt,1909.56666666667,World Bank Pink Sheet
+2013-04-01,2013,4,Aluminum,,$/mt,1861.67045454545,World Bank Pink Sheet
+2013-05-01,2013,5,Aluminum,,$/mt,1832.02173913043,World Bank Pink Sheet
+2013-06-01,2013,6,Aluminum,,$/mt,1814.5375,World Bank Pink Sheet
+2013-07-01,2013,7,Aluminum,,$/mt,1769.60869565217,World Bank Pink Sheet
+2013-08-01,2013,8,Aluminum,,$/mt,1817.61590909091,World Bank Pink Sheet
+2013-09-01,2013,9,Aluminum,,$/mt,1761.30476190476,World Bank Pink Sheet
+2013-10-01,2013,10,Aluminum,,$/mt,1814.58260869565,World Bank Pink Sheet
+2013-11-01,2013,11,Aluminum,,$/mt,1747.96428571429,World Bank Pink Sheet
+2013-12-01,2013,12,Aluminum,,$/mt,1739.81,World Bank Pink Sheet
+2014-01-01,2014,1,Aluminum,,$/mt,1727.41,World Bank Pink Sheet
+2014-02-01,2014,2,Aluminum,,$/mt,1695.17,World Bank Pink Sheet
+2014-03-01,2014,3,Aluminum,,$/mt,1705.37,World Bank Pink Sheet
+2014-04-01,2014,4,Aluminum,,$/mt,1810.67,World Bank Pink Sheet
+2014-05-01,2014,5,Aluminum,,$/mt,1751.05,World Bank Pink Sheet
+2014-06-01,2014,6,Aluminum,,$/mt,1838.95,World Bank Pink Sheet
+2014-07-01,2014,7,Aluminum,,$/mt,1948.3,World Bank Pink Sheet
+2014-08-01,2014,8,Aluminum,,$/mt,2030.49,World Bank Pink Sheet
+2014-09-01,2014,9,Aluminum,,$/mt,1990.43,World Bank Pink Sheet
+2014-10-01,2014,10,Aluminum,,$/mt,1946.19,World Bank Pink Sheet
+2014-11-01,2014,11,Aluminum,,$/mt,2055.55,World Bank Pink Sheet
+2014-12-01,2014,12,Aluminum,,$/mt,1909.46,World Bank Pink Sheet
+2015-01-01,2015,1,Aluminum,,$/mt,1814.72,World Bank Pink Sheet
+2015-02-01,2015,2,Aluminum,,$/mt,1817.82,World Bank Pink Sheet
+2015-03-01,2015,3,Aluminum,,$/mt,1773.86,World Bank Pink Sheet
+2015-04-01,2015,4,Aluminum,,$/mt,1819.19,World Bank Pink Sheet
+2015-05-01,2015,5,Aluminum,,$/mt,1804.04,World Bank Pink Sheet
+2015-06-01,2015,6,Aluminum,,$/mt,1687.73,World Bank Pink Sheet
+2015-07-01,2015,7,Aluminum,,$/mt,1639.5,World Bank Pink Sheet
+2015-08-01,2015,8,Aluminum,,$/mt,1548.13,World Bank Pink Sheet
+2015-09-01,2015,9,Aluminum,,$/mt,1589.6,World Bank Pink Sheet
+2015-10-01,2015,10,Aluminum,,$/mt,1516.49,World Bank Pink Sheet
+2015-11-01,2015,11,Aluminum,,$/mt,1467.89,World Bank Pink Sheet
+2015-12-01,2015,12,Aluminum,,$/mt,1497.2,World Bank Pink Sheet
+2016-01-01,2016,1,Aluminum,,$/mt,1481.1,World Bank Pink Sheet
+2016-02-01,2016,2,Aluminum,,$/mt,1531.26,World Bank Pink Sheet
+2016-03-01,2016,3,Aluminum,,$/mt,1531.01,World Bank Pink Sheet
+2016-04-01,2016,4,Aluminum,,$/mt,1571.23,World Bank Pink Sheet
+2016-05-01,2016,5,Aluminum,,$/mt,1550.63,World Bank Pink Sheet
+2016-06-01,2016,6,Aluminum,,$/mt,1593.51,World Bank Pink Sheet
+2016-07-01,2016,7,Aluminum,,$/mt,1629.05,World Bank Pink Sheet
+2016-08-01,2016,8,Aluminum,,$/mt,1639.28,World Bank Pink Sheet
+2016-09-01,2016,9,Aluminum,,$/mt,1592.36,World Bank Pink Sheet
+2016-10-01,2016,10,Aluminum,,$/mt,1665.9,World Bank Pink Sheet
+2016-11-01,2016,11,Aluminum,,$/mt,1737.11,World Bank Pink Sheet
+2016-12-01,2016,12,Aluminum,,$/mt,1727.74,World Bank Pink Sheet
+2017-01-01,2017,1,Aluminum,,$/mt,1791.24,World Bank Pink Sheet
+2017-02-01,2017,2,Aluminum,,$/mt,1860.75,World Bank Pink Sheet
+2017-03-01,2017,3,Aluminum,,$/mt,1901.47,World Bank Pink Sheet
+2017-04-01,2017,4,Aluminum,,$/mt,1921.22,World Bank Pink Sheet
+2017-05-01,2017,5,Aluminum,,$/mt,1913.02,World Bank Pink Sheet
+2017-06-01,2017,6,Aluminum,,$/mt,1885.29,World Bank Pink Sheet
+2017-07-01,2017,7,Aluminum,,$/mt,1902.96,World Bank Pink Sheet
+2017-08-01,2017,8,Aluminum,,$/mt,2030.01,World Bank Pink Sheet
+2017-09-01,2017,9,Aluminum,,$/mt,2096.49,World Bank Pink Sheet
+2017-10-01,2017,10,Aluminum,,$/mt,2131.49,World Bank Pink Sheet
+2017-11-01,2017,11,Aluminum,,$/mt,2097.44,World Bank Pink Sheet
+2017-12-01,2017,12,Aluminum,,$/mt,2080.47,World Bank Pink Sheet
+2018-01-01,2018,1,Aluminum,,$/mt,2209.73,World Bank Pink Sheet
+2018-02-01,2018,2,Aluminum,,$/mt,2181.79,World Bank Pink Sheet
+2018-03-01,2018,3,Aluminum,,$/mt,2069.24,World Bank Pink Sheet
+2018-04-01,2018,4,Aluminum,,$/mt,2254.69,World Bank Pink Sheet
+2018-05-01,2018,5,Aluminum,,$/mt,2299.67,World Bank Pink Sheet
+2018-06-01,2018,6,Aluminum,,$/mt,2237.62,World Bank Pink Sheet
+2018-07-01,2018,7,Aluminum,,$/mt,2082.24,World Bank Pink Sheet
+2018-08-01,2018,8,Aluminum,,$/mt,2051.51,World Bank Pink Sheet
+2018-09-01,2018,9,Aluminum,,$/mt,2026.46,World Bank Pink Sheet
+2018-10-01,2018,10,Aluminum,,$/mt,2029.86,World Bank Pink Sheet
+2018-11-01,2018,11,Aluminum,,$/mt,1938.51,World Bank Pink Sheet
+2018-12-01,2018,12,Aluminum,,$/mt,1920.38,World Bank Pink Sheet
+2019-01-01,2019,1,Aluminum,,$/mt,1853.72,World Bank Pink Sheet
+2019-02-01,2019,2,Aluminum,,$/mt,1862.99,World Bank Pink Sheet
+2019-03-01,2019,3,Aluminum,,$/mt,1871.21,World Bank Pink Sheet
+2019-04-01,2019,4,Aluminum,,$/mt,1845.42,World Bank Pink Sheet
+2019-05-01,2019,5,Aluminum,,$/mt,1781.26,World Bank Pink Sheet
+2019-06-01,2019,6,Aluminum,,$/mt,1755.95,World Bank Pink Sheet
+2019-07-01,2019,7,Aluminum,,$/mt,1796.99,World Bank Pink Sheet
+2019-08-01,2019,8,Aluminum,,$/mt,1740.68,World Bank Pink Sheet
+2019-09-01,2019,9,Aluminum,,$/mt,1753.51,World Bank Pink Sheet
+2019-10-01,2019,10,Aluminum,,$/mt,1725.96,World Bank Pink Sheet
+2019-11-01,2019,11,Aluminum,,$/mt,1774.79,World Bank Pink Sheet
+2019-12-01,2019,12,Aluminum,,$/mt,1771.38,World Bank Pink Sheet
+2020-01-01,2020,1,Aluminum,,$/mt,1773.09,World Bank Pink Sheet
+2020-02-01,2020,2,Aluminum,,$/mt,1688.1,World Bank Pink Sheet
+2020-03-01,2020,3,Aluminum,,$/mt,1610.89,World Bank Pink Sheet
+2020-04-01,2020,4,Aluminum,,$/mt,1459.93,World Bank Pink Sheet
+2020-05-01,2020,5,Aluminum,,$/mt,1466.37,World Bank Pink Sheet
+2020-06-01,2020,6,Aluminum,,$/mt,1568.57,World Bank Pink Sheet
+2020-07-01,2020,7,Aluminum,,$/mt,1643.81,World Bank Pink Sheet
+2020-08-01,2020,8,Aluminum,,$/mt,1737.26,World Bank Pink Sheet
+2020-09-01,2020,9,Aluminum,,$/mt,1743.77,World Bank Pink Sheet
+2020-10-01,2020,10,Aluminum,,$/mt,1806.1,World Bank Pink Sheet
+2020-11-01,2020,11,Aluminum,,$/mt,1935.28,World Bank Pink Sheet
+2020-12-01,2020,12,Aluminum,,$/mt,2014.67,World Bank Pink Sheet
+2021-01-01,2021,1,Aluminum,,$/mt,2003.98,World Bank Pink Sheet
+2021-02-01,2021,2,Aluminum,,$/mt,2078.59,World Bank Pink Sheet
+2021-03-01,2021,3,Aluminum,,$/mt,2190.48,World Bank Pink Sheet
+2021-04-01,2021,4,Aluminum,,$/mt,2319.39,World Bank Pink Sheet
+2021-05-01,2021,5,Aluminum,,$/mt,2433.53,World Bank Pink Sheet
+2021-06-01,2021,6,Aluminum,,$/mt,2446.65,World Bank Pink Sheet
+2021-07-01,2021,7,Aluminum,,$/mt,2497.64,World Bank Pink Sheet
+2021-08-01,2021,8,Aluminum,,$/mt,2602.99,World Bank Pink Sheet
+2021-09-01,2021,9,Aluminum,,$/mt,2834.56,World Bank Pink Sheet
+2021-10-01,2021,10,Aluminum,,$/mt,2934.39,World Bank Pink Sheet
+2021-11-01,2021,11,Aluminum,,$/mt,2636.45,World Bank Pink Sheet
+2021-12-01,2021,12,Aluminum,,$/mt,2695.53,World Bank Pink Sheet
+2022-01-01,2022,1,Aluminum,,$/mt,3005.98,World Bank Pink Sheet
+2022-02-01,2022,2,Aluminum,,$/mt,3245.79,World Bank Pink Sheet
+2022-03-01,2022,3,Aluminum,,$/mt,3498.37,World Bank Pink Sheet
+2022-04-01,2022,4,Aluminum,,$/mt,3244.41,World Bank Pink Sheet
+2022-05-01,2022,5,Aluminum,,$/mt,2830.32,World Bank Pink Sheet
+2022-06-01,2022,6,Aluminum,,$/mt,2563.44,World Bank Pink Sheet
+2022-07-01,2022,7,Aluminum,,$/mt,2408.42,World Bank Pink Sheet
+2022-08-01,2022,8,Aluminum,,$/mt,2430.79,World Bank Pink Sheet
+2022-09-01,2022,9,Aluminum,,$/mt,2224.76,World Bank Pink Sheet
+2022-10-01,2022,10,Aluminum,,$/mt,2255.54,World Bank Pink Sheet
+2022-11-01,2022,11,Aluminum,,$/mt,2350.72,World Bank Pink Sheet
+2022-12-01,2022,12,Aluminum,,$/mt,2401.69,World Bank Pink Sheet
+2023-01-01,2023,1,Aluminum,,$/mt,2501.82,World Bank Pink Sheet
+2023-02-01,2023,2,Aluminum,,$/mt,2416.18,World Bank Pink Sheet
+2023-03-01,2023,3,Aluminum,,$/mt,2296.42,World Bank Pink Sheet
+2023-04-01,2023,4,Aluminum,,$/mt,2343.23,World Bank Pink Sheet
+2023-05-01,2023,5,Aluminum,,$/mt,2268.6,World Bank Pink Sheet
+2023-06-01,2023,6,Aluminum,,$/mt,2184.75,World Bank Pink Sheet
+2023-07-01,2023,7,Aluminum,,$/mt,2159.73,World Bank Pink Sheet
+2023-08-01,2023,8,Aluminum,,$/mt,2136.57,World Bank Pink Sheet
+2023-09-01,2023,9,Aluminum,,$/mt,2184.67,World Bank Pink Sheet
+2023-10-01,2023,10,Aluminum,,$/mt,2192.21,World Bank Pink Sheet
+2023-11-01,2023,11,Aluminum,,$/mt,2202.26,World Bank Pink Sheet
+2023-12-01,2023,12,Aluminum,,$/mt,2182.43,World Bank Pink Sheet
+2024-01-01,2024,1,Aluminum,,$/mt,2192.82,World Bank Pink Sheet
+2024-02-01,2024,2,Aluminum,,$/mt,2179.46,World Bank Pink Sheet
+2024-03-01,2024,3,Aluminum,,$/mt,2226.16,World Bank Pink Sheet
+2024-04-01,2024,4,Aluminum,,$/mt,2506.1,World Bank Pink Sheet
+2024-05-01,2024,5,Aluminum,,$/mt,2564.54,World Bank Pink Sheet
+2024-06-01,2024,6,Aluminum,,$/mt,2497.61,World Bank Pink Sheet
+2024-07-01,2024,7,Aluminum,,$/mt,2349.13,World Bank Pink Sheet
+2024-08-01,2024,8,Aluminum,,$/mt,2343.67,World Bank Pink Sheet
+2024-09-01,2024,9,Aluminum,,$/mt,2449.92,World Bank Pink Sheet
+2024-10-01,2024,10,Aluminum,,$/mt,2595.58,World Bank Pink Sheet
+2024-11-01,2024,11,Aluminum,,$/mt,2582.19,World Bank Pink Sheet
+2024-12-01,2024,12,Aluminum,,$/mt,2541.02,World Bank Pink Sheet
+2025-01-01,2025,1,Aluminum,,$/mt,2573.4,World Bank Pink Sheet
+2025-02-01,2025,2,Aluminum,,$/mt,2657.6,World Bank Pink Sheet
+2025-03-01,2025,3,Aluminum,,$/mt,2658.29,World Bank Pink Sheet
+2025-04-01,2025,4,Aluminum,,$/mt,2371.6,World Bank Pink Sheet
+2025-05-01,2025,5,Aluminum,,$/mt,2448.79,World Bank Pink Sheet
+2025-06-01,2025,6,Aluminum,,$/mt,2525.96,World Bank Pink Sheet
+2025-07-01,2025,7,Aluminum,,$/mt,2606.37,World Bank Pink Sheet
+2025-08-01,2025,8,Aluminum,,$/mt,2597.34,World Bank Pink Sheet
+2025-09-01,2025,9,Aluminum,,$/mt,2653.32,World Bank Pink Sheet
+2025-10-01,2025,10,Aluminum,,$/mt,2793.09,World Bank Pink Sheet
+2025-11-01,2025,11,Aluminum,,$/mt,2819.06,World Bank Pink Sheet
+2025-12-01,2025,12,Aluminum,,$/mt,2875.53,World Bank Pink Sheet
+2026-01-01,2026,1,Aluminum,,$/mt,3141.89,World Bank Pink Sheet
+2012-06-01,2012,6,Copper,,$/mt,7423.02380952381,World Bank Pink Sheet
+2012-07-01,2012,7,Copper,,$/mt,7584.26136363636,World Bank Pink Sheet
+2012-08-01,2012,8,Copper,,$/mt,7515.53260869565,World Bank Pink Sheet
+2012-09-01,2012,9,Copper,,$/mt,8087.74,World Bank Pink Sheet
+2012-10-01,2012,10,Copper,,$/mt,8062.03,World Bank Pink Sheet
+2012-11-01,2012,11,Copper,,$/mt,7711.22727272727,World Bank Pink Sheet
+2012-12-01,2012,12,Copper,,$/mt,7966.48684210526,World Bank Pink Sheet
+2013-01-01,2013,1,Copper,,$/mt,8047.36,World Bank Pink Sheet
+2013-02-01,2013,2,Copper,,$/mt,8060.925,World Bank Pink Sheet
+2013-03-01,2013,3,Copper,,$/mt,7645.58333333333,World Bank Pink Sheet
+2013-04-01,2013,4,Copper,,$/mt,7234.27954545454,World Bank Pink Sheet
+2013-05-01,2013,5,Copper,,$/mt,7249.41304347826,World Bank Pink Sheet
+2013-06-01,2013,6,Copper,,$/mt,7000.2375,World Bank Pink Sheet
+2013-07-01,2013,7,Copper,,$/mt,6906.64130434783,World Bank Pink Sheet
+2013-08-01,2013,8,Copper,,$/mt,7192.92045454545,World Bank Pink Sheet
+2013-09-01,2013,9,Copper,,$/mt,7159.26904761905,World Bank Pink Sheet
+2013-10-01,2013,10,Copper,,$/mt,7203.02173913043,World Bank Pink Sheet
+2013-11-01,2013,11,Copper,,$/mt,7070.65476190476,World Bank Pink Sheet
+2013-12-01,2013,12,Copper,,$/mt,7214.9,World Bank Pink Sheet
+2014-01-01,2014,1,Copper,,$/mt,7291.47,World Bank Pink Sheet
+2014-02-01,2014,2,Copper,,$/mt,7149.21,World Bank Pink Sheet
+2014-03-01,2014,3,Copper,,$/mt,6650.04,World Bank Pink Sheet
+2014-04-01,2014,4,Copper,,$/mt,6673.56,World Bank Pink Sheet
+2014-05-01,2014,5,Copper,,$/mt,6891.13,World Bank Pink Sheet
+2014-06-01,2014,6,Copper,,$/mt,6821.14,World Bank Pink Sheet
+2014-07-01,2014,7,Copper,,$/mt,7113.38,World Bank Pink Sheet
+2014-08-01,2014,8,Copper,,$/mt,7001.84,World Bank Pink Sheet
+2014-09-01,2014,9,Copper,,$/mt,6872.22,World Bank Pink Sheet
+2014-10-01,2014,10,Copper,,$/mt,6737.48,World Bank Pink Sheet
+2014-11-01,2014,11,Copper,,$/mt,6712.85,World Bank Pink Sheet
+2014-12-01,2014,12,Copper,,$/mt,6446.45,World Bank Pink Sheet
+2015-01-01,2015,1,Copper,,$/mt,5830.54,World Bank Pink Sheet
+2015-02-01,2015,2,Copper,,$/mt,5729.27,World Bank Pink Sheet
+2015-03-01,2015,3,Copper,,$/mt,5939.67,World Bank Pink Sheet
+2015-04-01,2015,4,Copper,,$/mt,6042.09,World Bank Pink Sheet
+2015-05-01,2015,5,Copper,,$/mt,6294.78,World Bank Pink Sheet
+2015-06-01,2015,6,Copper,,$/mt,5833.01,World Bank Pink Sheet
+2015-07-01,2015,7,Copper,,$/mt,5456.75,World Bank Pink Sheet
+2015-08-01,2015,8,Copper,,$/mt,5127.3,World Bank Pink Sheet
+2015-09-01,2015,9,Copper,,$/mt,5217.25,World Bank Pink Sheet
+2015-10-01,2015,10,Copper,,$/mt,5216.09,World Bank Pink Sheet
+2015-11-01,2015,11,Copper,,$/mt,4799.9,World Bank Pink Sheet
+2015-12-01,2015,12,Copper,,$/mt,4638.83,World Bank Pink Sheet
+2016-01-01,2016,1,Copper,,$/mt,4471.79,World Bank Pink Sheet
+2016-02-01,2016,2,Copper,,$/mt,4598.62,World Bank Pink Sheet
+2016-03-01,2016,3,Copper,,$/mt,4953.8,World Bank Pink Sheet
+2016-04-01,2016,4,Copper,,$/mt,4872.74,World Bank Pink Sheet
+2016-05-01,2016,5,Copper,,$/mt,4694.54,World Bank Pink Sheet
+2016-06-01,2016,6,Copper,,$/mt,4641.97,World Bank Pink Sheet
+2016-07-01,2016,7,Copper,,$/mt,4864.9,World Bank Pink Sheet
+2016-08-01,2016,8,Copper,,$/mt,4751.67,World Bank Pink Sheet
+2016-09-01,2016,9,Copper,,$/mt,4722.2,World Bank Pink Sheet
+2016-10-01,2016,10,Copper,,$/mt,4731.26,World Bank Pink Sheet
+2016-11-01,2016,11,Copper,,$/mt,5450.93,World Bank Pink Sheet
+2016-12-01,2016,12,Copper,,$/mt,5660.35,World Bank Pink Sheet
+2017-01-01,2017,1,Copper,,$/mt,5754.56,World Bank Pink Sheet
+2017-02-01,2017,2,Copper,,$/mt,5940.91,World Bank Pink Sheet
+2017-03-01,2017,3,Copper,,$/mt,5824.63,World Bank Pink Sheet
+2017-04-01,2017,4,Copper,,$/mt,5683.9,World Bank Pink Sheet
+2017-05-01,2017,5,Copper,,$/mt,5599.56,World Bank Pink Sheet
+2017-06-01,2017,6,Copper,,$/mt,5719.76,World Bank Pink Sheet
+2017-07-01,2017,7,Copper,,$/mt,5985.12,World Bank Pink Sheet
+2017-08-01,2017,8,Copper,,$/mt,6485.63,World Bank Pink Sheet
+2017-09-01,2017,9,Copper,,$/mt,6577.17,World Bank Pink Sheet
+2017-10-01,2017,10,Copper,,$/mt,6807.6,World Bank Pink Sheet
+2017-11-01,2017,11,Copper,,$/mt,6826.55,World Bank Pink Sheet
+2017-12-01,2017,12,Copper,,$/mt,6833.89,World Bank Pink Sheet
+2018-01-01,2018,1,Copper,,$/mt,7065.85,World Bank Pink Sheet
+2018-02-01,2018,2,Copper,,$/mt,7006.52,World Bank Pink Sheet
+2018-03-01,2018,3,Copper,,$/mt,6799.18,World Bank Pink Sheet
+2018-04-01,2018,4,Copper,,$/mt,6851.51,World Bank Pink Sheet
+2018-05-01,2018,5,Copper,,$/mt,6825.27,World Bank Pink Sheet
+2018-06-01,2018,6,Copper,,$/mt,6965.86,World Bank Pink Sheet
+2018-07-01,2018,7,Copper,,$/mt,6250.75,World Bank Pink Sheet
+2018-08-01,2018,8,Copper,,$/mt,6051.05,World Bank Pink Sheet
+2018-09-01,2018,9,Copper,,$/mt,6050.76,World Bank Pink Sheet
+2018-10-01,2018,10,Copper,,$/mt,6219.59,World Bank Pink Sheet
+2018-11-01,2018,11,Copper,,$/mt,6195.92,World Bank Pink Sheet
+2018-12-01,2018,12,Copper,,$/mt,6075.32,World Bank Pink Sheet
+2019-01-01,2019,1,Copper,,$/mt,5939.1,World Bank Pink Sheet
+2019-02-01,2019,2,Copper,,$/mt,6300.49,World Bank Pink Sheet
+2019-03-01,2019,3,Copper,,$/mt,6439.46,World Bank Pink Sheet
+2019-04-01,2019,4,Copper,,$/mt,6438.36,World Bank Pink Sheet
+2019-05-01,2019,5,Copper,,$/mt,6017.9,World Bank Pink Sheet
+2019-06-01,2019,6,Copper,,$/mt,5882.23,World Bank Pink Sheet
+2019-07-01,2019,7,Copper,,$/mt,5941.2,World Bank Pink Sheet
+2019-08-01,2019,8,Copper,,$/mt,5709.44,World Bank Pink Sheet
+2019-09-01,2019,9,Copper,,$/mt,5759.25,World Bank Pink Sheet
+2019-10-01,2019,10,Copper,,$/mt,5757.3,World Bank Pink Sheet
+2019-11-01,2019,11,Copper,,$/mt,5859.95,World Bank Pink Sheet
+2019-12-01,2019,12,Copper,,$/mt,6077.06,World Bank Pink Sheet
+2020-01-01,2020,1,Copper,,$/mt,6031.21,World Bank Pink Sheet
+2020-02-01,2020,2,Copper,,$/mt,5687.75,World Bank Pink Sheet
+2020-03-01,2020,3,Copper,,$/mt,5182.63,World Bank Pink Sheet
+2020-04-01,2020,4,Copper,,$/mt,5057.97,World Bank Pink Sheet
+2020-05-01,2020,5,Copper,,$/mt,5239.83,World Bank Pink Sheet
+2020-06-01,2020,6,Copper,,$/mt,5754.6,World Bank Pink Sheet
+2020-07-01,2020,7,Copper,,$/mt,6372.46,World Bank Pink Sheet
+2020-08-01,2020,8,Copper,,$/mt,6498.94,World Bank Pink Sheet
+2020-09-01,2020,9,Copper,,$/mt,6704.9,World Bank Pink Sheet
+2020-10-01,2020,10,Copper,,$/mt,6713.81,World Bank Pink Sheet
+2020-11-01,2020,11,Copper,,$/mt,7068.91,World Bank Pink Sheet
+2020-12-01,2020,12,Copper,,$/mt,7772.24,World Bank Pink Sheet
+2021-01-01,2021,1,Copper,,$/mt,7972.15,World Bank Pink Sheet
+2021-02-01,2021,2,Copper,,$/mt,8470.94,World Bank Pink Sheet
+2021-03-01,2021,3,Copper,,$/mt,8988.25,World Bank Pink Sheet
+2021-04-01,2021,4,Copper,,$/mt,9324.82,World Bank Pink Sheet
+2021-05-01,2021,5,Copper,,$/mt,10161.97,World Bank Pink Sheet
+2021-06-01,2021,6,Copper,,$/mt,9631.5,World Bank Pink Sheet
+2021-07-01,2021,7,Copper,,$/mt,9450.82,World Bank Pink Sheet
+2021-08-01,2021,8,Copper,,$/mt,9370.14,World Bank Pink Sheet
+2021-09-01,2021,9,Copper,,$/mt,9324.71,World Bank Pink Sheet
+2021-10-01,2021,10,Copper,,$/mt,9829.22,World Bank Pink Sheet
+2021-11-01,2021,11,Copper,,$/mt,9728.9,World Bank Pink Sheet
+2021-12-01,2021,12,Copper,,$/mt,9551.18,World Bank Pink Sheet
+2022-01-01,2022,1,Copper,,$/mt,9782.34,World Bank Pink Sheet
+2022-02-01,2022,2,Copper,,$/mt,9943.17,World Bank Pink Sheet
+2022-03-01,2022,3,Copper,,$/mt,10230.89,World Bank Pink Sheet
+2022-04-01,2022,4,Copper,,$/mt,10161.38,World Bank Pink Sheet
+2022-05-01,2022,5,Copper,,$/mt,9377.15,World Bank Pink Sheet
+2022-06-01,2022,6,Copper,,$/mt,9024.46,World Bank Pink Sheet
+2022-07-01,2022,7,Copper,,$/mt,7544.81,World Bank Pink Sheet
+2022-08-01,2022,8,Copper,,$/mt,7981.84,World Bank Pink Sheet
+2022-09-01,2022,9,Copper,,$/mt,7746.01,World Bank Pink Sheet
+2022-10-01,2022,10,Copper,,$/mt,7651.08,World Bank Pink Sheet
+2022-11-01,2022,11,Copper,,$/mt,8049.86,World Bank Pink Sheet
+2022-12-01,2022,12,Copper,,$/mt,8375.4,World Bank Pink Sheet
+2023-01-01,2023,1,Copper,,$/mt,9037.95,World Bank Pink Sheet
+2023-02-01,2023,2,Copper,,$/mt,8936.59,World Bank Pink Sheet
+2023-03-01,2023,3,Copper,,$/mt,8856.31,World Bank Pink Sheet
+2023-04-01,2023,4,Copper,,$/mt,8809.42,World Bank Pink Sheet
+2023-05-01,2023,5,Copper,,$/mt,8217.47,World Bank Pink Sheet
+2023-06-01,2023,6,Copper,,$/mt,8396.52,World Bank Pink Sheet
+2023-07-01,2023,7,Copper,,$/mt,8476.68,World Bank Pink Sheet
+2023-08-01,2023,8,Copper,,$/mt,8349.13,World Bank Pink Sheet
+2023-09-01,2023,9,Copper,,$/mt,8276.71,World Bank Pink Sheet
+2023-10-01,2023,10,Copper,,$/mt,7937.18,World Bank Pink Sheet
+2023-11-01,2023,11,Copper,,$/mt,8189.59,World Bank Pink Sheet
+2023-12-01,2023,12,Copper,,$/mt,8399.94,World Bank Pink Sheet
+2024-01-01,2024,1,Copper,,$/mt,8338.88,World Bank Pink Sheet
+2024-02-01,2024,2,Copper,,$/mt,8304.95,World Bank Pink Sheet
+2024-03-01,2024,3,Copper,,$/mt,8689.13,World Bank Pink Sheet
+2024-04-01,2024,4,Copper,,$/mt,9464.43,World Bank Pink Sheet
+2024-05-01,2024,5,Copper,,$/mt,10139.33,World Bank Pink Sheet
+2024-06-01,2024,6,Copper,,$/mt,9648.17,World Bank Pink Sheet
+2024-07-01,2024,7,Copper,,$/mt,9385.31,World Bank Pink Sheet
+2024-08-01,2024,8,Copper,,$/mt,8971.96,World Bank Pink Sheet
+2024-09-01,2024,9,Copper,,$/mt,9237.48,World Bank Pink Sheet
+2024-10-01,2024,10,Copper,,$/mt,9533.99,World Bank Pink Sheet
+2024-11-01,2024,11,Copper,,$/mt,9075.73,World Bank Pink Sheet
+2024-12-01,2024,12,Copper,,$/mt,8916.32,World Bank Pink Sheet
+2025-01-01,2025,1,Copper,,$/mt,8991.41,World Bank Pink Sheet
+2025-02-01,2025,2,Copper,,$/mt,9330.6,World Bank Pink Sheet
+2025-03-01,2025,3,Copper,,$/mt,9739.68,World Bank Pink Sheet
+2025-04-01,2025,4,Copper,,$/mt,9176.8,World Bank Pink Sheet
+2025-05-01,2025,5,Copper,,$/mt,9532.98,World Bank Pink Sheet
+2025-06-01,2025,6,Copper,,$/mt,9835.07,World Bank Pink Sheet
+2025-07-01,2025,7,Copper,,$/mt,9770.58,World Bank Pink Sheet
+2025-08-01,2025,8,Copper,,$/mt,9669.56,World Bank Pink Sheet
+2025-09-01,2025,9,Copper,,$/mt,9983.79,World Bank Pink Sheet
+2025-10-01,2025,10,Copper,,$/mt,10739.91,World Bank Pink Sheet
+2025-11-01,2025,11,Copper,,$/mt,10812.03,World Bank Pink Sheet
+2025-12-01,2025,12,Copper,,$/mt,11785.25,World Bank Pink Sheet
+2026-01-01,2026,1,Copper,,$/mt,13012.0,World Bank Pink Sheet
