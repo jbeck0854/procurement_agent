@@ -2,7 +2,7 @@
 
 ## Overview
 
-The updated **Product Cost Model** constructrs realistic, country-level monthly price series for four semiconductor component categories by combining:
+The updated **Product Cost Model**, outlined in `02_create_products.ipynb`, constructs realistic, country-level monthly price series for four semiconductor component categories by combining:
 
 - **FRED** international manufacturing PPIs
 - A unified **2012 base-year rebasing** across all regions PPIs
