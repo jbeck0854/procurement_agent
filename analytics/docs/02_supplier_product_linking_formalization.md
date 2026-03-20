@@ -2,7 +2,7 @@
 
 ## Overview
 
-This file details the workdone in the '' notebook, which takes the previously generated:
+This file details the workdone in `scripts/data_cleaning/03_link_suppliers_products` notebook, which takes the previously generated:
 
 - `combined_products_UPDATED.csv`
 - `synthetic_suppliers.csv`
