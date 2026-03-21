@@ -3,6 +3,7 @@ Connects to postgres-mcp server and converts its tools
 into LangChain-compatible tools via langchain-mcp-adapters.
 """
 
+import os
 from contextlib import asynccontextmanager
 
 from mcp import ClientSession, StdioServerParameters
@@ -12,8 +13,12 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from config import DATABASE_URL
 
 # How to start the postgres-mcp subprocess
+# Use the venv's postgres-mcp so it works regardless of PATH
+_VENV_BIN = os.path.join(os.path.dirname(__file__), "venv", "bin")
+_POSTGRES_MCP = os.path.join(_VENV_BIN, "postgres-mcp")
+
 server_params = StdioServerParameters(
-    command="postgres-mcp",
+    command=_POSTGRES_MCP if os.path.exists(_POSTGRES_MCP) else "postgres-mcp",
     args=[DATABASE_URL, "--access-mode", "unrestricted"],
 )
 

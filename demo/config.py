@@ -21,8 +21,13 @@ AZURE_API_VERSION = "2024-12-01-preview"
 # ---------------------------------------------------------------------------
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://frank:@localhost:5432/procurement_agent",
+    "postgresql://localhost:5432/procurement_agent",
 )
+
+# ---------------------------------------------------------------------------
+# Tavily (web search)
+# ---------------------------------------------------------------------------
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
 # ---------------------------------------------------------------------------
 # Paths

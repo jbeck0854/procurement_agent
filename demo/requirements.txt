@@ -11,6 +11,7 @@ langgraph>=0.4
 mcp>=1.0
 langchain-mcp-adapters>=0.1
 postgres-mcp>=0.3
+mcp-tavily>=0.1
 
 # Database (for scoring tool direct connection)
 psycopg2-binary>=2.9
