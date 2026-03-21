@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 import pandas as pd
@@ -210,7 +210,8 @@ def load_contract(path: str) -> MetricContract:
 class ScoreResult:
     ranked: pd.DataFrame # The ranked DataFrame contains the final scored and ranked supplier data, including any fields specified for explainability in the contract. This is the main output of the scoring process that will be used for decision-making.
     dropped_rows: pd.DataFrame # The dropped_rows DataFrame contains all rows that were excluded from scoring due to the null policy or compliance gate. Also provides reason (e.g., missing unit_cost). This serves as an audit trail for transparency and debugging. It indicates exactly which suppliers were dropped and why.
-    warnings: list[str] 
+    warnings: list[str]
+    excluded_requested_suppliers: list[dict[str, Any]]
 
 # example: result = ScoreResult(ranked=ranked_df, dropped_rows=dropped_df, warnings=wraning_list)
 # Reults accessed using e.g., result.ranked, result.dropped_rows, result.warnings
@@ -268,6 +269,9 @@ class SupplierScorer:
         Q: int = 5000, # default order quantity for bulk discount calculation; can be overridden at runtime
         lambda_risk: float | None = None,
         top_k: int | None = None,
+        compare_supplier_ids: Sequence[str] | None = None, # lets scorer score full product universe and still determine which suppliers are the user's selected comparison set
+        compliance_threshold: float | None = None, # runtime override for compliance gate threshold (e.g., minimum logistics reliability), if not set, uses contract value
+        compare_strict: bool = False,
     ) -> ScoreResult:
         """
         Main scoring function.
@@ -275,6 +279,7 @@ class SupplierScorer:
         """
         warnings: list[str] = [] # This list will collect any warnings generated during the scoring process, such as rows dropped due to null values or compliance gate failures. These warnings can be returned as part of the ScoreResult to provide transparency about any data issues or exclusions that occurred during scoring.
         # also tells the user that the variable (warnings) will be a list of strings
+        excluded_requested_suppliers: list[dict[str, Any]] = []
 
         # ------------------------------------------
         # contract version sanity check
@@ -306,30 +311,83 @@ class SupplierScorer:
         df = kept
 
         # -----------------------------------------
-        # Compliance gate (from YAML) + audit reason
+        # Compliance gate (from YAML, with optional runtime override) + audit reason
         # -----------------------------------------
         # Removes suppliers that fail minimum compliance threshold requirements.
+        # -----------------------------------------
         gate = self.c.constraints.get("compliance_gate", {})
-        if gate.get("enabled", False):  # if true, apply the compliance gate filter; if false or missing, skip this step and mark all as eligible
+
+        if gate.get("enabled", False):
             field = gate["field"]
-            thresh = float(gate["threshold"])
-            eligible_mask = pd.to_numeric(df[field], errors="coerce").astype(float) >= thresh
+
+            effective_compliance_threshold = (
+                float(compliance_threshold)
+                if compliance_threshold is not None
+                else float(gate["threshold"])
+            )
+
+            eligible_mask = (
+                pd.to_numeric(df[field], errors="coerce").astype(float)
+                >= effective_compliance_threshold
+            )
             df["is_eligible"] = eligible_mask
 
             ineligible = df[~eligible_mask].copy()
-            if not ineligible.empty: # if there are any rows that do not meet the compliance gate threshold, block is executed 
+            if not ineligible.empty:
                 ineligible["drop_reason"] = "gate:compliance_gate"
-                warnings.append(f"Excluded {len(ineligible)} rows due to compliance (governance + customs) gate < {thresh}).")
+                ineligible["applied_compliance_threshold"] = effective_compliance_threshold
+                warnings.append(
+                    f"Excluded {len(ineligible)} rows due to compliance gate < {effective_compliance_threshold}."
+                )
 
-            df = df[eligible_mask].copy() # filter the DataFrame to only include rows that meet the compliance gate threshold, and create a copy of this filtered DataFrame for further processing. This step effectively removes any suppliers that do not meet the specified compliance requirements from the scoring process.
+            df = df[eligible_mask].copy()
         else:
-            df["is_eligible"] = True # if compliance gate is not enabled in the contract, we mark all rows as eligible by settings is_eligible to True for all rows.
-            ineligible = df.iloc[0:0].copy() # create an empty ineleginle DataFrame so the code doesn't break.
+            df["is_eligible"] = True
+            ineligible = df.iloc[0:0].copy()
 
-        if df.empty: # if there are no rows left after applying the null policy and compliance gate filters, we create an empty ranked DataFrame with the expected columns and return it along with any dropped rows and warnings. This ensures that the function can still return a valid ScoreResult even when there are no eligible suppliers to score.
+        if df.empty: 
             out = pd.DataFrame(columns=["supplier_id", "product", "risk_penalty", "risk_adjusted_cost"])
-            dropped_all = pd.concat([dropped, ineligible], axis=0) if (not dropped.empty or not ineligible.empty) else pd.DataFrame()
-            return ScoreResult(ranked=out, dropped_rows=dropped_all, warnings=warnings)
+            dropped_all = (
+                pd.concat([dropped, ineligible], axis=0)
+                if (not dropped.empty or not ineligible.empty)
+                else pd.DataFrame()
+            )
+
+            if compare_supplier_ids:
+                requested_ids = [str(sid) for sid in compare_supplier_ids]
+                if not dropped_all.empty and "supplier_id" in dropped_all.columns:
+                    dropped_subset = dropped_all[
+                        dropped_all["supplier_id"].astype(str).isin(requested_ids)
+                    ].copy()
+
+                    detail_cols = [
+                        c for c in [
+                            "supplier_id",
+                            "product",
+                            "drop_reason",
+                            "applied_compliance_threshold",
+                        ]
+                        if c in dropped_subset.columns
+                    ]
+
+                    if not dropped_subset.empty:
+                        excluded_requested_suppliers = (
+                            dropped_subset[detail_cols]
+                            .drop_duplicates()
+                            .to_dict(orient="records")
+                        )
+                else:
+                    excluded_requested_suppliers = [
+                        {"supplier_id": sid, "drop_reason": "not_returned_by_scorer"}
+                        for sid in requested_ids
+                    ]
+
+            return ScoreResult(
+                ranked=out,
+                dropped_rows=dropped_all,
+                warnings=warnings,
+                excluded_requested_suppliers=excluded_requested_suppliers,
+            )
 
         # -----------------------------------------
         # Compute base/derived metrics YAML (same formulas as defined in the contract, but now contract-aligned)
@@ -460,23 +518,37 @@ class SupplierScorer:
 
         df["risk_adjusted_cost"] = total
 
-        # call the calibrate_decision_tiers function from calibration.py
-        df = calibrate_decision_tiers(df)
+        # Assign tiers after full scoring
+        # Global tiers are calibrated across the full product universe
+        # Local comparison tiers are calibrated only for selected supplier subset
+        df = calibrate_decision_tiers(
+            df,
+            local_supplier_ids=compare_supplier_ids
+        )
 
 
         # ---------------------------------------------
-        # Ranking logic (already contract-driven)
-        # Sort suppliers using the contract-defined primary metric
-        # and tie-breakers, and return the top K results as specified at runtime or by default in the contract.
+        # Ranking logic (contract-driven)
+        # First rank the full scored universe for the product.
+        # Then, if compare_supplier_ids is provided, subset to those suppliers
+        # after global scoring/calibration has already been done.
         # ---------------------------------------------
         rank_cfg = self.c.ranking
         if not rank_cfg.get("enabled", True):
             warnings.append("Ranking disabled in contract; returning unranked results.")
             ranked = df.copy()
-        else:
-            if top_k is None:
-                top_k = int(rank_cfg.get("top_k_default", 5))
 
+            if compare_supplier_ids:
+                ranked = ranked[ranked["supplier_id"].isin(compare_supplier_ids)].copy()
+
+                requested_order = {sid: i for i, sid in enumerate(compare_supplier_ids)}
+                ranked["_requested_order"] = ranked["supplier_id"].map(requested_order).fillna(9999)
+                ranked = (
+                    ranked.sort_values(["_requested_order", "supplier_id"])
+                    .drop(columns="_requested_order")
+                    .reset_index(drop=True)
+                )
+        else:
             primary_metric = rank_cfg.get("primary_metric", "risk_adjusted_cost")
             primary_ascending = bool(rank_cfg.get("ascending", True))
 
@@ -492,7 +564,86 @@ class SupplierScorer:
                 sort_cols.append("supplier_id")
                 ascending.append(True)
 
-            ranked = df.sort_values(sort_cols, ascending=ascending).reset_index(drop=True).head(top_k).copy()
+            ranked = df.sort_values(sort_cols, ascending=ascending).reset_index(drop=True).copy()
+
+            # If the caller is comparing a selected supplier subset,
+            # return only those suppliers AFTER full-universe scoring.
+            if compare_supplier_ids:
+                ranked = ranked[ranked["supplier_id"].isin(compare_supplier_ids)].copy()
+
+                requested_order = {sid: i for i, sid in enumerate(compare_supplier_ids)}
+                ranked["_requested_order"] = ranked["supplier_id"].map(requested_order).fillna(9999)
+                ranked = (
+                    ranked.sort_values(["_requested_order", primary_metric, "supplier_id"])
+                    .drop(columns="_requested_order")
+                    .reset_index(drop=True)
+                )
+
+            if compare_supplier_ids:
+                # when comparing an explicitly selected supplier set,
+                # return that full selected set after global scoring/calibration to labels.
+                top_k = len(compare_supplier_ids)
+            elif top_k is None:
+                top_k = int(rank_cfg.get("top_k_default", 5))
+            
+            ranked = ranked.head(top_k).copy()
+
+            # ---------------------------------------------
+            # Handle requested comparison suppliers that were
+            # screened out before ranking/return.
+            # ---------------------------------------------
+            if compare_supplier_ids:
+                requested_ids = [str(sid) for sid in compare_supplier_ids]
+                returned_ids = set(ranked["supplier_id"].astype(str).tolist())
+                missing_ids = [sid for sid in requested_ids if sid not in returned_ids]
+
+                if missing_ids:
+                    dropped_rows_preview = (
+                        pd.concat([dropped, ineligible], axis=0)
+                        if (not dropped.empty or not ineligible.empty)
+                        else pd.DataFrame()
+                    )
+
+                    if not dropped_rows_preview.empty and "supplier_id" in dropped_rows_preview.columns:
+                        dropped_subset = dropped_rows_preview[
+                            dropped_rows_preview["supplier_id"].astype(str).isin(missing_ids)
+                        ].copy()
+                    else:
+                        dropped_subset = pd.DataFrame()
+
+                    if not dropped_subset.empty:
+                        detail_cols = [
+                            c for c in [
+                                "supplier_id",
+                                "product",
+                                "drop_reason",
+                                "applied_compliance_threshold",
+                            ]
+                            if c in dropped_subset.columns
+                        ]
+
+                        excluded_requested_suppliers = (
+                            dropped_subset[detail_cols]
+                            .drop_duplicates()
+                            .to_dict(orient="records")
+                        )
+                    else:
+                        excluded_requested_suppliers = [
+                            {"supplier_id": sid, "drop_reason": "not_returned_by_scorer"}
+                            for sid in missing_ids
+                        ]
+
+                    warning_msg = (
+                        "Some requested suppliers were excluded before ranking. "
+                        f"Missing supplier_ids={missing_ids}. "
+                        f"Details={excluded_requested_suppliers}"
+                    )
+
+                    if compare_strict:
+                        raise ValueError(warning_msg)
+
+                    warnings.append(warning_msg)
+
 
         # ---------------------------------------------
         # Explainability (contract-driven)
@@ -590,14 +741,17 @@ class SupplierScorer:
                                 rename[src] = str(label) 
 
             # remove duplices while preserving order (e.g., if same field included in raw and derived, which can happen if a metric is both an input and a component of a composite, like landed_unit_cost)
+            # remove duplicates while preserving order
             out_cols = list(dict.fromkeys(out_cols))
 
-            ranked_out = ranked[out_cols].rename(columns=rename) if out_cols else ranked.copy() # selects columns list in out_cols and renames them using the new labels
+            # always keep decision-tier columns if present
+            for c in ["decision_tier_global", "decision_tier_local"]:
+                if c in ranked.columns and c not in out_cols:
+                    out_cols.append(c)
 
-            #if "top_drivers" in ranked.columns:
-            #    ranked_out["TopDrivers"] = ranked["top_drivers"].astype(object).values
-
-            ranked = ranked_out
+            # keep canonical/internal names in scorer output
+            if out_cols:
+                ranked = ranked[out_cols].copy()
 
         # -----------------------------------------------
         # Collect dropped rows (audit)
@@ -605,7 +759,12 @@ class SupplierScorer:
         dropped_rows = pd.concat([dropped, ineligible], axis=0) if (not dropped.empty or not ineligible.empty) else pd.DataFrame()
         # merges rows dropped due to null policy and compliance gate into a single DataFrame for audit purposes. If there are no dropped rows from either reason, it creates an empty DataFrame instead.
 
-        return ScoreResult(ranked=ranked, dropped_rows=dropped_rows, warnings=warnings)
+        return ScoreResult(
+                ranked=ranked,
+                dropped_rows=dropped_rows,
+                warnings=warnings,
+                excluded_requested_suppliers=excluded_requested_suppliers,
+            )
 
 
 if __name__ == "__main__": # only run this block if the script is executed directly (e.g., python scoring.py), not when imported as a module.

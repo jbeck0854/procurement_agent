@@ -88,6 +88,8 @@ constraints:
     threshold: 0.60
     rule: ">= threshold"
     rationale: "Exclude suppliers unlikely to meet compliance requirements (governance + customs-derived)."
+    runtime_override_allowed: true
+    strict_compare_default: false
 
 assumptions:
   quantity_units: "units" # tells pipeline variable Q is interpreted as units (vs kg, liters, etc) for bulk pricing logic etc
@@ -270,7 +272,8 @@ explainability: # when results presented, includes these fields so users can und
       - landed_unit_cost: LandedUnitCost
       - risk_penalty: RiskPenalty
       - risk_adjusted_cost: RiskAdjustedCost
-      - decision_tier: DecisionTier 
+      - decision_tier_global: GlobalTier
+      - decision_tier_local: LocalComparisonDecisionTier 
       - top_adjusted_cost_drivers: TopAdjustedCostDrivers 
       - top_risk_drivers: TopRiskDrivers # if using nested driver method NEW
   driver_count: 3 # when showing explainability, also return top N "drivers" (input fields or derived metrics that most influenced the score); runtime override allowed
