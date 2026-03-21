@@ -163,15 +163,15 @@ curl -s -X POST http://localhost:8000/chat \
 
 Expected: Returns supplier count grouped by country.
 
-### Test 4: Chinese language query
+### Test 4: Analytical query
 
 ```bash
 curl -s -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "帮我分析一下 microprocessors 的供应商，采购量5000，风险敏感度中等"}' | python -m json.tool
+  -d '{"message": "Analyze microprocessor suppliers for an order of 5000 units with moderate risk sensitivity"}' | python -m json.tool
 ```
 
-Expected: Response in Chinese with microprocessor supplier analysis. Verifies the Synthesizer responds in the user's language.
+Expected: Returns microprocessor supplier analysis with scoring. Verifies the full pipeline handles analytical queries.
 
 ---
 
