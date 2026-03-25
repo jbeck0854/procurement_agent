@@ -154,7 +154,7 @@ _VOLATILITY_ANNOTATION = (
     "3.  Blend with supplier disruption probability:\n"
     "    60%  normalized price volatility\n"
     "    40%  disruption probability\n\n"
-    "Score range: 0 – 1  ·  Lower is better"
+    "Score range: 0 – 1  ·  Lower = more stable, less volatile"
 )
 
 
