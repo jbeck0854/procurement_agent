@@ -107,30 +107,35 @@ CREATE TABLE fact_supplier_product_profile (
 );
 
 
--- Inventory + Demand: monthly grain = month x product
----- Measures: demand + inventory positions + planning parameters (from synthetic file)
-DROP TABLE IF EXISTS fact_inventory_demand_monthly CASCADE;
-CREATE TABLE fact_inventory_demand_monthly (
-    date_key INT NOT NULL REFERENCES dim_date(date_key),
-    product_key INT NOT NULL REFERENCES dim_product(product_key),
+-- Finished-good semiconductor demand: weekly grain = week_date × facility × semiconductor_id
+-- NOTE: dim_date is at month grain (YYYYMM key) and cannot be used here.
+--       week_date DATE is the temporal anchor stored directly in the fact table.
+DROP TABLE IF EXISTS fact_semiconductor_demand CASCADE;
+CREATE TABLE fact_semiconductor_demand (
+    week_date            DATE NOT NULL,
+    facility_id          TEXT NOT NULL REFERENCES dim_facility(facility_id),
+    semiconductor_id     TEXT NOT NULL REFERENCES dim_semiconductor(semiconductor_id),
 
-    monthly_demand_units         INT NULL,
+    -- time helpers (denormalized from source; avoids date math in queries)
+    week_number          INT  NOT NULL,  -- sequential week 1–145
+    year                 INT  NOT NULL,
+    month                INT  NOT NULL,
+    year_month           TEXT NOT NULL,
 
-    safety_stock_units           INT NULL,
-    on_hand_units                INT NULL,
-    on_order_units               INT NULL,
-    backorder_units              INT NULL,
-    reorder_point_units          INT NULL,
+    -- measures
+    customer_orders           INT           NOT NULL,
+    realized_selling_price    NUMERIC(14,6) NOT NULL,
+    list_price                NUMERIC(14,6) NOT NULL,
+    emailer_for_promotion     SMALLINT      NOT NULL,  -- 0/1 flag
+    homepage_featured         SMALLINT      NOT NULL,  -- 0/1 flag
 
-    -- keeping these here too for traceability and ease of querying, even though they could be pulled in from dim_inventory_policy
-    unit_value                   NUMERIC(12,6) NOT NULL,
-    unit_holding_cost_per_month  NUMERIC(12,6) NOT NULL,
-    lead_time_months             NUMERIC(10,6) NOT NULL,
-    stockout_probability         NUMERIC(18,12) NOT NULL,
-    fixed_ordering_cost          INT NOT NULL,
-
-    PRIMARY KEY (date_key, product_key)
+    PRIMARY KEY (week_date, facility_id, semiconductor_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_fact_inventory_date ON fact_inventory_demand_monthly(date_key);
-CREATE INDEX IF NOT EXISTS idx_fact_inventory_product ON fact_inventory_demand_monthly(product_key);
+CREATE INDEX IF NOT EXISTS idx_fact_semicon_demand_date
+    ON fact_semiconductor_demand(week_date);
+CREATE INDEX IF NOT EXISTS idx_fact_semicon_demand_facility
+    ON fact_semiconductor_demand(facility_id);
+CREATE INDEX IF NOT EXISTS idx_fact_semicon_demand_sku
+    ON fact_semiconductor_demand(semiconductor_id);
+

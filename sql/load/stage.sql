@@ -138,25 +138,21 @@ CREATE TABLE stg_supplier_products (
 );
 
 
--- Inventory + Demand (Synthetic)
-DROP TABLE IF EXISTS stg_inventory_demand;
-CREATE TABLE stg_inventory_demand (
-  date                         DATE,
-  product                      TEXT,
-
-  monthly_demand_units         INT,
-
-  unit_value                   NUMERIC(12,6),
-  unit_holding_cost_per_month  NUMERIC(12,6),
-
-  safety_stock_units           INT,
-  on_hand_units                INT,
-  on_order_units               INT,
-  backorder_units              INT,
-  reorder_point_units          INT,
-
-  lead_time_months             NUMERIC(10,6),
-  stockout_probability         NUMERIC(18,12),
-
-  fixed_ordering_cost          INT
+-- Finished-good semiconductor demand (weekly)
+-- Mirrors all columns in cleaned_data/finished_goods_demand_table.csv exactly.
+DROP TABLE IF EXISTS stg_semiconductor_demand;
+CREATE TABLE stg_semiconductor_demand (
+    week                     INT,
+    facility_id              TEXT,
+    semiconductor_id         TEXT,
+    realized_selling_price   NUMERIC,
+    list_price               NUMERIC,
+    emailer_for_promotion    INT,
+    homepage_featured        INT,
+    customer_orders          INT,
+    date                     DATE,
+    year                     INT,
+    month                    INT,
+    year_month               TEXT
 );
+

@@ -76,9 +76,10 @@ TRUNCATE TABLE stg_products;
 TRUNCATE TABLE stg_supplier_products;
 \copy stg_supplier_products FROM 'cleaned_data/suppliers_products_UPDATED.csv' WITH (FORMAT csv, HEADER true);
 
--- synthetic inventory + demand
-TRUNCATE TABLE stg_inventory_demand;
-\copy stg_inventory_demand FROM 'cleaned_data/inventory_demand.csv' WITH (FORMAT csv, HEADER true);
+-- finished-good semiconductor demand (weekly; grain: week × facility_id × semiconductor_id)
+TRUNCATE TABLE stg_semiconductor_demand;
+\copy stg_semiconductor_demand (week, facility_id, semiconductor_id, realized_selling_price, list_price, emailer_for_promotion, homepage_featured, customer_orders, date, year, month, year_month) FROM 'cleaned_data/finished_goods_demand_table.csv' WITH (FORMAT csv, HEADER true);
+
 
 
 

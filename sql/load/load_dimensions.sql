@@ -9,7 +9,8 @@ TRUNCATE
   dim_supplier,
   dim_product_country,
   dim_product,
-  dim_inventory_policy
+  dim_facility,
+  dim_semiconductor
 RESTART IDENTITY CASCADE;
 
 -- ------------------------------------------------------------
@@ -189,25 +190,20 @@ JOIN dim_product dp ON dp.product = CASE trim(sp.product)
 
 
 -- ------------------------------------------------------------
--- dim_inventory_policy load 
+-- dim_facility load (4 rows: FACILITY_1 … FACILITY_4)
 -- ------------------------------------------------------------
-INSERT INTO dim_inventory_policy (
-  product_key,
-  unit_value,
-  unit_holding_cost_per_month,
-  lead_time_months,
-  stockout_probability,
-  fixed_ordering_cost
-)
-SELECT DISTINCT
-  dp.product_key,
-  sid.unit_value,
-  sid.unit_holding_cost_per_month,
-  sid.lead_time_months,
-  sid.stockout_probability,
-  sid.fixed_ordering_cost
-FROM stg_inventory_demand sid
-JOIN dim_product dp ON dp.product = sid.product;
+INSERT INTO dim_facility (facility_id)
+SELECT DISTINCT facility_id
+FROM stg_semiconductor_demand
+WHERE facility_id IS NOT NULL;
+
+-- ------------------------------------------------------------
+-- dim_semiconductor load (12 rows: SEMICONDUCTOR_1 … SEMICONDUCTOR_12)
+-- ------------------------------------------------------------
+INSERT INTO dim_semiconductor (semiconductor_id)
+SELECT DISTINCT semiconductor_id
+FROM stg_semiconductor_demand
+WHERE semiconductor_id IS NOT NULL;
 
 
 COMMIT;

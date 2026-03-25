@@ -9,7 +9,7 @@ BEGIN;
 -- wipes facts (makes safe to re-run without issues)
 TRUNCATE fact_product_monthly;
 TRUNCATE fact_supplier_product_profile;
-TRUNCATE fact_inventory_demand_monthly;
+TRUNCATE fact_semiconductor_demand;
 
 -- ----------------
 -- fact_ppi_monthly
@@ -155,43 +155,42 @@ JOIN dim_supplier ds
 
 
 -- ------------------------------------------------------------
--- fact_inventory_demand_monthly (date_key × product_key)
+-- fact_semiconductor_demand (week_date × facility_id × semiconductor_id)
+-- JOINs to dim_facility and dim_semiconductor enforce referential integrity
+-- and reject any staging rows with unknown dimension values.
 -- ------------------------------------------------------------
-TRUNCATE fact_inventory_demand_monthly;
-
-INSERT INTO fact_inventory_demand_monthly (
-  date_key,
-  product_key,
-  monthly_demand_units,
-  safety_stock_units,
-  on_hand_units,
-  on_order_units,
-  backorder_units,
-  reorder_point_units,
-  unit_value,
-  unit_holding_cost_per_month,
-  lead_time_months,
-  stockout_probability,
-  fixed_ordering_cost
+INSERT INTO fact_semiconductor_demand (
+    week_date,
+    facility_id,
+    semiconductor_id,
+    week_number,
+    year,
+    month,
+    year_month,
+    customer_orders,
+    realized_selling_price,
+    list_price,
+    emailer_for_promotion,
+    homepage_featured
 )
 SELECT
-  d.date_key,
-  dp.product_key,
-  sid.monthly_demand_units,
-  sid.safety_stock_units,
-  sid.on_hand_units,
-  sid.on_order_units,
-  sid.backorder_units,
-  sid.reorder_point_units,
-  sid.unit_value,
-  sid.unit_holding_cost_per_month,
-  sid.lead_time_months,
-  sid.stockout_probability,
-  sid.fixed_ordering_cost
-FROM stg_inventory_demand sid
-JOIN dim_date d ON d.year = EXTRACT(YEAR FROM sid.date)::INT
- AND d.month = EXTRACT(MONTH FROM sid.date)::INT
-JOIN dim_product dp ON dp.product = sid.product
-WHERE sid.date IS NOT NULL AND sid.product IS NOT NULL;
+    s.date,
+    s.facility_id,
+    s.semiconductor_id,
+    s.week,
+    s.year,
+    s.month,
+    s.year_month,
+    s.customer_orders,
+    s.realized_selling_price,
+    s.list_price,
+    s.emailer_for_promotion::SMALLINT,
+    s.homepage_featured::SMALLINT
+FROM stg_semiconductor_demand s
+JOIN dim_facility     f ON f.facility_id     = s.facility_id
+JOIN dim_semiconductor d ON d.semiconductor_id = s.semiconductor_id
+WHERE s.date IS NOT NULL
+  AND s.facility_id IS NOT NULL
+  AND s.semiconductor_id IS NOT NULL;
 
 COMMIT;
