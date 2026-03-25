@@ -9,19 +9,44 @@ User Query
     ↓
 Orchestrator (LLM) ─── generates structured tasks + human-in-the-loop approval
     ↓
-┌─────────────────────────┐
-│  Parallel Execution     │
-│                         │
-│  Data Agent             │  Direct tool call → PostgreSQL + Scoring Engine
-│  Search Agent           │  ReAct loop → Tavily News Search (geopolitical risk)
-└─────────────────────────┘
+Phase 1 — Data & Risk Intelligence (parallel):
+┌────────────────────────────────────────────────────┐
+│  data_agent  │  SQL exploration via MCP PostgreSQL  │  (conditional)
+│  risk_agent  │  Geopolitical risk via Tavily MCP    │  (conditional)
+└────────────────────────────────────────────────────┘
+    ↓  (phase2_router — waits for Phase 1 to complete)
+Phase 2 — Scoring & Visualization:
+┌────────────────────────────────────────────────────┐
+│  chart_agent │  Self-contained: queries DB, scores  │
+│              │  suppliers, renders matplotlib charts │
+└────────────────────────────────────────────────────┘
     ↓
 Synthesizer (LLM) ─── cross-analysis & actionable recommendations
     ↓
-Streamed Response (progressive output as each agent completes)
+Streamed Response (charts + summary, progressive output)
 ```
 
-**Key technologies:** LangGraph, Azure OpenAI, PostgreSQL (via MCP), Tavily Web Search (via MCP), Streamlit, FastAPI
+### Agent Responsibilities
+
+| Agent | Phase | Tools | When Triggered |
+|-------|-------|-------|----------------|
+| **data_agent** | 1 | MCP PostgreSQL (ReAct) | Exploratory SQL queries ("how many suppliers?", "list products") |
+| **risk_agent** | 1 | Tavily MCP (ReAct) | User explicitly asks about geopolitical risks, tariffs, sanctions, news |
+| **chart_agent** | 2 | 7 chart tools + internal scoring (direct mode) | Supplier ranking, scoring, any visualization request |
+
+### Chart Tools (chart_agent)
+
+| Tool | Description | Data Source |
+|------|-------------|-------------|
+| `plot_score_breakdown` | 4-panel score decomposition (final score, cost, risk penalty, risk components) | vw_supplier_complete_profile + SupplierScorer |
+| `plot_supplier_comparison` | Side-by-side supplier cost/risk comparison | vw_supplier_complete_profile |
+| `plot_country_comparison` | Country logistics (LPI) & governance (WGI) indicators | vw_country_risk_snapshot |
+| `plot_price_trend` | Product price trend over time | vw_product_price_history |
+| `plot_volatility_trend` | Rolling price volatility | vw_product_price_history |
+| `plot_cross_country_volatility` | Cross-country volatility comparison | vw_product_price_history |
+| `plot_price_vs_commodity` | Product price vs commodity baselines | vw_product_price_history + vw_commodity_price_history |
+
+**Key technologies:** LangGraph, Azure OpenAI, PostgreSQL (via MCP), Tavily Web Search (via MCP), Streamlit, matplotlib
 
 ## Prerequisites
 
@@ -144,12 +169,13 @@ curl -s -X POST http://localhost:8000/resume \
 
 ### Example queries
 
-| Query | What it tests |
-|-------|---------------|
-| `How many suppliers are in the database?` | SQL query via MCP (Data Agent, ReAct mode) |
-| `Rank the top 3 transistor suppliers for 10000 units, I care about risk` | Supplier scoring (Data Agent, direct tool call) |
-| `Give me a breakdown of suppliers per country` | SQL analytics (Data Agent, ReAct mode) |
-| `Rank the top 5 microprocessor suppliers for 50000 units, balanced risk. I'm concerned about recent tariff changes.` | Parallel scoring + geopolitical news (Data Agent + Search Agent) |
+| Query | Agents Used |
+|-------|-------------|
+| `Rank the top 3 transistor suppliers with balanced risk, show score breakdown` | chart_agent (plot_score_breakdown) |
+| `Compare price volatility for microprocessors across China, Taiwan, and USA` | chart_agent (plot_cross_country_volatility) |
+| `Show me the logistics and governance profile for Vietnam, China, and Korea` | chart_agent (plot_country_comparison) |
+| `How many suppliers are in the database?` | data_agent (SQL via MCP) |
+| `Rank top 5 power_devices suppliers, very risk averse. Also check recent geopolitical risks.` | risk_agent + chart_agent |
 
 ### Available products
 
@@ -162,22 +188,24 @@ Use these product names in queries (case-insensitive):
 ```
 demo/
 ├── main.py                 # FastAPI server (/chat, /resume endpoints)
-├── streamlit_app.py        # Streamlit UI with streaming output
-├── config.py               # Environment variables and paths
-├── llm.py                  # Azure OpenAI client setup
+├── streamlit_app.py        # Streamlit UI with streaming output + chart rendering
+├── config.py               # Environment variables, DB URL, API keys
+├── llm.py                  # Azure OpenAI client setup (GPT-5-mini)
 ├── mcp_client.py           # PostgreSQL MCP session management
 ├── tavily_client.py        # Tavily MCP session management
 ├── timing.py               # Performance profiling utilities
 ├── .env                    # API keys (create this file — see step 3)
 ├── graph/
-│   ├── builder.py          # LangGraph state graph (parallel fan-out/fan-in)
-│   ├── state.py            # AgentState with merge reducers
-│   ├── orchestrator.py     # Plan generation + human approval interrupt
-│   ├── data_agent.py       # Direct tool call or ReAct fallback
-│   ├── search_agent.py     # Tavily news search with ReAct
-│   └── synthesizer.py      # Lightweight cross-analysis
+│   ├── builder.py          # Two-phase LangGraph topology with conditional routing
+│   ├── state.py            # AgentState schema (tasks, agent_results, chart_results)
+│   ├── orchestrator.py     # LLM task planning + human-in-the-loop approval (interrupt)
+│   ├── data_agent.py       # SQL exploration via MCP PostgreSQL (ReAct)
+│   ├── risk_agent.py       # Geopolitical risk analysis via Tavily MCP (ReAct)
+│   ├── chart_agent.py      # Scoring + visualization, direct mode, multi-task support
+│   └── synthesizer.py      # LLM cross-analysis, references charts, <150 words
 └── tools/
-    └── scoring.py          # score_suppliers tool (DB query + scoring engine)
+    ├── scoring.py           # score_suppliers @tool wrapper (DB → SupplierScorer → markdown)
+    └── chart_tools.py       # 7 chart function wrappers (conn → matplotlib → base64 PNG)
 ```
 
 ## Troubleshooting
