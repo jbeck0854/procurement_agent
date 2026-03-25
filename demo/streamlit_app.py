@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 import uuid
 
@@ -48,12 +49,12 @@ def show_trace(trace):
         timings = trace.get("timings") or {}
         if timings:
             st.subheader("Performance")
-            top_level = ["orchestrator", "data_agent", "search_agent", "synthesizer"]
-            cols = st.columns(len(top_level))
-            for col, name in zip(cols, top_level):
-                val = timings.get(name)
-                if val is not None:
-                    col.metric(name, f"{val:.2f}s")
+            top_level = ["orchestrator", "data_agent", "risk_agent", "chart_agent", "synthesizer"]
+            active = [name for name in top_level if timings.get(name) is not None]
+            if active:
+                cols = st.columns(len(active))
+                for col, name in zip(cols, active):
+                    col.metric(name, f"{timings[name]:.2f}s")
             total = sum(timings.get(k, 0) for k in top_level)
             st.caption(f"Total pipeline time: **{total:.2f}s**")
 
@@ -77,18 +78,19 @@ def show_trace(trace):
         if trace["tasks"]:
             st.write(f"Routed to: **{trace['tasks'][0]['agent']}**")
 
-        st.subheader("Data Agent")
-        raw = trace["agent_results"].get("data_agent", "No result")
-        if len(raw) > 500:
-            raw = raw[:500] + "..."
-        st.code(raw)
+        for agent_name, label in [("data_agent", "Data Agent"), ("risk_agent", "Risk Agent")]:
+            raw = trace["agent_results"].get(agent_name)
+            if raw:
+                st.subheader(label)
+                display = raw[:500] + "..." if len(raw) > 500 else raw
+                st.code(display)
 
-        search_raw = trace["agent_results"].get("search_agent")
-        if search_raw:
-            st.subheader("Search Agent")
-            if len(search_raw) > 500:
-                search_raw = search_raw[:500] + "..."
-            st.code(search_raw)
+        chart_results = trace.get("chart_results") or {}
+        if chart_results:
+            st.subheader("Chart Agent")
+            for chart_name, b64_img in chart_results.items():
+                st.caption(chart_name)
+                st.image(base64.b64decode(b64_img))
 
         st.subheader("Synthesizer")
         st.write("Final response generated")
@@ -98,6 +100,12 @@ assistant_index = 0
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        # Re-render chart images from trace (images can't be stored in text messages)
+        if msg["role"] == "assistant" and assistant_index < len(st.session_state.traces):
+            chart_results = st.session_state.traces[assistant_index].get("chart_results") or {}
+            for chart_name, b64_img in chart_results.items():
+                st.caption(chart_name.replace("_", " ").title())
+                st.image(base64.b64decode(b64_img))
     if msg["role"] == "assistant" and assistant_index < len(st.session_state.traces):
         show_trace(st.session_state.traces[assistant_index])
         assistant_index += 1
@@ -118,12 +126,19 @@ def stream_graph(command, config):
         """Re-render the placeholder with all agent results collected so far."""
         with placeholder.container():
             if final_state.get("latest_data_agent"):
-                st.subheader("📊 Supplier Analysis")
+                st.subheader("📊 Data Query")
                 st.markdown(final_state["latest_data_agent"])
-            if final_state.get("latest_search_agent"):
+            if final_state.get("latest_risk_agent"):
                 st.divider()
                 st.subheader("🌐 Geopolitical Risk Analysis")
-                st.markdown(final_state["latest_search_agent"])
+                st.markdown(final_state["latest_risk_agent"])
+            charts = final_state.get("chart_results") or {}
+            if charts:
+                st.divider()
+                st.subheader("📈 Visualizations")
+                for chart_name, b64_img in charts.items():
+                    st.caption(chart_name.replace("_", " ").title())
+                    st.image(base64.b64decode(b64_img))
             if final_state.get("final_response"):
                 st.divider()
                 st.subheader("📋 Summary & Recommendations")
@@ -145,11 +160,14 @@ def stream_graph(command, config):
                     if data_text:
                         final_state["latest_data_agent"] = data_text
                         _render_streaming(placeholder)
-                if node_name == "search_agent" and node_output.get("agent_results"):
-                    search_text = node_output["agent_results"].get("search_agent")
-                    if search_text:
-                        final_state["latest_search_agent"] = search_text
+                if node_name == "risk_agent" and node_output.get("agent_results"):
+                    risk_text = node_output["agent_results"].get("risk_agent")
+                    if risk_text:
+                        final_state["latest_risk_agent"] = risk_text
                         _render_streaming(placeholder)
+                if node_name == "chart_agent" and node_output.get("chart_results"):
+                    final_state.setdefault("chart_results", {}).update(node_output["chart_results"])
+                    _render_streaming(placeholder)
                 if node_name == "synthesizer" and "final_response" in node_output:
                     final_state["final_response"] = node_output["final_response"]
                     final_state["timings"] = node_output.get("timings", {})
@@ -166,26 +184,34 @@ def finalize_execution(final_state, fallback_plan=None):
         "intent": final_state.get("intent") or plan.get("intent", ""),
         "tasks": final_state.get("tasks") or plan.get("tasks", []),
         "agent_results": final_state.get("agent_results", {}),
+        "chart_results": final_state.get("chart_results") or {},
         "timings": final_state.get("timings") or plan.get("timings", {}),
     }
     st.session_state.traces.append(trace)
 
-    # Combine all agent results + synthesizer summary into one message
+    # Combine text agent results + synthesizer summary
     parts = []
-    data_agent_result = trace["agent_results"].get("data_agent", "")
-    if data_agent_result:
-        parts.append(data_agent_result)
-    search_agent_result = trace["agent_results"].get("search_agent", "")
-    if search_agent_result:
-        parts.append("---\n\n**🌐 Geopolitical Risk Analysis**\n\n" + search_agent_result)
+    data_result = trace["agent_results"].get("data_agent", "")
+    if data_result:
+        parts.append(data_result)
+    risk_result = trace["agent_results"].get("risk_agent", "")
+    if risk_result:
+        parts.append("---\n\n**🌐 Geopolitical Risk Analysis**\n\n" + risk_result)
     final_response = final_state.get("final_response", "")
     if final_response:
         parts.append("---\n\n**📋 Summary & Recommendations**\n\n" + final_response)
     combined = "\n\n".join(parts)
 
-    if combined:
-        with st.chat_message("assistant"):
+    with st.chat_message("assistant"):
+        if combined:
             st.markdown(combined)
+        # Render charts as images (can't be in markdown)
+        for chart_name, b64_img in trace["chart_results"].items():
+            st.caption(chart_name.replace("_", " ").title())
+            st.image(base64.b64decode(b64_img))
+
+    # Store text portion for chat history (images are in trace)
+    if combined:
         st.session_state.messages.append({"role": "assistant", "content": combined})
     show_trace(trace)
     return combined

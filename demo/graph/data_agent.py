@@ -6,14 +6,8 @@ from langgraph.prebuilt import create_react_agent
 from graph.state import AgentState
 from llm import get_llm
 from mcp_client import mcp_session, get_mcp_tools
-from tools.scoring import score_suppliers
 
 logger = logging.getLogger(__name__)
-
-# Map of tool names to their callable objects
-DIRECT_TOOLS = {
-    "score_suppliers": score_suppliers,
-}
 
 DATA_AGENT_PROMPT = """You are a data agent for a procurement supply chain PostgreSQL database.
 
@@ -31,25 +25,10 @@ DATABASE SCHEMA:
 
 IMPORTANT RULES:
 - Use vw_supplier_complete_profile for supplier queries. Do NOT guess table names.
-- For supplier scoring/ranking, use the score_suppliers tool instead of writing SQL.
 - For simple data queries (counts, filters, aggregates), use the execute_sql tool.
 - Always use the schema above. Never assume table names like "suppliers" or "products".
+- Scoring and ranking are handled by a separate risk_agent — focus on data retrieval only.
 """
-
-
-async def _run_direct(task: dict) -> tuple[str, dict]:
-    """Directly invoke a tool without LLM reasoning."""
-    tool_name = task["tool"]
-    params = task.get("params") or {}
-    tool_fn = DIRECT_TOOLS[tool_name]
-
-    t0 = time.perf_counter()
-    content = tool_fn.invoke(params)
-    elapsed = round(time.perf_counter() - t0, 3)
-
-    logger.info(f"[DIRECT] Called {tool_name}({params}) in {elapsed:.3f}s")
-    timings = {"data_agent.direct_tool": elapsed}
-    return content, timings
 
 
 async def _run_react(task: dict) -> tuple[str, dict]:
@@ -68,8 +47,7 @@ async def _run_react(task: dict) -> tuple[str, dict]:
         timings["data_agent.mcp_init"] = round(time.perf_counter() - t0, 3)
         logger.info(f"[TIMING] MCP session init: {timings['data_agent.mcp_init']:.3f}s")
 
-        all_tools = [*mcp_tools, score_suppliers]
-        agent = create_react_agent(llm, all_tools, prompt=DATA_AGENT_PROMPT)
+        agent = create_react_agent(llm, mcp_tools, prompt=DATA_AGENT_PROMPT)
 
         t1 = time.perf_counter()
         result = await agent.ainvoke({"messages": [("user", prompt)]})
@@ -111,18 +89,11 @@ async def data_agent_node(state: AgentState) -> dict:
     start = time.perf_counter()
     task = _find_task(state, "data_agent")
 
-    # Direct tool call when orchestrator specified exact tool + params
-    tool_name = task.get("tool")
-    if tool_name and tool_name in DIRECT_TOOLS:
-        logger.info(f"[DATA_AGENT] Direct mode: {tool_name}")
-        content, timings = await _run_direct(task)
-    else:
-        logger.info("[DATA_AGENT] ReAct mode (exploratory query)")
-        content, timings = await _run_react(task)
+    logger.info("[DATA_AGENT] ReAct mode (SQL query)")
+    content, timings = await _run_react(task)
 
     total = time.perf_counter() - start
     timings["data_agent"] = round(total, 3)
     logger.info(f"[TIMING] data_agent total: {total:.3f}s")
 
-    prev_timings = state.get("timings") or {}
-    return {"agent_results": {"data_agent": content}, "timings": {**prev_timings, **timings}}
+    return {"agent_results": {"data_agent": content}, "timings": timings}

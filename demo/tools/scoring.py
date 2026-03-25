@@ -79,39 +79,48 @@ def score_suppliers(
     header_product = product if product else "all products"
     header = f"## Supplier Ranking ({header_product}, Q={quantity}, λ={lambda_risk}, top {top_k})"
     output_parts.append(header)
-    price_col = next((col for col in ("EffectiveUnitPrice", "LandedUnitCost") if col in ranked.columns), None)
+    price_col = next((col for col in ("effective_unit_price", "landed_unit_cost") if col in ranked.columns), None)
     records = ranked.to_dict(orient="records")
     for idx, row in enumerate(records[:top_k], start=1):
-        supplier = row.get("SupplierID", "Unknown")
-        country = row.get("CountryCode", "N/A")
-        score = row.get("RiskAdjustedCost")
-        score_text = f"{score:.2f}" if isinstance(score, (int, float)) else "N/A"
+        supplier = row.get("supplier_id", "Unknown")
+        country = row.get("country_code", "N/A")
+        score = row.get("risk_adjusted_cost")
+        score_text = f"{score:.4f}" if isinstance(score, (int, float)) else "N/A"
         line_header = f"{idx}. **{supplier}** ({country}) — Risk-Adjusted Score: {score_text}"
         price = row.get(price_col)
-        pricing = f"${price:,.3f}" if isinstance(price, (int, float)) else "N/A"
-        lead_mean = row.get("LeadTimeMean")
-        lead_std = row.get("LeadTimeStdDev")
+        pricing = f"${price:,.4f}" if isinstance(price, (int, float)) else "N/A"
+        lead_mean = row.get("lead_time_mean")
+        lead_std = row.get("lead_time_stddev")
         lead_text = "N/A"
         if isinstance(lead_mean, (int, float)) and isinstance(lead_std, (int, float)):
             lead_text = f"{lead_mean:.1f} ± {lead_std:.1f} days"
-        disruption = row.get("DisruptionProbability")
+        disruption = row.get("disruption_probability")
         disruption_text = f"{disruption:.1%}" if isinstance(disruption, (int, float)) else "N/A"
-        defect = row.get("ProbabilityOfDefect")
+        defect = row.get("probability_of_defect")
         defect_text = f"{defect:.1%}" if isinstance(defect, (int, float)) else "N/A"
-        logistics = row.get("LogisticsReliability")
+        logistics = row.get("logistics_reliability")
         logistics_text = f"{logistics:.3f}" if isinstance(logistics, (int, float)) else "N/A"
-        compliance = row.get("ComplianceEligibility")
+        compliance = row.get("compliance_eligibility")
         compliance_text = f"{compliance:.3f}" if isinstance(compliance, (int, float)) else "N/A"
-        drivers = row.get("TopRiskDrivers")
+        tier = row.get("decision_tier_global", "N/A")
+        drivers = row.get("top_risk_drivers")
         if isinstance(drivers, (list, tuple)):
             drivers_text = ", ".join(str(driver) for driver in drivers)
         else:
             drivers_text = str(drivers) if drivers else "N/A"
 
         output_parts.append(line_header)
-        output_parts.append(f"   - Unit cost: {pricing} | Lead time: {lead_text}")
+        output_parts.append(f"   - Tier: {tier} | Unit cost: {pricing} | Lead time: {lead_text}")
         output_parts.append(f"   - Disruption risk: {disruption_text} | Defect rate: {defect_text} | Logistics: {logistics_text}")
         output_parts.append(f"   - Compliance: {compliance_text} | Top risk drivers: {drivers_text}")
+
+    # Include ranked supplier IDs for downstream agents (chart_agent)
+    ranked_ids = ranked["supplier_id"].tolist()[:top_k]
+    output_parts.append(f"\n**Ranked Supplier IDs**: {ranked_ids}")
+
+    # Include country codes for downstream agents (search_agent, chart_agent)
+    ranked_countries = ranked["country_code"].unique().tolist()
+    output_parts.append(f"**Supplier Countries**: {ranked_countries}")
 
     if not result.dropped_rows.empty:
         output_parts.append(f"⚠ {len(result.dropped_rows)} suppliers excluded from scoring")
