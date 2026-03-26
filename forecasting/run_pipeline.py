@@ -1,186 +1,195 @@
 """
-run_pipeline.py — Demand Forecasting Pipeline Orchestration
+run_pipeline.py — Semiconductor Demand Forecasting Pipeline
 ===========================================================
 
-Executes the full pipeline in sequence:
+Target      : customer_orders
+Grain       : (week, facility_id, semiconductor_id) — row level, not aggregated
+Aggregation : weekly SUM and MEAN computed post-prediction for interpretability only
 
-  Step 1  Cross-validation (raw vs log) → select target transformation
-  Step 2  Holdout evaluation (fixed origin = week 132, target weeks 133–144)
-  Step 3  Naive benchmark comparison
-  Step 4  Variant selection (aggregate system-level MAE, >5% threshold)
-  Step 5  Diagnostic plots
-  Step 6  Deployment model training (full data, selected variant)
-  Step 7  12-week forward forecast (weeks 146–157)
-  Step 8  Save all artifacts
+Steps:
+  1.  Load data + sanity checks
+  2.  Feature engineering  (build_features)
+  3.  Holdout split        (last 10 feature-ready weeks)
+  4.  Define X / y
+  5.  Week-based TimeSeriesSplit CV (n_splits=5)
+  6.  GridSearchCV         (HistGradientBoostingRegressor, 243 configs)
+  7.  Holdout evaluation   (row-level, weekly SUM, weekly MEAN, per-series)
+  8.  Save all artifacts   (BEFORE any plots)
+  9.  Generate plots       (6 figures)
 
 Usage (from project root):
     python -m forecasting.run_pipeline
 """
 
-from pathlib import Path
+import matplotlib
+matplotlib.use('Agg')
 
 import numpy as np
 import pandas as pd
 
-from .features import FEATURE_COLS, build_inference_features
-from .train import (
-    HORIZONS,
-    HOLDOUT_ORIGIN,
-    naive_benchmark_holdout,
-    run_cv,
-    run_holdout,
-    train_deployment_models,
+from .features import (
+    CATEGORICAL_COLS,
+    FEATURE_COLS,
+    NUMERIC_FEATURES,
+    TARGET,
+    build_features,
+    sanity_check,
 )
+from .train import PARAM_GRID, make_week_time_splits, run_grid_search
 from .evaluate import (
-    holdout_aggregate,
-    plot_cv_mae_by_horizon,
-    plot_feature_importance,
-    plot_forward_forecasts,
+    compute_per_series_metrics,
+    compute_row_metrics,
+    compute_weekly_agg_metrics,
+    plot_cv_summary,
+    plot_full_history_and_holdout,
+    plot_holdout_zoom,
+    plot_permutation_importance,
     plot_residuals,
-    plot_series_sample,
-    plot_system_actual_vs_predicted,
-    print_cv_summary,
-    print_holdout_summary,
+    plot_worst_5_series,
+    save_artifacts,
 )
 
-DATA_PATH = Path("cleaned_data/finished_goods_demand_table.csv")
-ARTIFACTS = Path("artifacts/forecasting")
+DATA_PATH = 'cleaned_data/finished_goods_demand_table.csv'
 
-LOG_IMPROVEMENT_THRESHOLD = 0.05   # adopt log if MAE improvement > 5%
-
-
-# ── Variant selection ─────────────────────────────────────────────────────────
-
-def _select_variant(
-    holdout_raw: pd.DataFrame, holdout_log: pd.DataFrame
-) -> str:
-    """
-    Compare system-level aggregate MAE for raw vs log variants.
-    Adopt log only if it improves aggregate MAE by more than the threshold.
-    """
-    agg_raw = holdout_aggregate(holdout_raw)
-    agg_log = holdout_aggregate(holdout_log)
-    mae_raw = float(agg_raw["mae_system"].iloc[0])
-    mae_log = float(agg_log["mae_system"].iloc[0])
-    improvement = (mae_raw - mae_log) / mae_raw
-
-    print(f"\n  System MAE — raw: {mae_raw:,.1f}  |  log: {mae_log:,.1f}  "
-          f"|  improvement: {improvement*100:.1f}%")
-
-    if improvement > LOG_IMPROVEMENT_THRESHOLD:
-        print(f"  → Log transform adopted (>{LOG_IMPROVEMENT_THRESHOLD*100:.0f}% improvement)")
-        return "log"
-    else:
-        print(f"  → Raw target retained (improvement below {LOG_IMPROVEMENT_THRESHOLD*100:.0f}% threshold)")
-        return "raw"
-
-
-# ── Main pipeline ─────────────────────────────────────────────────────────────
 
 def run() -> None:
-    print("=" * 62)
-    print("  DEMAND FORECASTING PIPELINE")
-    print("=" * 62)
+    print('=' * 62)
+    print('  SEMICONDUCTOR DEMAND FORECASTING PIPELINE')
+    print('=' * 62)
 
-    # ── Load ──────────────────────────────────────────────────────────
-    df = pd.read_csv(DATA_PATH)
-    print(f"\n  Loaded {len(df):,} rows  |  "
-          f"{df['facility_id'].nunique()} facilities  |  "
-          f"{df['semiconductor_id'].nunique()} semiconductors  |  "
-          f"weeks {df['week'].min()}–{df['week'].max()}")
+    # ── Step 1: Load + sanity checks ──────────────────────────────────────────
+    print('\n[1/9] Loading data ...')
+    df_raw = pd.read_csv(DATA_PATH)
+    print(f'  Loaded: {len(df_raw):,} rows from {DATA_PATH}')
+    sanity_check(df_raw)
 
-    # ── Step 1: Cross-validation ───────────────────────────────────────
-    print("\n── Step 1: Cross-Validation ──────────────────────────────────")
-    print("  Running raw variant …")
-    cv_raw = run_cv(df, use_log=False)
-    print("  Running log variant …")
-    cv_log = run_cv(df, use_log=True)
-    cv_all = pd.concat([cv_raw, cv_log], ignore_index=True)
-    print_cv_summary(cv_all)
-    plot_cv_mae_by_horizon(cv_all)
+    # ── Step 2: Feature engineering ───────────────────────────────────────────
+    print('[2/9] Building features ...')
+    model_df = build_features(df_raw)
+    print(f'  Feature-ready dataset: {len(model_df):,} rows')
+    print(f'  Feature-ready weeks  : {model_df["week"].min()} – {model_df["week"].max()}')
 
-    # ── Step 2: Holdout evaluation ─────────────────────────────────────
-    print("\n── Step 2: Holdout Evaluation (origin = week 132) ───────────")
-    print("  Running raw variant …")
-    holdout_raw   = run_holdout(df, use_log=False)
-    print("  Running log variant …")
-    holdout_log   = run_holdout(df, use_log=True)
+    # ── Step 3: Holdout split (last 10 feature-ready weeks) ───────────────────
+    print('\n[3/9] Holdout split ...')
+    all_weeks     = sorted(model_df['week'].unique())
+    holdout_weeks = all_weeks[-10:]
+    train_weeks   = all_weeks[:-10]
 
-    # ── Step 3: Naive benchmark ────────────────────────────────────────
-    print("\n── Step 3: Naive Benchmark ───────────────────────────────────")
-    holdout_naive = naive_benchmark_holdout(df)
-
-    holdout_all = pd.concat([holdout_raw, holdout_log, holdout_naive], ignore_index=True)
-    print_holdout_summary(holdout_all)
-
-    # ── Step 4: Variant selection ──────────────────────────────────────
-    print("\n── Step 4: Variant Selection ─────────────────────────────────")
-    best_variant  = _select_variant(holdout_raw, holdout_log)
-    use_log       = best_variant == "log"
-    holdout_best  = holdout_raw if best_variant == "raw" else holdout_log
-
-    # ── Step 5: Diagnostic plots ───────────────────────────────────────
-    print("\n── Step 5: Diagnostic Plots ──────────────────────────────────")
-    plot_system_actual_vs_predicted(holdout_all, variant=best_variant)
-    plot_system_actual_vs_predicted(holdout_all, variant="naive_roll4")
-    plot_series_sample(holdout_best, df, variant=best_variant, n_series=6)
-    plot_residuals(holdout_best, variant=best_variant)
-
-    # ── Step 6: Deployment models ──────────────────────────────────────
-    print("\n── Step 6: Deployment Models (full data) ─────────────────────")
-    deployment_models = train_deployment_models(df, use_log=use_log)
-    for h in [1, 4, 12]:
-        plot_feature_importance(deployment_models, FEATURE_COLS, horizon=h)
-
-    # ── Step 7: Forward forecast (weeks 146–157) ───────────────────────
-    print("\n── Step 7: Forward Forecast (weeks 146–157) ──────────────────")
-    X_inf    = build_inference_features(df, origin_week=df["week"].max())
-    fac_ids  = X_inf["facility_id"].astype(str).values
-    semi_ids = X_inf["semiconductor_id"].astype(str).values
-
-    forecast_records = []
-    for h in HORIZONS:
-        preds = deployment_models[h].predict(X_inf[FEATURE_COLS])
-        if use_log:
-            preds = np.expm1(preds)
-        preds = np.clip(preds, 0, None)
-
-        for i, (fac, semi) in enumerate(zip(fac_ids, semi_ids)):
-            forecast_records.append({
-                "facility_id":      fac,
-                "semiconductor_id": semi,
-                "horizon":          h,
-                "target_week":      df["week"].max() + h,
-                "predicted":        float(preds[i]),
-                "variant":          best_variant,
-            })
-
-    forecast_df = pd.DataFrame(forecast_records)
-    plot_forward_forecasts(forecast_df, df, n_series=6)
-
-    # ── Step 8: Save artifacts ─────────────────────────────────────────
-    print("\n── Step 8: Saving Artifacts ──────────────────────────────────")
-    ARTIFACTS.mkdir(parents=True, exist_ok=True)
-
-    forecast_df.to_csv(ARTIFACTS / "forward_forecasts_w146_w157.csv",  index=False)
-    holdout_all.to_csv(ARTIFACTS / "holdout_predictions.csv",          index=False)
-    cv_all.to_csv(     ARTIFACTS / "cv_metrics.csv",                   index=False)
-
-    # Per-series and aggregate summary tables
-    from .evaluate import holdout_per_series, holdout_aggregate
-    holdout_per_series(holdout_all).to_csv(
-        ARTIFACTS / "holdout_per_series_metrics.csv", index=False
+    train_df = (
+        model_df[model_df['week'].isin(train_weeks)]
+        .sort_values(['week', 'facility_id', 'semiconductor_id'])
+        .reset_index(drop=True)
     )
-    holdout_aggregate(holdout_all).to_csv(
-        ARTIFACTS / "holdout_aggregate_metrics.csv", index=False
+    test_df = (
+        model_df[model_df['week'].isin(holdout_weeks)]
+        .sort_values(['week', 'facility_id', 'semiconductor_id'])
+        .reset_index(drop=True)
     )
 
-    print(f"\n  All artifacts saved to: {ARTIFACTS}/")
-    print(f"  Selected variant      : {best_variant}")
-    print("\n" + "=" * 62)
-    print("  PIPELINE COMPLETE")
-    print("=" * 62)
+    last_train_week     = int(train_df['week'].max())
+    first_holdout_week  = int(test_df['week'].min())
+
+    print(f'  Train  : weeks {train_df["week"].min()} – {last_train_week}'
+          f'  ({len(train_df):,} rows, {len(train_weeks)} unique weeks)')
+    print(f'  Holdout: weeks {first_holdout_week} – {test_df["week"].max()}'
+          f'  ({len(test_df):,} rows, 10 unique weeks)')
+
+    # ── Step 4: Features / target ─────────────────────────────────────────────
+    print('\n[4/9] Defining features and target ...')
+    print(f'  Categorical features : {CATEGORICAL_COLS}')
+    print(f'  Numeric features     : {len(NUMERIC_FEATURES)} columns')
+    print(f'  Total feature cols   : {len(FEATURE_COLS)}')
+    print(f'  Target               : {TARGET}')
+
+    X_train = train_df[FEATURE_COLS].copy()
+    y_train = train_df[TARGET].values.ravel()
+    X_test  = test_df[FEATURE_COLS].copy()
+    y_test  = test_df[TARGET].values.ravel()
+
+    print(f'  X_train: {X_train.shape}   X_test: {X_test.shape}')
+
+    # ── Step 5: Week-based CV ─────────────────────────────────────────────────
+    print('\n[5/9] Building week-based TimeSeriesSplit (n_splits=5) ...')
+    cv_splits = make_week_time_splits(train_df, n_splits=5)
+    print(f'  {len(cv_splits)} CV folds created')
+    for i, (tr_idx, va_idx) in enumerate(cv_splits, 1):
+        tr_wks = sorted(train_df.loc[tr_idx, 'week'].unique())
+        va_wks = sorted(train_df.loc[va_idx, 'week'].unique())
+        print(f'    Fold {i}: train wks {tr_wks[0]}–{tr_wks[-1]}'
+              f'  |  val wks {va_wks[0]}–{va_wks[-1]}')
+
+    # ── Step 6: GridSearchCV ──────────────────────────────────────────────────
+    print(f'\n[6/9] GridSearchCV ({len(PARAM_GRID)} param axes, '
+          f'{len(cv_splits)} folds) ...')
+    grid = run_grid_search(X_train, y_train, cv_splits)
+
+    print(f'\n  Best params : {grid.best_params_}')
+    print(f'  Best CV MAE : {-grid.best_score_:,.2f}')
+
+    # ── Step 7: Holdout evaluation ────────────────────────────────────────────
+    print('\n[7/9] Holdout evaluation ...')
+    y_pred = np.clip(grid.best_estimator_.predict(X_test), 0, None)
+
+    test_df          = test_df.copy()
+    test_df['pred']  = y_pred
+
+    row_metrics = compute_row_metrics(y_test, y_pred)
+    agg_metrics = compute_weekly_agg_metrics(test_df)
+    per_series  = compute_per_series_metrics(test_df)
+
+    print(f'\n  Row-level MAE          : {row_metrics["mae"]:>10,.2f}')
+    print(f'  Row-level RMSE         : {row_metrics["rmse"]:>10,.2f}')
+    print(f'  Row-level MAPE         : {row_metrics["mape"] * 100:>10.2f}%')
+    print(f'  Row-level R²           : {row_metrics["r2"]:>10.4f}')
+    print(f'\n  System SUM  MAE        : {agg_metrics["system_sum_mae"]:>10,.2f}')
+    print(f'  Series MEAN MAE        : {agg_metrics["series_mean_mae"]:>10,.2f}')
+    print(f'\n  Per-series MAE         : mean={per_series["mae"].mean():,.2f}'
+          f'   median={per_series["mae"].median():,.2f}')
+    print(f'\n  Worst 5 series by MAE:')
+    print(per_series.head(5)[['facility_id', 'semiconductor_id', 'mae', 'rmse']]
+          .round(2).to_string(index=False))
+
+    # ── Step 8: Save artifacts (BEFORE plots) ─────────────────────────────────
+    print('\n[8/9] Saving artifacts ...')
+    save_artifacts(
+        test_df=test_df,
+        cv_results=grid.cv_results_,
+        best_params=grid.best_params_,
+        best_cv_mae=-grid.best_score_,
+        row_metrics=row_metrics,
+        agg_metrics=agg_metrics,
+        per_series=per_series,
+        last_train_week=last_train_week,
+        first_holdout_week=first_holdout_week,
+    )
+
+    # ── Step 9: Plots ─────────────────────────────────────────────────────────
+    print('\n[9/9] Generating plots ...')
+    plot_cv_summary(grid.cv_results_, grid.best_index_)
+    plot_full_history_and_holdout(df_raw, test_df, last_train_week)
+    plot_holdout_zoom(test_df)
+    plot_residuals(test_df)
+    plot_worst_5_series(test_df, df_raw, per_series, last_train_week)
+    plot_permutation_importance(grid.best_estimator_, X_test, y_test)
+
+    # ── Final report ──────────────────────────────────────────────────────────
+    print('\n' + '=' * 62)
+    print('  PIPELINE COMPLETE')
+    print('=' * 62)
+    print(f'\n  Artifacts → artifacts/forecasting/')
+    print(f'\n  Best CV MAE         : {-grid.best_score_:>10,.2f}')
+    print(f'  Holdout MAE  (row)  : {row_metrics["mae"]:>10,.2f}')
+    print(f'  Holdout RMSE (row)  : {row_metrics["rmse"]:>10,.2f}')
+    print(f'  Holdout R²          : {row_metrics["r2"]:>10.4f}')
+    print(f'  System SUM  MAE     : {agg_metrics["system_sum_mae"]:>10,.2f}')
+    print(f'  Series MEAN MAE     : {agg_metrics["series_mean_mae"]:>10,.2f}')
+    print(f'  Per-series MAE mean : {per_series["mae"].mean():>10,.2f}')
+    print(f'  Per-series MAE med  : {per_series["mae"].median():>10,.2f}')
+    print(f'\n  Worst 5 series:')
+    print(per_series.head(5)[['facility_id', 'semiconductor_id', 'mae']]
+          .round(2).to_string(index=False))
+    print('=' * 62)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     run()

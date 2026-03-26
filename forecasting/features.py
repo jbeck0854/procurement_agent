@@ -1,138 +1,181 @@
 """
-features.py — Feature engineering for the demand forecasting pipeline.
+features.py — Feature engineering for semiconductor demand forecasting.
 
-Design rules (enforced throughout):
-  - All features are computed strictly at time t (the forecast origin).
-  - Feature set is identical across all forecast horizons.
-  - Only the target changes per horizon (demand at t+h).
-  - No future promotional signals; only lagged promotions are included.
-  - Categorical encoding uses fixed categories so train and inference are aligned.
+Modeling grain: one row per (week, facility_id, semiconductor_id).
+Target: customer_orders (raw, not aggregated).
+
+Excluded from features: date, year_month (non-numeric strings), customer_orders (target).
 """
 
 import numpy as np
 import pandas as pd
 
-# Fixed category lists — must match the data exactly
-FACILITY_CATS = ["FACILITY_1", "FACILITY_2", "FACILITY_3", "FACILITY_4"]
-SEMI_CATS     = [f"SEMICONDUCTOR_{i}" for i in range(1, 13)]
+# ── Column definitions ─────────────────────────────────────────────────────────
 
-FEATURE_COLS = [
-    # Lag demand (at t-k, all strictly before t)
-    "lag_1", "lag_2", "lag_4", "lag_8", "lag_12",
-    # Rolling demand statistics (window ends at t-1)
-    "roll_mean_4", "roll_std_4", "roll_mean_8",
-    # Lagged promotional flags (known past activity only)
-    "promo_email_lag1", "promo_home_lag1",
-    # Price discount signal at t
-    "price_ratio",
-    # Trend proxy (sequential week index 1–145)
-    "week",
-    # Seasonality proxies
-    "week_of_year", "quarter",
-    # Series identity (encoded as categorical)
-    "facility_id", "semiconductor_id",
+CATEGORICAL_COLS = ['facility_id', 'semiconductor_id']
+
+NUMERIC_FEATURES = [
+    # ── Price signals ──────────────────────────────────────────────────────
+    'realized_selling_price',
+    'list_price',
+    'discount',
+    'discount_pct',
+    # ── Promotional signals ────────────────────────────────────────────────
+    'emailer_for_promotion',
+    'homepage_featured',
+    'promo_any',
+    'price_x_promo',
+    'discount_x_promo',
+    # ── Time / seasonality ─────────────────────────────────────────────────
+    'week',
+    'week_sin_52',
+    'week_cos_52',
+    'year',
+    'month',
+    # ── Lag demand (per series) ────────────────────────────────────────────
+    'lag_1',
+    'lag_2',
+    'lag_3',
+    'lag_4',
+    'lag_8',
+    # ── Rolling demand statistics (per series, no current-week leakage) ───
+    'roll_mean_4',
+    'roll_std_4',
+    'roll_mean_8',
+    'roll_std_8',
+    # ── Global demand signal ───────────────────────────────────────────────
+    'global_mean_lag_1',
 ]
 
-CAT_COLS = ["facility_id", "semiconductor_id"]
-
-# Lags that must be non-null for a row to be valid training data
-_REQUIRED_LAGS = ["lag_1", "lag_2", "lag_4", "lag_8", "lag_12"]
+FEATURE_COLS = CATEGORICAL_COLS + NUMERIC_FEATURES
+TARGET = 'customer_orders'
 
 
-def _add_series_features(g: pd.DataFrame) -> pd.DataFrame:
+# ── Sanity checks ──────────────────────────────────────────────────────────────
+
+def sanity_check(df: pd.DataFrame) -> None:
+    """Print data integrity and distribution diagnostics before modeling."""
+    print('── Data Sanity Check ────────────────────────────────────────')
+    print(f'  Shape          : {df.shape}')
+    print(f'  Weeks          : {df["week"].min()} – {df["week"].max()}'
+          f'  ({df["week"].nunique()} unique)')
+    print(f'  Facilities     : {df["facility_id"].nunique()}')
+    print(f'  Semiconductors : {df["semiconductor_id"].nunique()}')
+    print(f'  Series (F×S)   : {df.groupby(["facility_id", "semiconductor_id"]).ngroups}')
+
+    n_dupes = df.duplicated(subset=['week', 'facility_id', 'semiconductor_id']).sum()
+    dupe_status = '✓ None' if n_dupes == 0 else f'⚠  {n_dupes} duplicates found'
+    print(f'  Duplicates (week×F×S): {dupe_status}')
+
+    print(f'\n  customer_orders distribution:')
+    desc = df['customer_orders'].describe()
+    for k, v in desc.items():
+        print(f'    {k:<8}: {v:>12,.2f}')
+    skew    = df['customer_orders'].skew()
+    pct_zero = (df['customer_orders'] == 0).mean() * 100
+    print(f'    skewness : {skew:.3f}')
+    print(f'    % zero   : {pct_zero:.1f}%')
+
+    print(f'\n  Per-series observation counts:')
+    obs = df.groupby(['facility_id', 'semiconductor_id']).size()
+    print(f'    Min    : {obs.min()}')
+    print(f'    Median : {obs.median():.0f}')
+    print(f'    Max    : {obs.max()}')
+    low = obs[obs < 20]
+    if low.empty:
+        print('    Low-history series (< 20 obs): none')
+    else:
+        print(f'  ⚠  Low-history series (< 20 obs):')
+        print(low.to_string())
+    print()
+
+
+# ── Feature engineering ────────────────────────────────────────────────────────
+
+def build_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Compute feature columns for a single (facility × semiconductor) series.
+    Build the feature-ready modeling dataset from the raw demand table.
 
-    g must be sorted by week ascending before calling.
-    All features are computed at time t; no future information is used.
-    Returns a copy of g with feature columns appended.
+    Steps:
+      1. Sort by [facility_id, semiconductor_id, week]
+      2. Cast entity columns to object dtype for sklearn compatibility
+      3. Compute derived price / promo / cyclical features
+      4. Compute global_mean_lag_1 — weekly cross-series mean, lagged 1 week
+      5. Compute per-series lag features: lag_1, lag_2, lag_3, lag_4, lag_8
+      6. Compute per-series rolling features with shift(1) to prevent leakage:
+         roll_mean_4, roll_std_4, roll_mean_8, roll_std_8
+      7. Drop rows with NaN in any feature or target column
+         (early-history rows — expected and acceptable)
+
+    Returns the feature-ready model_df.
+    Excluded from the returned dataset: no columns are dropped, but only
+    FEATURE_COLS + TARGET are used downstream for modeling.
     """
-    g = g.copy()
-    s = g["customer_orders"]
+    df = df.copy()
+    df = df.sort_values(
+        ['facility_id', 'semiconductor_id', 'week']
+    ).reset_index(drop=True)
 
-    # --- Lag features ---------------------------------------------------
-    # lag_k = demand observed k weeks before the current origin t
-    g["lag_1"]  = s.shift(1)
-    g["lag_2"]  = s.shift(2)
-    g["lag_4"]  = s.shift(4)
-    g["lag_8"]  = s.shift(8)
-    g["lag_12"] = s.shift(12)
+    # Cast entity columns to object for consistent sklearn handling
+    df['facility_id']      = df['facility_id'].astype('object')
+    df['semiconductor_id'] = df['semiconductor_id'].astype('object')
 
-    # --- Rolling statistics ---------------------------------------------
-    # shift(1) ensures the current week t is excluded from every window
-    s_lagged = s.shift(1)
-    g["roll_mean_4"] = s_lagged.rolling(4).mean()   # avg of [t-4 … t-1]
-    g["roll_std_4"]  = s_lagged.rolling(4).std()    # std  of [t-4 … t-1]
-    g["roll_mean_8"] = s_lagged.rolling(8).mean()   # avg of [t-8 … t-1]
+    # ── Price / promo features ─────────────────────────────────────────────────
+    df['discount'] = df['list_price'] - df['realized_selling_price']
 
-    # --- Promotional signals (lagged only) ------------------------------
-    # Only past promotions are observable at t; forward promotions are excluded
-    g["promo_email_lag1"] = g["emailer_for_promotion"].shift(1)
-    g["promo_home_lag1"]  = g["homepage_featured"].shift(1)
+    df['discount_pct'] = np.where(
+        df['list_price'] > 0,
+        (df['list_price'] - df['realized_selling_price']) / df['list_price'],
+        0.0,
+    )
 
-    # --- Price discount signal ------------------------------------------
-    # Ratio < 1 indicates discounting; ratio = 1 means listed at list price
-    g["price_ratio"] = g["realized_selling_price"] / g["list_price"].replace(0, np.nan)
+    df['promo_any'] = (
+        df['emailer_for_promotion'] | df['homepage_featured']
+    ).astype(int)
 
-    # --- Calendar / seasonality features --------------------------------
-    dates = pd.to_datetime(g["date"])
-    g["week_of_year"] = dates.dt.isocalendar().week.astype(int)
-    g["quarter"]      = dates.dt.quarter
-    # "week" column (1–145) is already in g and acts as a trend proxy
+    df['price_x_promo']    = df['realized_selling_price'] * df['promo_any']
+    df['discount_x_promo'] = df['discount']               * df['promo_any']
 
-    return g
+    # ── Cyclical week features ─────────────────────────────────────────────────
+    df['week_sin_52'] = np.sin(2 * np.pi * df['week'] / 52)
+    df['week_cos_52'] = np.cos(2 * np.pi * df['week'] / 52)
 
+    # ── Global demand lag ──────────────────────────────────────────────────────
+    # Mean customer_orders across ALL series in week t, lagged by 1 week.
+    # At prediction time for week t, the global mean of week t-1 is observable.
+    global_weekly = (
+        df.groupby('week')['customer_orders']
+        .mean()
+        .reset_index()
+        .rename(columns={'customer_orders': '_gmean'})
+    )
+    global_weekly['global_mean_lag_1'] = global_weekly['_gmean'].shift(1)
+    df = df.merge(
+        global_weekly[['week', 'global_mean_lag_1']], on='week', how='left'
+    )
 
-def build_dataset(df: pd.DataFrame, horizon: int) -> pd.DataFrame:
-    """
-    Build the full feature + target dataset for a given forecast horizon h.
+    # ── Per-series lag features ────────────────────────────────────────────────
+    grp = df.groupby(['facility_id', 'semiconductor_id'], sort=False)['customer_orders']
 
-    For each (facility × semiconductor) series at each time t:
-      - X(t): feature vector computed from history up to and including t
-      - y(t): customer_orders at t + horizon  ← target shifts per horizon
+    for lag in [1, 2, 3, 4, 8]:
+        df[f'lag_{lag}'] = grp.shift(lag)
 
-    Rows missing any required lag or the target are dropped.
-    Categorical columns use fixed categories for consistent encoding.
+    # ── Per-series rolling features ────────────────────────────────────────────
+    # shift(1) before rolling ensures current week is excluded from every window
+    for window in [4, 8]:
+        df[f'roll_mean_{window}'] = grp.transform(
+            lambda x: x.shift(1).rolling(window).mean()
+        )
+        df[f'roll_std_{window}'] = grp.transform(
+            lambda x: x.shift(1).rolling(window).std()
+        )
 
-    Returns a flat DataFrame with columns FEATURE_COLS + ["target", "week",
-    "facility_id", "semiconductor_id"] (and other pass-through columns).
-    """
-    records = []
-    for _, g in df.groupby(["facility_id", "semiconductor_id"], sort=False):
-        g = g.sort_values("week").reset_index(drop=True)
-        g = _add_series_features(g)
-        g["target"] = g["customer_orders"].shift(-horizon)
-        records.append(g)
+    # ── Drop NaN rows (early-history rows per series) ──────────────────────────
+    n_before  = len(df)
+    model_df  = df.dropna(subset=FEATURE_COLS + [TARGET]).copy()
+    n_after   = len(model_df)
+    n_dropped = n_before - n_after
+    print(f'  Rows before dropna : {n_before:,}')
+    print(f'  Rows after  dropna : {n_after:,}  ({n_dropped:,} early-history NaN rows dropped)')
 
-    full = pd.concat(records, ignore_index=True)
-    full = full.dropna(subset=_REQUIRED_LAGS + ["target"]).reset_index(drop=True)
-
-    # Consistent categorical encoding across train / validation / inference
-    full["facility_id"]      = pd.Categorical(full["facility_id"],      categories=FACILITY_CATS)
-    full["semiconductor_id"] = pd.Categorical(full["semiconductor_id"], categories=SEMI_CATS)
-
-    return full
-
-
-def build_inference_features(df: pd.DataFrame, origin_week: int) -> pd.DataFrame:
-    """
-    Build one feature row per (facility × semiconductor) series at a fixed
-    origin week. Used for holdout evaluation and forward forecasting.
-
-    Returns a DataFrame aligned to FEATURE_COLS with categorical encoding applied.
-    Row order matches groupby sort order (facility_id, semiconductor_id).
-    """
-    records = []
-    for _, g in df.groupby(["facility_id", "semiconductor_id"], sort=True):
-        g = g.sort_values("week").reset_index(drop=True)
-        g = _add_series_features(g)
-        row = g[g["week"] == origin_week]
-        if row.empty:
-            continue
-        records.append(row.iloc[[0]])
-
-    result = pd.concat(records, ignore_index=True)
-    result["facility_id"]      = pd.Categorical(result["facility_id"],      categories=FACILITY_CATS)
-    result["semiconductor_id"] = pd.Categorical(result["semiconductor_id"], categories=SEMI_CATS)
-
-    return result
+    return model_df.reset_index(drop=True)

@@ -1,0 +1,31 @@
+VALIDATION WINDOW EXPLANATION
+==============================================================
+
+DESIGN PHILOSOPHY
+----------------------------------------------
+  The holdout is defined as the LAST 10 WEEKS of the feature-ready
+  dataset (model_df), after lag/rolling feature engineering and NaN
+  dropping.
+
+  Last training week  : 135
+  First holdout week  : 136
+  Holdout span        : 10 weeks
+
+WHY LAST 10 WEEKS (NOT FIXED ORIGIN)?
+----------------------------------------------
+    This design:
+    - Evaluates the model on the most recent demand patterns
+    - Keeps train/holdout boundary clean with no row overlap
+
+FEATURE-READY WEEK RANGE
+----------------------------------------------
+  The first ~8 weeks of each series are dropped by dropna() because
+  lag_8 and roll_mean_8 (using shift(1).rolling(8)) require 9 weeks
+  of history to produce a non-NaN value. This is expected.
+
+LEAKAGE PREVENTION
+----------------------------------------------
+  All lag and rolling features use shift(1) before any windowing,
+  ensuring the current week's demand is never included in its own
+  feature computation. global_mean_lag_1 is the global mean at week
+  t-1, observable at prediction time for week t.

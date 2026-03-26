@@ -1,0 +1,60 @@
+{
+  "target": "customer_orders",
+  "modeling_grain": "(week, facility_id, semiconductor_id)",
+  "best_cv_params": {
+    "model__l2_regularization": 0.1,
+    "model__learning_rate": 0.05,
+    "model__max_depth": 6,
+    "model__max_iter": 200,
+    "model__min_samples_leaf": 50
+  },
+  "best_cv_mae": 294.98,
+  "holdout_week_range": {
+    "first": 136,
+    "last": 145
+  },
+  "row_level": {
+    "mae": 205.9282,
+    "rmse": 289.3665,
+    "mape": 0.2375,
+    "r2": 0.7778
+  },
+  "weekly_aggregate": {
+    "system_sum_mae": 4012.31,
+    "system_sum_rmse": 5276.91,
+    "series_mean_mae": 83.59,
+    "series_mean_rmse": 109.94
+  },
+  "per_series": {
+    "mae_mean": 205.93,
+    "mae_median": 183.78,
+    "mae_std": 92.32,
+    "worst_5": [
+      {
+        "facility_id": "FACILITY_2",
+        "semiconductor_id": "SEMICONDUCTOR_1",
+        "mae": 440.25
+      },
+      {
+        "facility_id": "FACILITY_1",
+        "semiconductor_id": "SEMICONDUCTOR_5",
+        "mae": 432.22
+      },
+      {
+        "facility_id": "FACILITY_2",
+        "semiconductor_id": "SEMICONDUCTOR_7",
+        "mae": 424.24
+      },
+      {
+        "facility_id": "FACILITY_1",
+        "semiconductor_id": "SEMICONDUCTOR_2",
+        "mae": 364.93
+      },
+      {
+        "facility_id": "FACILITY_2",
+        "semiconductor_id": "SEMICONDUCTOR_5",
+        "mae": 317.11
+      }
+    ]
+  }
+}
