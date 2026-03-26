@@ -139,3 +139,45 @@ CREATE INDEX IF NOT EXISTS idx_fact_semicon_demand_facility
 CREATE INDEX IF NOT EXISTS idx_fact_semicon_demand_sku
     ON fact_semiconductor_demand(semiconductor_id);
 
+-- Production demand forecast fact table
+-- Grain: one row per (forecast_run_id, facility_id, semiconductor_id, target_week_date)
+-- Consistency rule (enforced at application layer):
+--   horizon_weeks = (target_week_date - observed_through_week_date) / 7
+--   where observed_through_week_date is in dim_forecast_run for this run.
+DROP TABLE IF EXISTS fact_semiconductor_demand_forecast CASCADE;
+CREATE TABLE fact_semiconductor_demand_forecast (
+    forecast_id             BIGSERIAL       NOT NULL,
+    forecast_run_id         INT             NOT NULL
+                            REFERENCES dim_forecast_run (forecast_run_id),
+    facility_id             TEXT            NOT NULL
+                            REFERENCES dim_facility (facility_id),
+    semiconductor_id        TEXT            NOT NULL
+                            REFERENCES dim_semiconductor (semiconductor_id),
+    target_week_date        DATE            NOT NULL,
+    horizon_weeks           SMALLINT        NOT NULL
+                            CHECK (horizon_weeks BETWEEN 1 AND 30),
+    predicted_demand        NUMERIC(14, 2)  NOT NULL
+                            CHECK (predicted_demand >= 0),
+    interval_lower_90       NUMERIC(14, 2)  NULL,
+    interval_upper_90       NUMERIC(14, 2)  NULL,
+    interval_method         TEXT            NULL,
+    created_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+
+    PRIMARY KEY (forecast_id),
+
+    CONSTRAINT uq_forecast_grain
+        UNIQUE (forecast_run_id, facility_id, semiconductor_id, target_week_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fact_fcast_run_id
+    ON fact_semiconductor_demand_forecast (forecast_run_id);
+
+CREATE INDEX IF NOT EXISTS idx_fact_fcast_entity_date
+    ON fact_semiconductor_demand_forecast (facility_id, semiconductor_id, target_week_date);
+
+CREATE INDEX IF NOT EXISTS idx_fact_fcast_target_run
+    ON fact_semiconductor_demand_forecast (target_week_date, forecast_run_id);
+
+CREATE INDEX IF NOT EXISTS idx_fact_fcast_horizon
+    ON fact_semiconductor_demand_forecast (horizon_weeks);
+

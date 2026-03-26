@@ -126,5 +126,36 @@ CREATE TABLE dim_semiconductor (
     semiconductor_id TEXT PRIMARY KEY  -- e.g., SEMICONDUCTOR_1 … SEMICONDUCTOR_12
 );
 
--- DONE
+-- Forecast run metadata dimension
+-- One row per weekly forecast generation batch.
+-- Parent record for all rows in fact_semiconductor_demand_forecast.
+DROP TABLE IF EXISTS dim_forecast_run CASCADE;
+CREATE TABLE dim_forecast_run (
+    forecast_run_id             SERIAL          PRIMARY KEY,
+    forecast_origin_date        DATE            NOT NULL,
+    observed_through_week_date  DATE            NOT NULL,
+    horizon_weeks_min           SMALLINT        NOT NULL,
+    horizon_weeks_max           SMALLINT        NOT NULL,
+    n_series                    SMALLINT        NOT NULL,
+    n_forecast_rows             INT             NULL,
+    model_version               TEXT            NOT NULL,
+    model_config                JSONB           NULL,
+    run_status                  TEXT            NOT NULL DEFAULT 'completed'
+                                CHECK (run_status IN ('completed', 'failed', 'superseded')),
+    created_at                  TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    created_by                  TEXT            NULL,
 
+    CONSTRAINT uq_forecast_run_origin_version
+        UNIQUE (forecast_origin_date, model_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dim_forecast_run_origin_date
+    ON dim_forecast_run (forecast_origin_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_dim_forecast_run_model_version
+    ON dim_forecast_run (model_version);
+
+CREATE INDEX IF NOT EXISTS idx_dim_forecast_run_status
+    ON dim_forecast_run (run_status);
+
+-- DONE
