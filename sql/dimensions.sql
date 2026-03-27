@@ -133,6 +133,21 @@ CREATE TABLE dim_semiconductor (
     semiconductor_id TEXT PRIMARY KEY  -- e.g., SEMICONDUCTOR_1 … SEMICONDUCTOR_12
 );
 
+-- BOM bridge: maps finished-good semiconductor SKUs to procurement-side components
+-- Grain: one row per (semiconductor_id, product_key)
+-- Seeded via sql/load/load_bom.sql — NOT loaded from staging CSVs
+DROP TABLE IF EXISTS dim_bom CASCADE;
+CREATE TABLE dim_bom (
+    semiconductor_id    TEXT            NOT NULL
+                        REFERENCES dim_semiconductor(semiconductor_id),
+    product_key         INT             NOT NULL
+                        REFERENCES dim_product(product_key),
+    units_per_sku       NUMERIC(10, 4)  NOT NULL
+                        CHECK (units_per_sku > 0),
+
+    PRIMARY KEY (semiconductor_id, product_key)
+);
+
 -- Forecast run metadata dimension
 -- One row per weekly forecast generation batch.
 -- Parent record for all rows in fact_semiconductor_demand_forecast.

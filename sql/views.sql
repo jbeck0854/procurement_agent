@@ -152,4 +152,40 @@ FROM fact_country_indicators_yearly f
 JOIN dim_country c ON f.country_code = c.country_code;
 
 
+-----------------
+---- BOM Layer views
+-----------------
 
+-- Exploded component requirement detail
+-- Grain: forecast_run_id × target_week_date × facility_id × semiconductor_id × product_key
+-- One row per finished-good SKU × procurement component per forecast week.
+-- gross_component_requirement is NOT rounded here; rounding belongs at the LP layer.
+CREATE OR REPLACE VIEW vw_component_requirement_detail AS
+SELECT
+    f.forecast_run_id,
+    f.target_week_date,
+    f.facility_id,
+    f.semiconductor_id,
+    b.product_key,
+    f.predicted_demand,
+    b.units_per_sku,
+    f.predicted_demand * b.units_per_sku  AS gross_component_requirement
+FROM fact_semiconductor_demand_forecast f
+JOIN dim_bom b ON b.semiconductor_id = f.semiconductor_id;
+
+-- Aggregated LP-ready component requirements
+-- Grain: forecast_run_id × target_week_date × facility_id × product_key
+-- SKU dimension collapsed. This is the surface the LP optimizer consumes.
+CREATE OR REPLACE VIEW vw_component_requirement_lp AS
+SELECT
+    forecast_run_id,
+    target_week_date,
+    facility_id,
+    product_key,
+    SUM(gross_component_requirement)  AS total_component_requirement
+FROM vw_component_requirement_detail
+GROUP BY
+    forecast_run_id,
+    target_week_date,
+    facility_id,
+    product_key;
