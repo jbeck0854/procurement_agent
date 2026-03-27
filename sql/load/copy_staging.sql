@@ -77,8 +77,10 @@ TRUNCATE TABLE stg_supplier_products;
 \copy stg_supplier_products FROM 'cleaned_data/suppliers_products_UPDATED.csv' WITH (FORMAT csv, HEADER true);
 
 -- finished-good semiconductor demand (weekly; grain: week × facility_id × semiconductor_id)
+-- Column list matches CSV column order exactly (20 columns).
+-- CSV col 3 'finished_sku_id' is positionally mapped to staging col 'semiconductor_id'.
 TRUNCATE TABLE stg_semiconductor_demand;
-\copy stg_semiconductor_demand (week, facility_id, semiconductor_id, realized_selling_price, list_price, emailer_for_promotion, homepage_featured, customer_orders, date, year, month, year_month) FROM 'cleaned_data/finished_goods_demand_table.csv' WITH (FORMAT csv, HEADER true);
+\copy stg_semiconductor_demand (week, facility_id, semiconductor_id, realized_selling_price, list_price, emailer_for_promotion, homepage_featured, customer_orders, facility_city_id, facility_region_id, facility_type, facility_capacity_index, date, year, month, year_month, sku_performance_tier, finished_family, facility_scale, facility_volatility) FROM 'cleaned_data/finished_goods_demand_table.csv' WITH (FORMAT csv, HEADER true);
 
 
 

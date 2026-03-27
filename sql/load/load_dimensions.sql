@@ -191,11 +191,29 @@ JOIN dim_product dp ON dp.product = CASE trim(sp.product)
 
 -- ------------------------------------------------------------
 -- dim_facility load (4 rows: FACILITY_1 … FACILITY_4)
+-- Facility attributes are constant per facility_id; MAX() collapses
+-- the repeated identical values down to one row per facility safely.
 -- ------------------------------------------------------------
-INSERT INTO dim_facility (facility_id)
-SELECT DISTINCT facility_id
+INSERT INTO dim_facility (
+    facility_id,
+    facility_city_id,
+    facility_region_id,
+    facility_type,
+    facility_capacity_index,
+    facility_scale,
+    facility_volatility
+)
+SELECT
+    facility_id,
+    MAX(facility_city_id)        AS facility_city_id,
+    MAX(facility_region_id)      AS facility_region_id,
+    MAX(facility_type)           AS facility_type,
+    MAX(facility_capacity_index) AS facility_capacity_index,
+    MAX(facility_scale)          AS facility_scale,
+    MAX(facility_volatility)     AS facility_volatility
 FROM stg_semiconductor_demand
-WHERE facility_id IS NOT NULL;
+WHERE facility_id IS NOT NULL
+GROUP BY facility_id;
 
 -- ------------------------------------------------------------
 -- dim_semiconductor load (12 rows: SEMICONDUCTOR_1 … SEMICONDUCTOR_12)

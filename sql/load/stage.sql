@@ -139,20 +139,31 @@ CREATE TABLE stg_supplier_products (
 
 
 -- Finished-good semiconductor demand (weekly)
--- Mirrors all columns in cleaned_data/finished_goods_demand_table.csv exactly.
+-- Mirrors all 20 columns in cleaned_data/finished_goods_demand_table.csv exactly.
+-- Column order matches the CSV for positional \copy loading.
+-- Note: CSV col 3 is 'finished_sku_id'; staged as 'semiconductor_id' to preserve
+--       downstream references in load_dimensions.sql and load_facts.sql.
 DROP TABLE IF EXISTS stg_semiconductor_demand;
 CREATE TABLE stg_semiconductor_demand (
     week                     INT,
     facility_id              TEXT,
-    semiconductor_id         TEXT,
+    semiconductor_id         TEXT,       -- CSV: finished_sku_id (positionally mapped)
     realized_selling_price   NUMERIC,
     list_price               NUMERIC,
     emailer_for_promotion    INT,
     homepage_featured        INT,
     customer_orders          INT,
+    facility_city_id         INT,        -- new in CSV
+    facility_region_id       INT,        -- new in CSV
+    facility_type            TEXT,       -- new in CSV
+    facility_capacity_index  NUMERIC,    -- new in CSV
     date                     DATE,
     year                     INT,
     month                    INT,
-    year_month               TEXT
+    year_month               TEXT,
+    sku_performance_tier     TEXT,       -- new in CSV; key analytical feature
+    finished_family          TEXT,       -- new in CSV; key analytical feature
+    facility_scale           TEXT,       -- new in CSV
+    facility_volatility      NUMERIC     -- new in CSV
 );
 

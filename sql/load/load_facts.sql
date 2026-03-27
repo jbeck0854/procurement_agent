@@ -171,7 +171,9 @@ INSERT INTO fact_semiconductor_demand (
     realized_selling_price,
     list_price,
     emailer_for_promotion,
-    homepage_featured
+    homepage_featured,
+    sku_performance_tier,
+    finished_family
 )
 SELECT
     s.date,
@@ -185,7 +187,9 @@ SELECT
     s.realized_selling_price,
     s.list_price,
     s.emailer_for_promotion::SMALLINT,
-    s.homepage_featured::SMALLINT
+    s.homepage_featured::SMALLINT,
+    s.sku_performance_tier,
+    s.finished_family
 FROM stg_semiconductor_demand s
 JOIN dim_facility     f ON f.facility_id     = s.facility_id
 JOIN dim_semiconductor d ON d.semiconductor_id = s.semiconductor_id

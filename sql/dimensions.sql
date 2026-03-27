@@ -115,9 +115,16 @@ CREATE TABLE dim_supplier (
 -- Finished-goods demand dimensions
 
 -- Facility dimension (4 fulfilment facilities)
+-- Attributes are constant per facility_id (1 value per facility across all demand rows).
 DROP TABLE IF EXISTS dim_facility CASCADE;
 CREATE TABLE dim_facility (
-    facility_id TEXT PRIMARY KEY  -- e.g., FACILITY_1 … FACILITY_4
+    facility_id             TEXT     PRIMARY KEY,  -- e.g., FACILITY_1 … FACILITY_4
+    facility_city_id        INT      NULL,
+    facility_region_id      INT      NULL,
+    facility_type           TEXT     NULL,
+    facility_capacity_index NUMERIC  NULL,
+    facility_scale          TEXT     NULL,
+    facility_volatility     NUMERIC  NULL
 );
 
 -- Finished-good semiconductor SKU dimension (12 SKUs)

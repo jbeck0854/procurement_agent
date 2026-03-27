@@ -129,6 +129,10 @@ CREATE TABLE fact_semiconductor_demand (
     emailer_for_promotion     SMALLINT      NOT NULL,  -- 0/1 flag
     homepage_featured         SMALLINT      NOT NULL,  -- 0/1 flag
 
+    -- analytical attributes (key finished-goods demand features)
+    sku_performance_tier      TEXT          NOT NULL,  -- low / mid / high
+    finished_family           TEXT          NOT NULL,  -- power_management_modules, mixed_signal_interface_modules, compute_control_modules
+
     PRIMARY KEY (week_date, facility_id, semiconductor_id)
 );
 
