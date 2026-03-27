@@ -486,6 +486,117 @@ def plot_worst_5_series(
     print(f'  Saved: {out.name}')
 
 
+# ── Baseline evaluation ────────────────────────────────────────────────────────
+
+_GREEN = '#70ad47'
+_RED   = '#c00000'
+
+
+def compute_baselines(test_df: pd.DataFrame) -> dict:
+    """
+    Compute Naive lag-1 and Rolling-mean-4 baseline MAE against the holdout set.
+
+    Both features are already present in test_df (produced by build_features):
+      lag_1       → naive prediction: demand at t-1 for the same series
+      roll_mean_4 → rolling prediction: 4-week mean ending at t-1 for the same series
+
+    Uses the same holdout rows as the HGB model.
+    Returns {'naive_mae': float, 'rolling_mae': float}.
+    """
+    actual = test_df[TARGET].values
+    return {
+        'naive_mae':   _mae(actual, test_df['lag_1'].values),
+        'rolling_mae': _mae(actual, test_df['roll_mean_4'].values),
+    }
+
+
+def plot_baseline_system_comparison(
+    test_df: pd.DataFrame,
+    hgb_mae: float,
+    naive_mae: float,
+    rolling_mae: float,
+) -> None:
+    """
+    System-level weekly SUM — Actual vs HGB vs Naive vs Rolling.
+    Saves to artifacts/forecasting/baseline_system_comparison.png.
+    """
+    ho = (
+        test_df
+        .groupby('week')
+        .agg(
+            actual  =(TARGET,        'sum'),
+            hgb     =('pred',        'sum'),
+            naive   =('lag_1',       'sum'),
+            rolling =('roll_mean_4', 'sum'),
+        )
+        .reset_index()
+    )
+    weeks = ho['week'].tolist()
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(weeks, ho['actual'],  color=_BLUE,   lw=2.5,
+            label='Actual')
+    ax.plot(weeks, ho['hgb'],     color=_ORANGE, lw=2, ls='--', marker='o', ms=4,
+            label=f'HGB  (row MAE = {hgb_mae:,.0f})')
+    ax.plot(weeks, ho['naive'],   color=_GREEN,  lw=2, ls='--', marker='s', ms=4,
+            label=f'Naive lag-1  (row MAE = {naive_mae:,.0f})')
+    ax.plot(weeks, ho['rolling'], color=_RED,    lw=2, ls='--', marker='^', ms=4,
+            label=f'Rolling 4w  (row MAE = {rolling_mae:,.0f})')
+    ax.set_xlabel('Week')
+    ax.set_ylabel('Total Customer Orders (sum of all series)')
+    ax.set_title('Baseline Comparison — System Level (Holdout, Weekly SUM)')
+    ax.legend(fontsize=9)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:,.0f}'))
+    plt.tight_layout()
+    out = _ensure_artifacts() / 'baseline_system_comparison.png'
+    plt.savefig(out, dpi=120, bbox_inches='tight')
+    plt.close()
+    print(f'  Saved: {out.name}')
+
+
+def plot_baseline_example_series(
+    test_df: pd.DataFrame,
+    facility_id: str,
+    semiconductor_id: str,
+    hgb_mae_series: float,
+    naive_mae_series: float,
+    rolling_mae_series: float,
+    series_label: str = 'median MAE series',
+) -> None:
+    """
+    Single representative series — Actual vs HGB vs Naive vs Rolling.
+    Saves to artifacts/forecasting/baseline_example_series.png.
+    """
+    mask = (
+        (test_df['facility_id'].astype(str) == facility_id)
+        & (test_df['semiconductor_id'].astype(str) == semiconductor_id)
+    )
+    s     = test_df[mask].sort_values('week')
+    weeks = s['week'].tolist()
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(weeks, s[TARGET].values,        color=_BLUE,   lw=2.5,
+            label='Actual')
+    ax.plot(weeks, s['pred'].values,         color=_ORANGE, lw=2, ls='--', marker='o', ms=4,
+            label=f'HGB  (MAE = {hgb_mae_series:,.0f})')
+    ax.plot(weeks, s['lag_1'].values,        color=_GREEN,  lw=2, ls='--', marker='s', ms=4,
+            label=f'Naive lag-1  (MAE = {naive_mae_series:,.0f})')
+    ax.plot(weeks, s['roll_mean_4'].values,  color=_RED,    lw=2, ls='--', marker='^', ms=4,
+            label=f'Rolling 4w  (MAE = {rolling_mae_series:,.0f})')
+    ax.set_xlabel('Week')
+    ax.set_ylabel('Customer Orders')
+    ax.set_title(
+        f'Baseline Comparison — {facility_id} × {semiconductor_id}  [{series_label}]'
+    )
+    ax.legend(fontsize=9)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:,.0f}'))
+    plt.tight_layout()
+    out = _ensure_artifacts() / 'baseline_example_series.png'
+    plt.savefig(out, dpi=120, bbox_inches='tight')
+    plt.close()
+    print(f'  Saved: {out.name}')
+
+
 def plot_permutation_importance(pipeline, X_test: pd.DataFrame, y_test: np.ndarray) -> None:
     """
     Permutation importance on the holdout set (top 15 features).
