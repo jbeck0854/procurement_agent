@@ -55,6 +55,8 @@ TARGET = 'customer_orders'
 
 def sanity_check(df: pd.DataFrame) -> None:
     """Print data integrity and distribution diagnostics before modeling."""
+    if 'finished_sku_id' in df.columns and 'semiconductor_id' not in df.columns:
+        df = df.rename(columns={'finished_sku_id': 'semiconductor_id'})
     print('── Data Sanity Check ────────────────────────────────────────')
     print(f'  Shape          : {df.shape}')
     print(f'  Weeks          : {df["week"].min()} – {df["week"].max()}'
@@ -112,6 +114,8 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     FEATURE_COLS + TARGET are used downstream for modeling.
     """
     df = df.copy()
+    if 'finished_sku_id' in df.columns and 'semiconductor_id' not in df.columns:
+        df = df.rename(columns={'finished_sku_id': 'semiconductor_id'})
     df = df.sort_values(
         ['facility_id', 'semiconductor_id', 'week']
     ).reset_index(drop=True)

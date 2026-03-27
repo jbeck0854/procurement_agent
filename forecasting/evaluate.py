@@ -432,6 +432,9 @@ def plot_worst_5_series(
 
     Layout: 2-column × 3-row grid (last slot hidden).
     """
+    if 'finished_sku_id' in df_raw.columns and 'semiconductor_id' not in df_raw.columns:
+        df_raw = df_raw.rename(columns={'finished_sku_id': 'semiconductor_id'})
+
     worst5 = per_series.head(5).reset_index(drop=True)
     n      = len(worst5)
     ncols, nrows = 2, 3
