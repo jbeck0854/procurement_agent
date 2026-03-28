@@ -189,3 +189,62 @@ GROUP BY
     target_week_date,
     facility_id,
     product_key;
+
+
+-----------------
+---- Inventory + Procurement Requirement Layer views
+-----------------
+
+-- Procurement requirement per forecast week per facility per component.
+-- Grain: forecast_run_id × target_week_date × facility_id × product_key
+--
+-- Inventory state (on_hand, scheduled_receipts, backorder) is read from the
+-- last historical week of fact_component_inventory_history (the decision point).
+-- These are FIXED starting conditions — the same for all forecast weeks.
+--
+-- scheduled_receipts_qty = total outstanding on-order at decision point (MRP convention).
+--
+-- Formula:
+--   net_requirement = max(0,
+--       gross_requirement + backorder_qty + safety_stock_qty
+--       - on_hand_qty - scheduled_receipts_qty
+--   )
+CREATE OR REPLACE VIEW vw_procurement_requirement AS
+WITH decision_point AS (
+    SELECT
+        facility_id,
+        product_key,
+        on_hand_qty,
+        scheduled_receipts_qty,
+        backorder_qty,
+        inventory_position
+    FROM fact_component_inventory_history
+    WHERE week_date = (SELECT MAX(week_date) FROM fact_component_inventory_history)
+)
+SELECT
+    lp.forecast_run_id,
+    lp.target_week_date,
+    lp.facility_id,
+    lp.product_key,
+    lp.total_component_requirement          AS gross_requirement,
+    dp.on_hand_qty,
+    dp.scheduled_receipts_qty,
+    dp.backorder_qty,
+    pol.safety_stock_qty,
+    pol.base_stock_target_qty,
+    GREATEST(
+        0::numeric,
+        lp.total_component_requirement
+        + dp.backorder_qty
+        + pol.safety_stock_qty
+        - dp.on_hand_qty
+        - dp.scheduled_receipts_qty
+    )                                       AS net_requirement
+FROM vw_component_requirement_lp lp
+JOIN decision_point dp
+    ON  dp.facility_id = lp.facility_id
+    AND dp.product_key = lp.product_key
+JOIN fact_inventory_policy pol
+    ON  pol.forecast_run_id = lp.forecast_run_id
+    AND pol.facility_id     = lp.facility_id
+    AND pol.product_key     = lp.product_key;

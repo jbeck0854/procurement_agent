@@ -1,6 +1,6 @@
-# SQL Warehouse Build Order and New Forecast/BOM Objects
+# SQL Warehouse Build Order and Planning Layer Documentation
 
-## Full rebuild order (from scratch)
+## Full rebuild order
 
 Run the SQL files in this order:
 
@@ -13,122 +13,187 @@ Run the SQL files in this order:
 7. `sql/load/load_bom.sql`
 8. `sql/views.sql`
 
-### Why this order matters
+## Why this order matters
 
-- `dimensions.sql` and `facts.sql` create the core warehouse tables
+- `dimensions.sql` and `facts.sql` create the warehouse tables
 - `stage.sql` creates the staging tables required by `copy_staging.sql`
 - `copy_staging.sql` loads raw CSV data into staging
-- `load_dimensions.sql` and `load_facts.sql` populate warehouse dimensions and facts
-- `load_bom.sql` must run **after** `load_dimensions.sql` because dimension reloads can truncate and cascade into `dim_bom`
-- `views.sql` should run last because the views depend on the underlying tables and BOM seed data existing
+- `load_dimensions.sql` and `load_facts.sql` populate the warehouse
+- `load_bom.sql` seeds the BOM bridge after dimensions are loaded
+- `views.sql` should run last because the views depend on the underlying tables already existing
 
 ---
 
-## Key demand / forecast tables
+## Core completed layers
 
-### `fact_semiconductor_demand`
-Historical finished-good semiconductor demand
+### Historical finished-goods demand
+`fact_semiconductor_demand`
+
+Stores historical finished-good semiconductor demand.
 
 **Grain**
 - `week_date × facility_id × semiconductor_id`
 
-**Purpose**
-- stores historical finished-good demand used for forecasting
+### Production forecast metadata
+`dim_forecast_run`
 
-### `dim_forecast_run`
-Forecast run metadata
+Stores one row per production forecast batch.
 
-**Purpose**
-- one record per production forecast batch
+### Forward finished-goods forecasts
+`fact_semiconductor_demand_forecast`
 
-### `fact_semiconductor_demand_forecast`
-Stored forward-looking demand forecasts
+Stores forward demand forecasts generated from the production model.
 
 **Grain**
 - `forecast_run_id × facility_id × semiconductor_id × target_week_date`
 
-**Purpose**
-- stores the production forecast output used downstream for BOM explosion
+### BOM bridge
+`dim_bom`
 
----
-
-## BOM bridge table
-
-### `dim_bom`
-Structural mapping between finished SKUs and procurement-side components
+Maps finished semiconductor SKUs to procurement-side components.
 
 **Grain**
 - `semiconductor_id × product_key`
 
-**Purpose**
-- maps each finished semiconductor SKU to the procurement components required to support one unit of forecasted demand
+### BOM-exploded forecast views
+`vw_component_requirement_detail`
+- SKU-level exploded component requirement view
 
-**Core columns**
-- `semiconductor_id`
-- `product_key`
-- `units_per_sku`
-
-**Important**
-- this is curated seed data, not a staging-table load
-- do not load this through `load_dimensions.sql`
-- use `sql/load/load_bom.sql`
+`vw_component_requirement_lp`
+- LP-ready aggregated component requirement view
 
 ---
 
-## BOM-driven component requirement views
+## New inventory / planning objects
 
-### `vw_component_requirement_detail`
-Explodes finished-good forecast rows into SKU-level component requirements
+### Historical component inventory
+`fact_component_inventory_history`
+
+Stores weekly benchmark component inventory by facility and product.
 
 **Grain**
-- `forecast_run_id × target_week_date × facility_id × semiconductor_id × product_key`
+- `week_date × facility_id × product_key`
 
-**Key fields**
-- `predicted_demand`
-- `units_per_sku`
-- `gross_component_requirement`
+**Purpose**
+- represents historical inventory state for procurement components
+- derived from historical BOM-implied component demand
+- includes inventory quantities and historical cost
 
-**Use**
-- debugging
-- tracing which finished SKU is driving which component need
+**Key columns**
+- `week_date`
+- `week_number`
+- `facility_id`
+- `product_key`
+- `bom_implied_demand`
+- `scheduled_receipts_qty`
+- `on_hand_qty`
+- `backorder_qty`
+- `order_placed_qty`
+- `inventory_position`
+- `unit_cost`
+- `inventory_value`
 
-### `vw_component_requirement_lp`
-Aggregated component requirement surface for optimization
+---
+
+### Inventory policy output
+`fact_inventory_policy`
+
+Stores the policy parameters and computed stock targets used for planning.
+
+**Grain**
+- `forecast_run_id × facility_id × product_key`
+
+**Purpose**
+- stores demand stats, lead-time stats, safety stock, and base-stock target for each facility-product pair
+
+**Key columns**
+- `forecast_run_id`
+- `facility_id`
+- `product_key`
+- `avg_demand_weekly`
+- `std_demand_weekly`
+- `avg_lead_time_weeks`
+- `std_lead_time_weeks`
+- `review_period_weeks`
+- `service_level_z`
+- `safety_stock_qty`
+- `base_stock_target_qty`
+- `n_eligible_suppliers`
+- `compliance_threshold`
+- `computed_at`
+
+---
+
+### Procurement requirement
+`vw_procurement_requirement`
+
+Combines forecasted component requirement with inventory state and policy outputs to produce net procurement requirement.
 
 **Grain**
 - `forecast_run_id × target_week_date × facility_id × product_key`
 
-**Key field**
-- `total_component_requirement`
+**Purpose**
+- direct input surface for the LP optimization layer
 
-**Use**
-- direct LP input
-- procurement planning by component, week, and facility
-
-**Important**
-- the LP should consume this aggregated view, not the detail view
+**Key columns**
+- `forecast_run_id`
+- `target_week_date`
+- `facility_id`
+- `product_key`
+- `gross_requirement`
+- `on_hand_qty`
+- `scheduled_receipts_qty`
+- `backorder_qty`
+- `safety_stock_qty`
+- `base_stock_target_qty`
+- `net_requirement`
 
 ---
 
-## Modeling and semantic separation
+## Main formulas
 
-### Procurement layer
-These names remain untouched and represent procured input components:
-- `microprocessors`
-- `integrated_circuit_components`
-- `power_devices`
-- `transistors`
+### Inventory policy
+Periodic review, order-up-to policy:
 
-### Finished-goods demand layer
-These represent forecasted finished semiconductor SKUs:
-- `semiconductor_id`
-- `finished_family`
-- `sku_performance_tier`
+- review period `r = 8 weeks`
+- service level `z = 1.65`
+
+For each `facility_id × product_key`:
+
+`S = μ_D (r + μ_L) + z * sqrt((r + μ_L) * σ_D² + μ_D² * σ_L²)`
+
+Where:
+- `μ_D` = average weekly component demand
+- `σ_D` = std dev of weekly component demand
+- `μ_L` = average lead time in weeks
+- `σ_L` = std dev of lead time in weeks
+
+### Net procurement requirement
+`net_requirement = max(0, gross_requirement + backorder_qty + safety_stock_qty - on_hand_qty - scheduled_receipts_qty)`
+
+---
+
+## How the new planning layer works
+
+1. Forecast finished-good demand
+2. Explode that demand through the BOM into component demand
+3. Compare component demand against benchmark inventory state
+4. Add safety stock / inventory policy outputs
+5. Produce net procurement requirement
+6. Feed that requirement into the LP optimizer
+
+---
+
+## Important separation of layers
+
+### Forecasting layer
+Forecasts finished-good demand.
 
 ### BOM layer
-This is the bridge that converts:
-- finished-good demand
-into
-- component procurement requirements
+Translates finished-good demand into procurement component demand.
 
-Do not collapse these layers together.
+### Inventory / planning layer
+Evaluates whether existing inventory plus policy coverage is enough.
+
+### LP layer
+Decides how to allocate procurement across suppliers.

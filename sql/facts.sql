@@ -185,3 +185,70 @@ CREATE INDEX IF NOT EXISTS idx_fact_fcast_target_run
 CREATE INDEX IF NOT EXISTS idx_fact_fcast_horizon
     ON fact_semiconductor_demand_forecast (horizon_weeks);
 
+
+-- ── Inventory + Procurement Requirement Layer ─────────────────────────────────
+
+-- Historical component inventory (simulated benchmark)
+-- Grain: week_date × facility_id × product_key
+-- Populated by inventory/run_inventory.py — NOT from staging CSVs.
+-- Derived from: fact_semiconductor_demand × dim_bom → periodic-review simulation.
+-- scheduled_receipts_qty: total outstanding on-order at end of week (MRP convention).
+-- inventory_position: on_hand + on_order - backorder (post-review-decision).
+DROP TABLE IF EXISTS fact_component_inventory_history CASCADE;
+CREATE TABLE fact_component_inventory_history (
+    week_date                DATE            NOT NULL,
+    week_number              INT             NOT NULL,
+    facility_id              TEXT            NOT NULL
+                             REFERENCES dim_facility(facility_id),
+    product_key              INT             NOT NULL
+                             REFERENCES dim_product(product_key),
+
+    bom_implied_demand       NUMERIC(14,4)   NOT NULL,
+    scheduled_receipts_qty   NUMERIC(14,4)   NOT NULL DEFAULT 0,
+    on_hand_qty              NUMERIC(14,4)   NOT NULL,
+    backorder_qty            NUMERIC(14,4)   NOT NULL DEFAULT 0,
+    order_placed_qty         NUMERIC(14,4)   NOT NULL DEFAULT 0,
+    inventory_position       NUMERIC(14,4)   NOT NULL,
+    unit_cost                NUMERIC(14,6)   NOT NULL,
+    inventory_value          NUMERIC(18,4)   NOT NULL,
+
+    PRIMARY KEY (week_date, facility_id, product_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_inv_hist_week
+    ON fact_component_inventory_history (week_date);
+CREATE INDEX IF NOT EXISTS idx_inv_hist_facility_product
+    ON fact_component_inventory_history (facility_id, product_key);
+
+
+-- Inventory policy output per forecast run
+-- Grain: forecast_run_id × facility_id × product_key
+-- Populated by inventory/run_inventory.py.
+-- Formula: S = μ_D*(r + μ_L) + z*sqrt((r + μ_L)*σ_D² + μ_D²*σ_L²)
+-- μ_L and σ_L are in WEEKS (converted from days stored in dim_supplier).
+DROP TABLE IF EXISTS fact_inventory_policy CASCADE;
+CREATE TABLE fact_inventory_policy (
+    forecast_run_id          INT             NOT NULL
+                             REFERENCES dim_forecast_run(forecast_run_id),
+    facility_id              TEXT            NOT NULL
+                             REFERENCES dim_facility(facility_id),
+    product_key              INT             NOT NULL
+                             REFERENCES dim_product(product_key),
+
+    avg_demand_weekly        NUMERIC(14,4)   NOT NULL,
+    std_demand_weekly        NUMERIC(14,4)   NOT NULL,
+    avg_lead_time_weeks      NUMERIC(8,4)    NOT NULL,
+    std_lead_time_weeks      NUMERIC(8,4)    NOT NULL,
+    review_period_weeks      SMALLINT        NOT NULL DEFAULT 8,
+    service_level_z          NUMERIC(5,3)    NOT NULL DEFAULT 1.650,
+    safety_stock_qty         NUMERIC(14,2)   NOT NULL,
+    base_stock_target_qty    NUMERIC(14,2)   NOT NULL,
+    n_eligible_suppliers     SMALLINT        NOT NULL,
+    compliance_threshold     NUMERIC(4,3)    NOT NULL,
+    computed_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+
+    PRIMARY KEY (forecast_run_id, facility_id, product_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_inv_policy_run
+    ON fact_inventory_policy (forecast_run_id);
