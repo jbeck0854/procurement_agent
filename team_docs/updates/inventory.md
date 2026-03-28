@@ -157,6 +157,7 @@ Allocate procurement volume across suppliers in a way that:
 - Risk tolerance (lambda)
 - Diversification preferences
 - Optional supplier share limits
+- Optional/potential service level requirements
 
 ---
 
