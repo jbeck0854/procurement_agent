@@ -110,7 +110,7 @@ Fix implemented:
 
 ---
 
-## 📊 Current Results
+## Current Results
 
 | Metric | Value |
 |------|------|
@@ -125,7 +125,7 @@ Interpretation:
 
 ---
 
-## 🧠 What the System Now Does
+## What the System Now Does
 
 For each component, facility, and week:
 
@@ -141,7 +141,7 @@ For each component, facility, and week:
 
 ---
 
-## 🚧 Next Step — LP Optimization Layer
+## Next Step — LP Optimization Layer
 
 We will now build the optimization engine that:
 
@@ -160,7 +160,7 @@ Allocate procurement volume across suppliers in a way that:
 
 ---
 
-## 🎯 Planned Demo Capabilities
+## Planned Demo Capabilities
 
 The system will support interactive decision-making during demo.
 
@@ -189,7 +189,7 @@ Forecast Demand --> BOM Translation --> Inventory Comparison --> Procurement Nee
 
 ---
 
-## 🚀 Summary
+## Summary
 
 - Forecasting is complete and production-ready  
 - Inventory logic is realistic and validated  
