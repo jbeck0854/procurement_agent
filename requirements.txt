@@ -8,3 +8,4 @@ ipykernel>=6.29
 psycopg2-binary>=2.9
 pytest>=7.0
 python-dotenv>=0.19
+pulp>=2.7
