@@ -54,6 +54,11 @@ URGENCY_LEAD_TIME_PENALTY = 0.002   # $ per day of lead-time mean added to unit 
                                      # scales slow suppliers' effective cost upward
 
 
+def _qty_int(x: float) -> int:
+    """Round-half-up to nearest integer (fractional part ≥ 0.5 → ceil)."""
+    return int(x + 0.5)
+
+
 # ── Parameter container ────────────────────────────────────────────────────────
 
 @dataclass
@@ -338,9 +343,9 @@ def _facility_split(
         total_alloc    = sum(allocation.values())
         rows.append({
             'facility_id':    frow['facility_id'],
-            'net_req':        round(float(frow['facility_net_req']), 2),
+            'net_req':        _qty_int(float(frow['facility_net_req'])),
             'share_pct':      round(float(frow['share_pct']), 2),
-            'allocated_qty':  round(total_alloc * facility_share, 2),
+            'allocated_qty':  _qty_int(total_alloc * facility_share),
         })
     return rows
 
@@ -359,7 +364,7 @@ def _moq_flag(supplier_id: str, allocated_qty: float, eligible_df: pd.DataFrame)
         'moq_note': (
             'MOQ met — bulk pricing applies'
             if met else
-            f'Allocated {int(allocated_qty):,} units, below MOQ of {moq:,} — '
+            f'Allocated {_qty_int(allocated_qty):,} units, below MOQ of {moq:,} — '
             f'bulk discount not realized'
         ),
     }
@@ -453,7 +458,7 @@ def run(params: LPParams) -> dict:
                     + (f' at facility {params.facility_id}' if params.facility_id else '')
                     + '. No procurement action required.'
                 ),
-                'requirement':           {'total_net_requirement': 0.0},
+                'requirement':           {'total_net_requirement': 0},
                 'allocation':            [],
                 'cost_summary':          {},
                 'excluded_suppliers':    [],
@@ -514,7 +519,7 @@ def run(params: LPParams) -> dict:
                     'supplier_id':             j,
                     'country_code':            str(row.get('country_code', '')).strip(),
                     'decision_tier':           str(row.get('decision_tier_global', 'N/A')),
-                    'allocated_qty':           round(qty, 2),
+                    'allocated_qty':           _qty_int(qty),
                     'share_pct':               round(qty / total_alloc * 100, 2) if total_alloc > 0 else 0.0,
                     'landed_unit_cost':        round(c_j, 5),
                     'risk_penalty_norm':       round(r_j, 4),
@@ -539,9 +544,11 @@ def run(params: LPParams) -> dict:
                 })
 
         # ── Step 5: Cost summary ───────────────────────────────────────────────
+        # total_alloc_raw: continuous LP values used for demand_satisfied check
+        total_alloc_raw = sum(v for v in solve['allocation'].values() if v >= 0.01)
         total_cost = sum(r['total_cost'] for r in allocation_rows)
         total_rac  = sum(r['risk_adjusted_cost_total'] for r in allocation_rows)
-        total_alloc_qty = sum(r['allocated_qty'] for r in allocation_rows)
+        total_alloc_qty = sum(r['allocated_qty'] for r in allocation_rows)  # sum of ints
 
         if total_alloc_qty > 0:
             avg_cost = total_cost / total_alloc_qty
@@ -574,9 +581,9 @@ def run(params: LPParams) -> dict:
             'demand_constraint_binding':  solve['demand_binding'],
             'budget_constraint_binding':  solve['budget_binding'] if params.budget_cap else None,
             'n_share_constraints_binding':solve['share_binding_count'],
-            'total_allocated':            round(total_alloc_qty, 2),
-            'demand_floor':               round(solve['demand_floor'], 2),
-            'demand_satisfied':           total_alloc_qty >= solve['demand_floor'] - 1.0,
+            'total_allocated':            total_alloc_qty,
+            'demand_floor':               _qty_int(solve['demand_floor']),
+            'demand_satisfied':           total_alloc_raw >= solve['demand_floor'] - 1.0,
             'infeasibility_reason':       None if solve['status'] == 'Optimal' else
                                           'Check budget vs. demand floor feasibility.',
         }
@@ -600,8 +607,8 @@ def run(params: LPParams) -> dict:
                 'exclude_supplier_ids':  params.exclude_supplier_ids,
             },
             'requirement': {
-                'total_net_requirement':  round(D, 2),
-                'adjusted_requirement':   round(solve['demand_floor'], 2),
+                'total_net_requirement':  _qty_int(D),
+                'adjusted_requirement':   _qty_int(solve['demand_floor']),
                 'n_facilities_included':  len(facility_df),
                 'n_weeks_with_positive_req': None,   # available if needed; omitted for brevity
                 'facility_breakdown':     facility_breakdown,
@@ -644,12 +651,12 @@ def _print_result(result: dict) -> None:
 
     req = result['requirement']
     print(f'\n── Procurement Requirement ──────────────────────────────────────────')
-    print(f'  Net requirement   : {req["total_net_requirement"]:>12,.2f} units')
-    print(f'  Adjusted target   : {req["adjusted_requirement"]:>12,.2f} units')
+    print(f'  Net requirement   : {req["total_net_requirement"]:>12,} units')
+    print(f'  Adjusted target   : {req["adjusted_requirement"]:>12,} units')
     print(f'  Facilities        : {req["n_facilities_included"]}')
     for fb in req['facility_breakdown']:
-        print(f'    {fb["facility_id"]:<14}  {fb["net_req"]:>10,.2f} units  '
-              f'({fb["share_pct"]:.1f}%)  allocated → {fb["allocated_qty"]:,.2f}')
+        print(f'    {fb["facility_id"]:<14}  {fb["net_req"]:>10,} units  '
+              f'({fb["share_pct"]:.1f}%)  allocated → {fb["allocated_qty"]:,}')
 
     sp = result['supplier_pool']
     print(f'\n── Supplier Pool ────────────────────────────────────────────────────')
@@ -667,7 +674,7 @@ def _print_result(result: dict) -> None:
         moq_flag = '✓' if r['moq_met'] else '!'
         print(
             f'  {r["supplier_id"]:<16} {r["country_code"]:>7} '
-            f'{r["decision_tier"]:<12} {r["allocated_qty"]:>10,.1f} '
+            f'{r["decision_tier"]:<12} {r["allocated_qty"]:>10,} '
             f'{r["share_pct"]:>7.1f}% {r["landed_unit_cost"]:>8.4f} '
             f'{r["total_cost"]:>12,.2f}  {moq_flag}'
         )
@@ -692,8 +699,8 @@ def _print_result(result: dict) -> None:
     if cd['budget_constraint_binding'] is not None:
         print(f'  Budget constraint binding : {cd["budget_constraint_binding"]}')
     print(f'  Share constraints binding : {cd["n_share_constraints_binding"]}')
-    print(f'  Total allocated           : {cd["total_allocated"]:>10,.2f}  '
-          f'(floor = {cd["demand_floor"]:,.2f})')
+    print(f'  Total allocated           : {cd["total_allocated"]:>10,}  '
+          f'(floor = {cd["demand_floor"]:,})')
     print(f'  Demand satisfied          : {cd["demand_satisfied"]}')
 
     if result['excluded_suppliers']:
