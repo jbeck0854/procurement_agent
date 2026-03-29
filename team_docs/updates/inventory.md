@@ -22,9 +22,9 @@ Converted a food demand dataset into a semiconductor-style finished-goods demand
 
 ### Key Transformations
 - **Meal → Semiconductor SKU**
-  - Top-demand meals mapped to semiconductor SKUs
+  - Top-demand meals mapped to semiconductor SKUs (12)
 - **Center → Facility**
-  - Top centers mapped to manufacturing facilities
+  - Top centers mapped to manufacturing facilities (4)
 - **Category / cuisine → SKU attributes**
   - Used to derive:
     - performance tiers
