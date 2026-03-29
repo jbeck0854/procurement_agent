@@ -32,7 +32,6 @@ from typing import Optional
 
 import pandas as pd
 import psycopg2
-import psycopg2.extras
 import pulp
 from dotenv import load_dotenv
 
@@ -593,6 +592,41 @@ def run(params: LPParams) -> dict:
             D, params, n_eligible, n_total, solve
         )
 
+        # ── Step 9: Executive summary (business-readable one-paragraph string) ──
+        if solve['status'] == 'Optimal' and allocation_rows:
+            n_excl_comp = sum(
+                1 for e in excluded if 'compliance' in e.get('exclusion_reason', '')
+            )
+            top_sup = allocation_rows[0]
+            exec_summary = (
+                f"Procure {_qty_int(solve['demand_floor']):,} units of "
+                f"{params.product.replace('_', ' ')} "
+                f"({int(params.service_level_target * 100)}% service-level target). "
+                f"{len(allocation_rows)} of {n_eligible} eligible supplier(s) selected. "
+                f"Lead supplier: {top_sup['supplier_id']} "
+                f"({top_sup['share_pct']:.0f}% of volume, "
+                f"${top_sup['landed_unit_cost']:.4f}/unit). "
+                f"Total procurement cost: ${cost_summary['total_cost_usd']:,.2f}."
+            )
+            if params.urgency:
+                exec_summary += (
+                    " Urgency mode active: slow-lead-time suppliers carry an "
+                    "additional cost penalty in the objective."
+                )
+            if n_excl_comp > 0:
+                exec_summary += (
+                    f" {n_excl_comp} supplier(s) excluded by compliance "
+                    f"threshold ({params.compliance_threshold:.0%})."
+                )
+        else:
+            exec_summary = (
+                f"No feasible procurement plan for "
+                f"{params.product.replace('_', ' ')}. "
+                + constraint_diagnostics.get(
+                    'infeasibility_reason', 'Infeasible.'
+                )
+            )
+
         return {
             'params_recap': {
                 'product':               params.product,
@@ -627,6 +661,7 @@ def run(params: LPParams) -> dict:
             'excluded_suppliers':     excluded,
             'constraint_diagnostics': constraint_diagnostics,
             'formula_description':    formula_desc,
+            'executive_summary':      exec_summary,
         }
 
     finally:
