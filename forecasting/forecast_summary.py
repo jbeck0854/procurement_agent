@@ -274,6 +274,110 @@ def _format_summary(s: dict) -> str:
     return "\n".join(lines)
 
 
+# ── Drill-down function ───────────────────────────────────────────────────────
+
+def get_production_forecast_drilldown(
+    conn,
+    forecast_run_id=None,
+    export_csv: bool = False,
+) -> "pd.DataFrame":
+    """
+    Return the full row-level forecast for a given run.
+
+    Parameters
+    ----------
+    conn : psycopg2 connection
+        Open DB connection. Caller is responsible for closing it.
+    forecast_run_id : int, optional
+        Specific run to retrieve. If None, uses the most recent run.
+    export_csv : bool, optional
+        If True, write the result to
+        artifacts/forecasting/forecast_drilldown_<run_id>.csv.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: target_week_date, facility_id, semiconductor_id,
+                 predicted_demand, interval_lower_90, interval_upper_90,
+                 horizon_weeks
+        Sorted: ORDER BY target_week_date, facility_id, semiconductor_id
+        Grain:  (forecast_run_id, facility_id, semiconductor_id, target_week_date)
+
+    Validation (raises RuntimeError on failure):
+        actual_rows == weeks × facilities × SKUs
+        no duplicate rows
+        interval_lower_90 <= predicted_demand <= interval_upper_90 for all rows
+    """
+    import os as _os
+
+    run_id = _resolve_run_id(conn, forecast_run_id)
+
+    drilldown_sql = """
+        SELECT
+            target_week_date,
+            facility_id,
+            semiconductor_id,
+            predicted_demand,
+            interval_lower_90,
+            interval_upper_90,
+            horizon_weeks
+        FROM fact_semiconductor_demand_forecast
+        WHERE forecast_run_id = %(run_id)s
+        ORDER BY target_week_date, facility_id, semiconductor_id
+    """
+    with conn.cursor() as cur:
+        cur.execute(drilldown_sql, {"run_id": run_id})
+        rows = cur.fetchall()
+        col_names = [d[0] for d in cur.description]
+
+    df = pd.DataFrame(rows, columns=col_names)
+
+    # ── Validation ────────────────────────────────────────────────────────────
+    weeks      = df["target_week_date"].nunique()
+    facilities = df["facility_id"].nunique()
+    skus       = df["semiconductor_id"].nunique()
+    expected   = weeks * facilities * skus
+    actual     = len(df)
+
+    if actual != expected:
+        raise RuntimeError(
+            f"[DRILLDOWN] Grain check FAILED for run_id={run_id}: "
+            f"expected {expected:,} rows ({weeks} weeks × {facilities} fac × {skus} SKUs), "
+            f"got {actual:,}."
+        )
+
+    dup_count = df.duplicated(
+        subset=["target_week_date", "facility_id", "semiconductor_id"]
+    ).sum()
+    if dup_count > 0:
+        raise RuntimeError(
+            f"[DRILLDOWN] {dup_count} duplicate grain rows found for run_id={run_id}."
+        )
+
+    ci_violations = (
+        (df["interval_lower_90"] > df["predicted_demand"]) |
+        (df["interval_upper_90"] < df["predicted_demand"])
+    ).sum()
+    if ci_violations > 0:
+        logger.warning(
+            f"[DRILLDOWN] {ci_violations} CI bound violations for run_id={run_id} "
+            f"(interval_lower_90 > predicted_demand OR interval_upper_90 < predicted_demand)."
+        )
+
+    # ── Optional CSV export ───────────────────────────────────────────────────
+    if export_csv:
+        out_dir = _os.path.join(
+            _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+            "artifacts", "forecasting",
+        )
+        _os.makedirs(out_dir, exist_ok=True)
+        out_path = _os.path.join(out_dir, f"forecast_drilldown_{run_id}.csv")
+        df.to_csv(out_path, index=False)
+        logger.info(f"[DRILLDOWN] Exported {len(df):,} rows → {out_path}")
+
+    return df
+
+
 # ── LangChain @tool wrapper (Option B — no demo/* modified) ───────────────────
 
 @tool
@@ -300,5 +404,65 @@ def get_forecast_summary_tool(forecast_run_id: int = 0) -> str:
     except Exception as e:
         logger.error(f"[FORECAST_SUMMARY] Tool call failed: {e}", exc_info=True)
         return f"Error retrieving forecast summary: {e}"
+    finally:
+        conn.close()
+
+
+@tool
+def get_forecast_drilldown_tool(
+    forecast_run_id: int = 0,
+    export_csv: bool = False,
+) -> str:
+    """Retrieve the row-level production forecast drill-down from the database.
+
+    Returns a coverage summary (row count, distinct facilities, SKUs, weeks,
+    grain validation) for the requested forecast run. If export_csv is True,
+    also writes the full drill-down to a CSV file and reports the export path.
+
+    All data is read from pre-computed DB tables only — no model retraining.
+
+    Args:
+        forecast_run_id: Specific run ID to retrieve. Use 0 (default) to
+                         retrieve the most recent production forecast run.
+        export_csv: If True, export the full drill-down DataFrame to
+                    artifacts/forecasting/forecast_drilldown_<run_id>.csv.
+    """
+    conn = _get_conn()
+    try:
+        run_id = forecast_run_id if forecast_run_id > 0 else None
+        resolved = _resolve_run_id(conn, run_id)
+        df = get_production_forecast_drilldown(conn, forecast_run_id=run_id, export_csv=export_csv)
+
+        weeks      = df["target_week_date"].nunique()
+        facilities = df["facility_id"].nunique()
+        skus       = df["semiconductor_id"].nunique()
+        expected   = weeks * facilities * skus
+        actual     = len(df)
+        grain_ok   = actual == expected
+
+        lines = [
+            f"Forecast Drill-Down  (run_id={resolved})",
+            f"  Rows returned   : {actual:,}",
+            f"  Facilities      : {facilities}",
+            f"  SKUs            : {skus}",
+            f"  Weeks           : {weeks}  "
+            f"({str(df['target_week_date'].min())} → {str(df['target_week_date'].max())})",
+            f"  Grain valid     : {'✓' if grain_ok else '⚠ FAIL'}  "
+            f"({actual:,} rows = {weeks} weeks × {facilities} fac × {skus} SKUs)",
+        ]
+
+        if export_csv:
+            import os as _os
+            out_dir = _os.path.join(
+                _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                "artifacts", "forecasting",
+            )
+            out_path = _os.path.join(out_dir, f"forecast_drilldown_{resolved}.csv")
+            lines.append(f"  CSV exported    : {out_path}")
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.error(f"[FORECAST_DRILLDOWN] Tool call failed: {e}", exc_info=True)
+        return f"Error retrieving forecast drill-down: {e}"
     finally:
         conn.close()
