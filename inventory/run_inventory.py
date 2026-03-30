@@ -26,6 +26,7 @@ Usage (from project root):
     python -m inventory.run_inventory
 """
 
+import logging
 import math
 import os
 from pathlib import Path
@@ -35,6 +36,8 @@ import pandas as pd
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -126,14 +129,27 @@ def _load_latest_forecast_run_id(conn) -> int:
 
 def _load_unit_costs(product_map: dict) -> dict:
     """
-    USA real_price per (product_key, year, month) from combined_products_UPDATED.csv.
+    Global-average real_price per (product_key, year, month).
+
+    Averages real_price across ALL countries for each (product, year, month)
+    combination, then maps to product_key.  This is more defensible than
+    USA-only because:
+      - the firm sources globally, not exclusively from US suppliers
+      - more observations per cell → fewer missing year-month combinations
+      - avoids silent 0.0 fallback caused by missing USA rows
+
     Returns {(product_key, year, month): float}.
     """
     df = pd.read_csv(COST_CSV_PATH)
-    df = df[df['country_code'] == 'USA'].copy()
+    # Average across all countries — no country_code filter
+    avg = (
+        df.groupby(['product', 'year', 'month'])['real_price']
+        .mean()
+        .reset_index()
+    )
     name_to_key = {v: k for k, v in product_map.items()}
     result = {}
-    for _, row in df.iterrows():
+    for _, row in avg.iterrows():
         pk = name_to_key.get(str(row['product']))
         if pk is None:
             continue
@@ -222,8 +238,17 @@ def _simulate_series(
         ip = on_hand + on_order - backorder
 
         # 6. Unit cost and inventory value
-        wd   = week_date_by_wk[t]
-        cost = cost_by_ym.get((wd.year, wd.month), 0.0)
+        wd        = week_date_by_wk[t]
+        cost_key  = (wd.year, wd.month)
+        cost      = cost_by_ym.get(cost_key)
+        if cost is None:
+            logger.warning(
+                'Unit cost missing for product_key=%s facility=%s '
+                'year=%s month=%s — defaulting to 0.0; '
+                'inventory_value will be zero for this row.',
+                product_key, facility_id, wd.year, wd.month,
+            )
+            cost = 0.0
 
         rows.append({
             'week_date':              wd,

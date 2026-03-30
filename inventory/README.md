@@ -92,8 +92,20 @@ Assign historical component cost using:
 - `cleaned_data/combined_products_UPDATED.csv`
 
 Cost uses:
-- USA `real_price`
-- matched by product and year-month
+- global-average `real_price` across all countries
+- grouped by product × year × month
+- mapped to `product_key` via `dim_product`
+
+This is more defensible than a single-country price because the firm sources
+globally, and averaging across all countries maximises year-month coverage,
+reducing the risk of zero-cost fallbacks in the valuation history.
+
+If a `(product_key, year, month)` combination is still missing after averaging,
+the pipeline logs a warning and defaults `unit_cost` to 0.0 for that row.
+
+These cost fields (`unit_cost`, `inventory_value`) are for inventory valuation
+reporting only. They do **not** affect safety stock, base-stock targets,
+net procurement requirements, or LP optimization inputs.
 
 ### Step 5 — Inventory policy calculation
 For each `facility_id × product_key`, compute:
