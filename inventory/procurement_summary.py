@@ -659,6 +659,193 @@ def get_procurement_requirement_drilldown(
     return "\n".join(lines)
 
 
+# ── Triggered Procurement Rows ────────────────────────────────────────────────
+
+def get_triggered_procurement_rows(
+    conn,
+    forecast_run_id=None,
+    product: str = None,
+    facility_id: str = None,
+) -> str:
+    """
+    Return all rows where net_requirement > 0 — the weeks and facilities
+    where procurement is actually triggered.
+
+    Parameters
+    ----------
+    conn : psycopg2 connection
+        Open DB connection. Caller is responsible for closing it.
+    forecast_run_id : int, optional
+        Specific run to retrieve. If None, uses the most recent run.
+    product : str, optional
+        Filter to one component (case-insensitive exact then prefix match).
+        If omitted, all components are returned.
+    facility_id : str, optional
+        Filter to one facility. Only applied when product is also supplied.
+        If product is omitted, facility_id is ignored.
+
+    Modes
+    -----
+    no filters           → all triggered rows, all components, all facilities
+    product only         → triggered rows for that component, all facilities
+    product + facility   → triggered rows for that component, that facility
+    """
+    run_id = _resolve_run_id(conn, forecast_run_id)
+
+    # Resolve optional product filter
+    product_key = None
+    product_name = None
+    if product is not None:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT product_key, product FROM dim_product "
+                "WHERE LOWER(product) = LOWER(%s)",
+                (product,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                cur.execute(
+                    "SELECT product_key, product FROM dim_product "
+                    "WHERE LOWER(product) LIKE LOWER(%s) LIMIT 1",
+                    (f"{product}%",),
+                )
+                row = cur.fetchone()
+        if row is None:
+            return (
+                f"Component '{product}' not found in dim_product. "
+                "Check spelling or use the exact product name."
+            )
+        product_key, product_name = row
+
+    # Build WHERE clauses dynamically
+    conditions = ["r.forecast_run_id = %s", "r.net_requirement > 0"]
+    params = [run_id]
+
+    if product_key is not None:
+        conditions.append("r.product_key = %s")
+        params.append(product_key)
+        if facility_id is not None:
+            conditions.append("r.facility_id = %s")
+            params.append(facility_id)
+
+    where = " AND ".join(conditions)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT
+                r.target_week_date,
+                r.facility_id,
+                p.product                   AS component,
+                r.gross_requirement,
+                r.on_hand_qty,
+                r.scheduled_receipts_qty,
+                r.backorder_qty,
+                r.safety_stock_qty,
+                r.net_requirement
+            FROM vw_procurement_requirement r
+            JOIN dim_product p ON p.product_key = r.product_key
+            WHERE {where}
+            ORDER BY p.product, r.facility_id, r.target_week_date
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+
+    if not rows:
+        return (
+            f"No triggered procurement rows found for "
+            f"forecast_run_id={run_id}"
+            + (f", component='{product_name}'" if product_name else "")
+            + (f", facility='{facility_id}'" if facility_id and product_name else "")
+            + "."
+        )
+
+    # Scope label
+    if product_name and facility_id:
+        scope_label = f"{product_name}  ·  {facility_id}"
+        mode_note   = "Single component · single facility"
+    elif product_name:
+        n_fac = len({r[1] for r in rows})
+        scope_label = f"{product_name}  ·  {n_fac} facilit{'y' if n_fac == 1 else 'ies'}"
+        mode_note   = "Single component · all facilities"
+    else:
+        n_comp = len({r[2] for r in rows})
+        n_fac  = len({r[1] for r in rows})
+        scope_label = f"all {n_comp} components  ·  all {n_fac} facilities"
+        mode_note   = "All components · all facilities"
+
+    # Totals (sched_rec and backorder omitted — zero by design at decision point)
+    tot_gross = sum(float(r[3]) for r in rows)
+    tot_oh    = sum(float(r[4]) for r in rows)
+    tot_ss    = sum(float(r[7]) for r in rows)
+    tot_net   = sum(float(r[8]) for r in rows)
+
+    lines = [
+        "═" * _W,
+        "  TRIGGERED PROCUREMENT ROWS  (net_requirement > 0 only)",
+        f"  {scope_label}",
+        "═" * _W,
+        "",
+        f"  Mode           : {mode_note}",
+        f"  Forecast run   : {run_id}",
+        f"  Triggered rows : {len(rows)}",
+        "",
+        _rule("What This Shows"),
+        "  Only weeks and facilities where existing inventory and safety",
+        "  stock coverage is insufficient to meet forecast demand.",
+        "  Rows where net_requirement = 0 are excluded.",
+        "",
+        _rule("Source"),
+        "  vw_procurement_requirement  WHERE net_requirement > 0",
+        "  Formula: max(0, gross_req + backorder + safety_stock - on_hand - sched_rec)",
+        "",
+        _rule("Triggered Detail"),
+        (
+            f"  {'Component':<34}"
+            f" {'Week':<12}"
+            f" {'Facility':<10}"
+            f" {'Gross Req':>10}"
+            f" {'On Hand':>10}"
+            f" {'Safety Stk':>11}"
+            f" {'Net Req':>8}"
+        ),
+        _rule(),
+    ]
+
+    for r in rows:
+        week_date, fac, comp, gross, oh, _, _, ss, net = r
+        lines.append(
+            f"  {comp:<34}"
+            f" {str(week_date):<12}"
+            f" {fac:<10}"
+            f" {float(gross):>10,.0f}"
+            f" {float(oh):>10,.0f}"
+            f" {float(ss):>11,.0f}"
+            f" {float(net):>8,.0f}"
+        )
+
+    lines += [
+        _rule(),
+        (
+            f"  {'TOTAL':<57}"
+            f" {tot_gross:>10,.0f}"
+            f" {tot_oh:>10,.0f}"
+            f" {tot_ss:>11,.0f}"
+            f" {tot_net:>8,.0f}"
+        ),
+        "",
+        "  Note: Sched Rec and Backorder are omitted from the detail columns",
+        "  because both are zero at the decision point by design. The formula",
+        "  still accounts for them — they will appear here if non-zero in",
+        "  future planning runs.",
+        "",
+        "═" * _W,
+    ]
+
+    return "\n".join(lines)
+
+
 # ── LangChain @tool wrappers (Option B — no demo/* modified) ─────────────────
 
 @tool
