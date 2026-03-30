@@ -400,7 +400,13 @@ def run() -> None:
     print(f'  Trained on         : {len(X_all):,} rows  (weeks 9–{MAX_OBS_WEEK})')
     print(f'  Horizon            : wk {MAX_OBS_WEEK+1}–{MAX_OBS_WEEK+HORIZON_WEEKS}'
           f'  ({_week_to_date(MAX_OBS_WEEK+1)} → {_week_to_date(MAX_OBS_WEEK+HORIZON_WEEKS)})')
-    print(f'  Series             : {len(series_list)}')
+    _n_facilities = len(set(f for f, _ in series_list))
+    _n_skus       = len(set(s for _, s in series_list))
+    _n_series     = len(series_list)
+    print(f'\n  Forecast Coverage:')
+    print(f'    Facilities              : {_n_facilities}')
+    print(f'    SKUs                    : {_n_skus}')
+    print(f'    SKU × Facility series   : {_n_series}')
     print(f'  Forecast rows      : {n_inserted:,}')
     print(f'  Predicted demand   : min={min(all_preds):,.0f}  '
           f'mean={np.mean(all_preds):,.0f}  max={max(all_preds):,.0f}')
