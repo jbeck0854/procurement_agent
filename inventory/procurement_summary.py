@@ -443,6 +443,222 @@ def format_procurement_status(conn, forecast_run_id=None) -> str:
     return "\n".join(lines)
 
 
+# ── Procurement Requirement Drill-Down ───────────────────────────────────────
+
+def get_procurement_requirement_drilldown(
+    conn,
+    forecast_run_id=None,
+    product: str = None,
+    facility_id: str = None,
+) -> str:
+    """
+    Return a week-by-week drill-down of the procurement requirement at the
+    grain: target_week_date × facility_id × component.
+
+    Parameters
+    ----------
+    conn : psycopg2 connection
+        Open DB connection. Caller is responsible for closing it.
+    forecast_run_id : int, optional
+        Specific run to retrieve. If None, uses the most recent run.
+    product : str, optional
+        Component name to filter on (e.g. 'transistors').
+        Case-insensitive prefix match against dim_product.product.
+        Required — if omitted, returns a guidance message.
+    facility_id : str, optional
+        Facility identifier to filter on (e.g. 'FAC_A').
+        If omitted, all facilities are returned for the given component.
+
+    Modes
+    -----
+    product only         → all facilities × all forecast weeks for that component
+    product + facility   → one facility × all forecast weeks for that component
+    neither              → guidance message (no DB query issued)
+    """
+    if product is None:
+        return "\n".join([
+            "═" * _W,
+            "  PROCUREMENT REQUIREMENT DRILL-DOWN — Usage",
+            "═" * _W,
+            "",
+            "  This helper requires at least a component name.",
+            "",
+            "  Modes:",
+            "    product only          → all facilities × all forecast weeks",
+            "    product + facility_id → one facility   × all forecast weeks",
+            "",
+            "  Example calls:",
+            "    get_procurement_requirement_drilldown(conn, product='transistors')",
+            "    get_procurement_requirement_drilldown(",
+            "        conn, product='transistors', facility_id='FAC_A')",
+            "",
+            "  Available components (from dim_product):",
+            "    integrated_circuit_components · transistors",
+            "    power_devices · microprocessors",
+            "═" * _W,
+        ])
+
+    run_id = _resolve_run_id(conn, forecast_run_id)
+
+    with conn.cursor() as cur:
+        # Resolve product name — case-insensitive exact match first, then prefix
+        cur.execute(
+            "SELECT product_key, product FROM dim_product "
+            "WHERE LOWER(product) = LOWER(%s)",
+            (product,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            cur.execute(
+                "SELECT product_key, product FROM dim_product "
+                "WHERE LOWER(product) LIKE LOWER(%s) LIMIT 1",
+                (f"{product}%",),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return (
+                f"Component '{product}' not found in dim_product. "
+                "Check spelling or use the exact product name."
+            )
+        product_key, product_name = row
+
+        # Build query — optionally filter by facility_id
+        if facility_id is not None:
+            cur.execute(
+                """
+                SELECT
+                    r.target_week_date,
+                    r.facility_id,
+                    p.product                   AS component,
+                    r.gross_requirement,
+                    r.on_hand_qty,
+                    r.scheduled_receipts_qty,
+                    r.backorder_qty,
+                    r.safety_stock_qty,
+                    r.net_requirement
+                FROM vw_procurement_requirement r
+                JOIN dim_product p ON p.product_key = r.product_key
+                WHERE r.forecast_run_id = %s
+                  AND r.product_key     = %s
+                  AND r.facility_id     = %s
+                ORDER BY r.target_week_date
+                """,
+                (run_id, product_key, facility_id),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT
+                    r.target_week_date,
+                    r.facility_id,
+                    p.product                   AS component,
+                    r.gross_requirement,
+                    r.on_hand_qty,
+                    r.scheduled_receipts_qty,
+                    r.backorder_qty,
+                    r.safety_stock_qty,
+                    r.net_requirement
+                FROM vw_procurement_requirement r
+                JOIN dim_product p ON p.product_key = r.product_key
+                WHERE r.forecast_run_id = %s
+                  AND r.product_key     = %s
+                ORDER BY r.facility_id, r.target_week_date
+                """,
+                (run_id, product_key),
+            )
+        rows = cur.fetchall()
+
+    if not rows:
+        scope = f"facility '{facility_id}'" if facility_id else "any facility"
+        return (
+            f"No rows found for component='{product_name}', {scope}, "
+            f"forecast_run_id={run_id}."
+        )
+
+    # Scope label for header
+    if facility_id is not None:
+        scope_label = f"{product_name}  ·  {facility_id}"
+        mode_note   = "Single facility — all forecast weeks"
+    else:
+        n_fac = len({r[1] for r in rows})
+        scope_label = f"{product_name}  ·  all {n_fac} facilities"
+        mode_note   = "All facilities — all forecast weeks"
+
+    # Column totals
+    tot_gross  = sum(float(r[3]) for r in rows)
+    tot_oh     = sum(float(r[4]) for r in rows)
+    tot_sched  = sum(float(r[5]) for r in rows)
+    tot_bo     = sum(float(r[6]) for r in rows)
+    tot_ss     = sum(float(r[7]) for r in rows)
+    tot_net    = sum(float(r[8]) for r in rows)
+
+    lines = [
+        "═" * _W,
+        "  PROCUREMENT REQUIREMENT DRILL-DOWN",
+        f"  {scope_label}",
+        "═" * _W,
+        "",
+        f"  Mode           : {mode_note}",
+        f"  Forecast run   : {run_id}",
+        f"  Rows returned  : {len(rows)}",
+        "",
+        _rule("Field Notes"),
+        "  gross_requirement      varies week by week (BOM × predicted demand)",
+        "  on_hand_qty            fixed at the decision point across all horizon weeks",
+        "  safety_stock_qty       fixed at the decision point across all horizon weeks",
+        "  scheduled_receipts_qty currently zero by design at the decision point",
+        "  backorder_qty          currently zero by design at the decision point",
+        "  net_requirement        positive only when gross + SS exceeds on-hand coverage",
+        "",
+        _rule("Source"),
+        "  vw_procurement_requirement  (grain: forecast_run_id × week × facility × product)",
+        "  Formula: max(0, gross_req + backorder + safety_stock - on_hand - sched_rec)",
+        "",
+        _rule("Detail"),
+        (
+            f"  {'Week':<12}"
+            f" {'Facility':<10}"
+            f" {'Gross Req':>10}"
+            f" {'On Hand':>10}"
+            f" {'Sched Rec':>10}"
+            f" {'Backorder':>10}"
+            f" {'Safety Stk':>11}"
+            f" {'Net Req':>8}"
+        ),
+        _rule(),
+    ]
+
+    for r in rows:
+        week_date, fac, _, gross, oh, sched, bo, ss, net = r
+        lines.append(
+            f"  {str(week_date):<12}"
+            f" {fac:<10}"
+            f" {float(gross):>10,.0f}"
+            f" {float(oh):>10,.0f}"
+            f" {float(sched):>10,.0f}"
+            f" {float(bo):>10,.0f}"
+            f" {float(ss):>11,.0f}"
+            f" {float(net):>8,.0f}"
+        )
+
+    lines += [
+        _rule(),
+        (
+            f"  {'TOTAL':<23}"
+            f" {tot_gross:>10,.0f}"
+            f" {tot_oh:>10,.0f}"
+            f" {tot_sched:>10,.0f}"
+            f" {tot_bo:>10,.0f}"
+            f" {tot_ss:>11,.0f}"
+            f" {tot_net:>8,.0f}"
+        ),
+        "",
+        "═" * _W,
+    ]
+
+    return "\n".join(lines)
+
+
 # ── LangChain @tool wrappers (Option B — no demo/* modified) ─────────────────
 
 @tool
