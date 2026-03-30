@@ -76,7 +76,7 @@ WHERE s.country_code IS NOT NULL;
 -- Sources: PPI + commodity prices
 -- DONE
 -- ------------------------------------------------------------
-TRUNCATE dim_date;
+TRUNCATE dim_date CASCADE;
 INSERT INTO dim_date (date_key, date, year, month, year_month)
 SELECT DISTINCT
     (year * 100 + month)                          AS date_key,
@@ -100,7 +100,7 @@ FROM (
 -- dim_ppi_series_meta
 -- DONE
 -- -------------
-TRUNCATE dim_ppi_series_meta RESTART IDENTITY;
+TRUNCATE dim_ppi_series_meta RESTART IDENTITY CASCADE;
 INSERT INTO dim_ppi_series_meta (series_id, source, country_code, base_year)
 SELECT DISTINCT series_id, source, country_code, base_year
 FROM stg_ppi_series_meta
@@ -113,7 +113,7 @@ WHERE series_id IS NOT NULL;
 -- Note: If industry/product are constant per series_id (as expected), MAX() works. 
 -- ------------------------------------------------------------
 -- DONE
-TRUNCATE dim_ppi_series RESTART IDENTITY;
+TRUNCATE dim_ppi_series RESTART IDENTITY CASCADE;
 INSERT INTO dim_ppi_series (series_id, source, country_code, base_year, industry, ppi_product)
 SELECT
   m.series_id,
@@ -136,7 +136,7 @@ LEFT JOIN (
 -- Staging has: commodity_family, commodity_variant, unit, source
 -- DONE
 -- ------------------------------------------------------------
-TRUNCATE dim_commodity RESTART IDENTITY;
+TRUNCATE dim_commodity RESTART IDENTITY CASCADE;
 INSERT INTO dim_commodity (commodity_family, commodity_variant, unit, source)
 SELECT DISTINCT commodity_family, commodity_variant, unit, source
 FROM stg_commodity_prices
@@ -147,7 +147,7 @@ WHERE commodity_family IS NOT NULL;
 -- dim_tariff_code (HTS8)
 -- Assummes hts8 is cleaned to 8 digits
 -- ------------------------------------------------------------
-TRUNCATE dim_tariff_code;
+TRUNCATE dim_tariff_code CASCADE;
 INSERT INTO dim_tariff_code (hts8, brief_description, how_measured)
 SELECT DISTINCT hts8, brief_description, how_measured
 FROM stg_tariff

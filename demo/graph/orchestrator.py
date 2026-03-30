@@ -32,19 +32,26 @@ Execution is TWO-PHASE:
 
 AVAILABLE SUB-AGENTS:
 
-Phase 1 (data + risk):
+Phase 1 (data + risk + pipeline):
+- pipeline_agent (phase=1): Runs pre-built pipeline queries for demand forecasts, component
+  requirements, and procurement status. FAST (sub-second). Use this instead of data_agent
+  for forecast, BOM, inventory, and procurement queries. Set tool to one of the pipeline tools below.
 - data_agent (phase=1): Queries a PostgreSQL supplier database via SQL.
-  Use for exploratory queries (counts, filters, aggregates, raw data lookups).
-  It knows the schema — do NOT write SQL for it.
+  Use for: supplier data lookups and general exploratory database queries.
+  Do NOT use data_agent for forecast, component requirement, or procurement status queries
+  — use pipeline_agent instead (it is much faster).
 - risk_agent (phase=1): Searches the web for recent geopolitical risks, tariffs, trade policies,
   sanctions, and supply chain disruptions via Tavily. ONLY use when user explicitly asks about
   geopolitical risks, news, current events, tariffs, sanctions, or trade policy.
   Do NOT generate risk_agent for standard supplier ranking, scoring, or charting requests.
 
-Phase 2 (visualization — runs after Phase 1):
+Phase 2 (visualization + optimization — runs after Phase 1):
 - chart_agent (phase=2): Generates visualizations AND scoring. The chart tools internally
   score and rank suppliers — you do NOT need a separate scoring step.
   Set tool to one of the chart tools below.
+- lp_agent (phase=2): Runs LP procurement optimization for a specific product.
+  Returns optimized supplier allocation, cost summary, and executive summary.
+  Set tool to "run_optimization". Generate one lp_agent task per product that needs optimization.
 
 CHART TOOLS (for chart_agent):
 - "plot_score_breakdown": Supplier score decomposition (4 panels: final score, cost drivers, risk penalty, risk components).
@@ -63,6 +70,24 @@ CHART TOOLS (for chart_agent):
   params: {"product": str, "country_codes": ["CHN","VNM"]}
 - "plot_price_vs_commodity": Product price vs commodity baseline trends.
   params: {"country_code": str, "product": str}
+
+PIPELINE TOOLS (for pipeline_agent):
+- "query_forecast_summary": Returns the latest demand forecast summary with weekly totals,
+  forecast horizon, and metadata. No params needed.
+- "query_component_requirements": Returns gross component requirements by product type
+  from the BOM layer. No params needed.
+- "query_procurement_status": Returns which components need procurement action —
+  compares forecast demand vs inventory and safety stock. Shows net requirement. No params needed.
+
+LP TOOLS (for lp_agent):
+- "run_optimization": Optimize supplier allocation for one product.
+  params: {"product": str, "lambda_risk": float, "max_supplier_share": float,
+           "budget_cap": float or null, "compliance_threshold": float,
+           "service_level_target": float, "urgency": bool,
+           "exclude_supplier_ids": list of supplier ID strings or [],
+           "facility_id": str or null}
+  Only "product" is required. Defaults: lambda_risk=0.5, max_supplier_share=1.0,
+  compliance_threshold=0.6, service_level_target=1.0, urgency=false, exclude_supplier_ids=[].
 
 HOW TO WRITE WORK ORDERS:
 - objective: One sentence — WHAT the agent should accomplish.
@@ -89,8 +114,31 @@ TASK GENERATION RULES:
   Example: "rank top 3 transistor suppliers" → one chart_agent task with plot_score_breakdown. That's it.
 - For other visualizations (price trends, volatility, country comparison): generate ONLY chart_agent (phase=2).
   You may generate MULTIPLE chart_agent tasks for multi-chart requests.
+- For procurement optimization / supplier allocation / "optimize" / "allocate" / "procurement plan":
+  generate lp_agent (phase=2) with tool="run_optimization".
+  Generate one lp_agent task PER product that needs optimization.
+  Also generate a chart_agent task with tool="plot_score_breakdown" for each product being optimized,
+  using the same lambda_risk — this gives the user visual context for the optimization results.
+  UNLESS the user explicitly says "no charts", "skip charts", or similar.
+  Example: "optimize transistors with moderate risk and 40% max share" → one lp_agent task + one chart_agent task.
+  Example: "optimize all components" → one lp_agent task per product (transistors, power_devices, etc.).
+- For disruption / what-if scenarios ("what if supplier X is unavailable"):
+  generate lp_agent with exclude_supplier_ids=["SUP_XXX_NN"].
+  CRITICAL: You MUST copy ALL parameters from the most recent lp_agent task in this conversation
+  into the new params_json. Only add/change the exclusion. Do NOT omit parameters — if the previous
+  run used max_supplier_share=0.4, the new params_json MUST include "max_supplier_share": 0.4.
+  Example: previous params were {"product":"transistors","lambda_risk":0.5,"max_supplier_share":0.4}
+  → new params_json: {"product":"transistors","lambda_risk":0.5,"max_supplier_share":0.4,"exclude_supplier_ids":["SUP_HKG_38"]}
+- For urgency scenarios: generate lp_agent with urgency=true.
+  CRITICAL: same rule — copy ALL parameters from the most recent lp_agent task, only add urgency=true.
 - For geopolitical/risk context: ALSO generate risk_agent (phase=1). ONLY when user explicitly mentions
   geopolitical, news, tariffs, sanctions, trade policy, or similar keywords.
+- For demand forecast / "what demand" / "forecast" / "planning window":
+  generate pipeline_agent (phase=1) with tool="query_forecast_summary".
+- For component requirements / BOM / "what do we need" / "what components":
+  generate pipeline_agent (phase=1) with tool="query_component_requirements".
+- For inventory check / "do we have enough" / "procurement requirement" / "what to procure":
+  generate pipeline_agent (phase=1) with tool="query_procurement_status".
 - For database exploration (counts, filters, "how many", "which"): generate data_agent (phase=1).
 - Do NOT set tool/params for data_agent or risk_agent — they decide their own tools.
 - ALWAYS generate at least one task. Never respond with zero tasks or ask for clarification.
@@ -108,7 +156,7 @@ async def orchestrator_node(state: AgentState) -> dict:
     logger.info(f"[TIMING] orchestrator LLM call: {llm_elapsed:.3f}s")
 
     # Convert params_json string → params dict, and enforce phase by agent name
-    _PHASE2_AGENTS = {"chart_agent"}
+    _PHASE2_AGENTS = {"chart_agent", "lp_agent"}
     tasks_serialized = []
     for task in response.tasks:
         d = task.model_dump()

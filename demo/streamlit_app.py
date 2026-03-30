@@ -49,7 +49,7 @@ def show_trace(trace):
         timings = trace.get("timings") or {}
         if timings:
             st.subheader("Performance")
-            top_level = ["orchestrator", "data_agent", "risk_agent", "chart_agent", "synthesizer"]
+            top_level = ["orchestrator", "data_agent", "risk_agent", "pipeline_agent", "chart_agent", "lp_agent", "synthesizer"]
             active = [name for name in top_level if timings.get(name) is not None]
             if active:
                 cols = st.columns(len(active))
@@ -76,7 +76,17 @@ def show_trace(trace):
 
         st.subheader("Router")
         if trace["tasks"]:
-            st.write(f"Routed to: **{trace['tasks'][0]['agent']}**")
+            routed_agents = list({task["agent"] for task in trace["tasks"]})
+            st.write(f"Routed to: **{', '.join(routed_agents)}**")
+
+        # Pipeline agent results (keyed by tool name: forecast_summary, component_requirements, etc.)
+        pipeline_results = {k: v for k, v in trace["agent_results"].items()
+                           if k in ("forecast_summary", "component_requirements", "procurement_status")}
+        if pipeline_results:
+            st.subheader("Pipeline Agent")
+            for key, content in pipeline_results.items():
+                st.caption(key.replace("_", " ").title())
+                st.code(content)
 
         for agent_name, label in [("data_agent", "Data Agent"), ("risk_agent", "Risk Agent")]:
             raw = trace["agent_results"].get(agent_name)
@@ -84,6 +94,15 @@ def show_trace(trace):
                 st.subheader(label)
                 display = raw[:500] + "..." if len(raw) > 500 else raw
                 st.code(display)
+
+        # LP agent results (keyed as lp_{product})
+        lp_results = {k: v for k, v in trace["agent_results"].items() if k.startswith("lp_")}
+        if lp_results:
+            st.subheader("LP Optimization Agent")
+            for key, content in lp_results.items():
+                product = key.replace("lp_", "").replace("_", " ").title()
+                st.caption(f"Product: {product}")
+                st.code(content)
 
         chart_results = trace.get("chart_results") or {}
         if chart_results:
@@ -99,14 +118,17 @@ def show_trace(trace):
 assistant_index = 0
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-        # Re-render chart images from trace (images can't be stored in text messages)
-        if msg["role"] == "assistant" and assistant_index < len(st.session_state.traces):
+        if msg.get("content"):
+            st.markdown(msg["content"])
+        # Only render charts, summary, and trace for result messages (not plan approval)
+        if msg.get("has_trace") and assistant_index < len(st.session_state.traces):
             chart_results = st.session_state.traces[assistant_index].get("chart_results") or {}
             for chart_name, b64_img in chart_results.items():
                 st.caption(chart_name.replace("_", " ").title())
                 st.image(base64.b64decode(b64_img))
-    if msg["role"] == "assistant" and assistant_index < len(st.session_state.traces):
+            if msg.get("summary"):
+                st.markdown(msg["summary"])
+    if msg.get("has_trace") and assistant_index < len(st.session_state.traces):
         show_trace(st.session_state.traces[assistant_index])
         assistant_index += 1
 
@@ -125,6 +147,12 @@ def stream_graph(command, config):
     def _render_streaming(placeholder):
         """Re-render the placeholder with all agent results collected so far."""
         with placeholder.container():
+            pipeline_results = final_state.get("pipeline_results") or {}
+            if pipeline_results:
+                st.subheader("📊 Pipeline Results")
+                for key, content in pipeline_results.items():
+                    st.caption(key.replace("_", " ").title())
+                    st.code(content)
             if final_state.get("latest_data_agent"):
                 st.subheader("📊 Data Query")
                 st.markdown(final_state["latest_data_agent"])
@@ -132,6 +160,14 @@ def stream_graph(command, config):
                 st.divider()
                 st.subheader("🌐 Geopolitical Risk Analysis")
                 st.markdown(final_state["latest_risk_agent"])
+            lp_results = final_state.get("lp_results") or {}
+            if lp_results:
+                st.divider()
+                st.subheader("⚙️ LP Optimization Results")
+                for key, content in lp_results.items():
+                    product = key.replace("lp_", "").replace("_", " ").title()
+                    st.caption(f"Product: {product}")
+                    st.code(content)
             charts = final_state.get("chart_results") or {}
             if charts:
                 st.divider()
@@ -155,6 +191,12 @@ def stream_graph(command, config):
                     final_state["tasks"] = node_output["tasks"]
                 if "agent_results" in node_output:
                     final_state.setdefault("agent_results", {}).update(node_output["agent_results"] or {})
+                if node_name == "pipeline_agent" and node_output.get("agent_results"):
+                    pipeline_items = {k: v for k, v in node_output["agent_results"].items()
+                                     if k in ("forecast_summary", "component_requirements", "procurement_status")}
+                    if pipeline_items:
+                        final_state.setdefault("pipeline_results", {}).update(pipeline_items)
+                        _render_streaming(placeholder)
                 if node_name == "data_agent" and node_output.get("agent_results"):
                     data_text = node_output["agent_results"].get("data_agent")
                     if data_text:
@@ -164,6 +206,11 @@ def stream_graph(command, config):
                     risk_text = node_output["agent_results"].get("risk_agent")
                     if risk_text:
                         final_state["latest_risk_agent"] = risk_text
+                        _render_streaming(placeholder)
+                if node_name == "lp_agent" and node_output.get("agent_results"):
+                    lp_items = {k: v for k, v in node_output["agent_results"].items() if k.startswith("lp_")}
+                    if lp_items:
+                        final_state.setdefault("lp_results", {}).update(lp_items)
                         _render_streaming(placeholder)
                 if node_name == "chart_agent" and node_output.get("chart_results"):
                     final_state.setdefault("chart_results", {}).update(node_output["chart_results"])
@@ -191,28 +238,51 @@ def finalize_execution(final_state, fallback_plan=None):
 
     # Combine text agent results + synthesizer summary
     parts = []
+    pipeline_items = {k: v for k, v in trace["agent_results"].items()
+                     if k in ("forecast_summary", "component_requirements", "procurement_status")}
+    if pipeline_items:
+        pip_parts = []
+        for key, content in pipeline_items.items():
+            title = key.replace("_", " ").title()
+            pip_parts.append(f"**{title}**\n\n```\n{content}\n```")
+        parts.append("**📊 Pipeline Results**\n\n" + "\n\n".join(pip_parts))
     data_result = trace["agent_results"].get("data_agent", "")
     if data_result:
         parts.append(data_result)
     risk_result = trace["agent_results"].get("risk_agent", "")
     if risk_result:
         parts.append("---\n\n**🌐 Geopolitical Risk Analysis**\n\n" + risk_result)
+    lp_items = {k: v for k, v in trace["agent_results"].items() if k.startswith("lp_")}
+    if lp_items:
+        lp_parts = []
+        for key, content in lp_items.items():
+            product = key.replace("lp_", "").replace("_", " ").title()
+            lp_parts.append(f"**{product}**\n\n```\n{content}\n```")
+        parts.append("---\n\n**⚙️ LP Optimization Results**\n\n" + "\n\n".join(lp_parts))
+    # Note: charts are rendered as images between LP and Summary (see below)
     final_response = final_state.get("final_response", "")
+    summary_text = ""
     if final_response:
-        parts.append("---\n\n**📋 Summary & Recommendations**\n\n" + final_response)
+        summary_text = "---\n\n**📋 Summary & Recommendations**\n\n" + final_response
     combined = "\n\n".join(parts)
 
     with st.chat_message("assistant"):
+        # Order: LP results (in combined) → Charts → Summary
         if combined:
             st.markdown(combined)
-        # Render charts as images (can't be in markdown)
         for chart_name, b64_img in trace["chart_results"].items():
             st.caption(chart_name.replace("_", " ").title())
             st.image(base64.b64decode(b64_img))
+        if summary_text:
+            st.markdown(summary_text)
 
-    # Store text portion for chat history (images are in trace)
-    if combined:
-        st.session_state.messages.append({"role": "assistant", "content": combined})
+    # Store pre-chart and post-chart text separately for correct replay ordering
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": combined,           # LP + data/risk (before charts)
+        "summary": summary_text,       # Summary (after charts)
+        "has_trace": True,             # Marks this as a result message with trace/charts
+    })
     show_trace(trace)
     return combined
 
