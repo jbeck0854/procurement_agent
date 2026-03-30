@@ -67,6 +67,94 @@ Contains:
 
 ---
 
+## Explainability and Summary Helpers
+
+`procurement_summary.py` provides business-facing, formatted outputs for the
+inventory and procurement planning layer. It reads from pre-computed tables and
+views only — no computational logic is changed. Its purpose is to improve
+interpretability for demo delivery and agent integration.
+
+---
+
+### Summary helpers
+
+**`format_component_requirements(conn, forecast_run_id=None) -> str`**
+Full-horizon BOM-exploded demand. Shows the gross component volume required to
+fulfill the finished-goods forecast, before any inventory or safety stock
+adjustment. Use this to understand the raw scale of procurement need.
+
+**`format_procurement_status(conn, forecast_run_id=None) -> str`**
+Inventory-adjusted buy signal. Applies current on-hand inventory and safety
+stock policy to BOM demand to derive net procurement requirement. This is the
+direct input to the LP optimizer. Use this to see what actually needs to be
+purchased.
+
+---
+
+### LangChain wrappers
+
+Each wrapper opens and closes its own DB connection. `forecast_run_id=0`
+retrieves the most recent run.
+
+| Wrapper | Returns |
+|---|---|
+| `get_component_requirements_summary_tool(forecast_run_id=0)` | Component requirements output |
+| `get_procurement_status_summary_tool(forecast_run_id=0)` | Procurement buy signal output |
+| `get_procurement_planning_summary_tool(forecast_run_id=0)` | Both outputs in sequence |
+
+---
+
+### Drill-down helpers
+
+**`get_procurement_requirement_drilldown(conn, forecast_run_id=None, product=None, facility_id=None) -> str`**
+All rows (triggered and non-triggered) at the grain `facility × component × week`.
+Accepts optional filters by product name and facility. Use this to trace the
+full week-by-week planning math for any component.
+
+**`get_triggered_procurement_rows(conn, forecast_run_id=None, product=None, facility_id=None) -> str`**
+Only rows where `net_requirement > 0` — the specific weeks and facilities where
+procurement is actually required. Accepts the same optional filters. Use this
+to isolate where and when the buy signal is active.
+
+---
+
+### Key conceptual distinctions
+
+| Output | What it represents |
+|---|---|
+| **Component Requirements** | Full-horizon gross BOM demand — all 320 rows, all weeks, before any inventory offset |
+| **Procurement Status** | Inventory-adjusted buy signal — net requirement after on-hand and safety stock are applied |
+| **Triggered rows** | The subset of rows where `net_requirement > 0` — the actual procurement signal |
+
+Most weeks have gross demand but net requirement = 0. Procurement is triggered
+only in the weeks and facilities where on-hand inventory plus safety stock
+coverage is insufficient to meet that week's component need.
+
+---
+
+### Usage examples
+
+```python
+from inventory.procurement_summary import (
+    get_procurement_planning_summary_tool,
+    get_triggered_procurement_rows,
+    get_procurement_requirement_drilldown,
+)
+
+# Combined planning summary (no connection needed — wrapper manages it)
+print(get_procurement_planning_summary_tool())
+
+# All triggered rows across all components and facilities
+conn = psycopg2.connect(DATABASE_URL)
+print(get_triggered_procurement_rows(conn))
+
+# Drill down: one component, one facility, all forecast weeks
+print(get_procurement_requirement_drilldown(conn, product='transistors', facility_id='FACILITY_3'))
+conn.close()
+```
+
+---
+
 ## Logic flow
 
 ### Step 1 — Historical finished-good demand
