@@ -392,28 +392,62 @@ def run() -> None:
         conn.close()
 
     # ── Step 6: Final report ───────────────────────────────────────────────────
-    all_preds = [r[5] for r in all_rows]
+
+    # Coverage — computed from series_list (built via drop_duplicates; not hardcoded)
+    _n_facilities  = len(set(f for f, _ in series_list))
+    _n_skus        = len(set(s for _, s in series_list))
+    _n_series      = len(series_list)
+    _expected_rows = _n_series * HORIZON_WEEKS
+    _actual_rows   = len(all_rows)
+    _grain_ok      = (_actual_rows == _expected_rows)
+    _grain_note    = '✓' if _grain_ok else f'⚠  FAIL ({_actual_rows:,} actual)'
+
+    # Planning horizon dates — from the authoritative _week_to_date mapping
+    _horizon_start = _week_to_date(MAX_OBS_WEEK + 1)
+    _horizon_end   = _week_to_date(MAX_OBS_WEEK + HORIZON_WEEKS)
+
+    # Demand overview — aggregate r[5]=pred by r[3]=target_date across all rows
+    _weekly: dict = {}
+    for r in all_rows:
+        _weekly[r[3]] = _weekly.get(r[3], 0.0) + r[5]
+    _total_demand = sum(_weekly.values())
+    _avg_weekly   = _total_demand / len(_weekly) if _weekly else 0.0
+    _peak_date    = max(_weekly, key=_weekly.__getitem__)
+    _lowest_date  = min(_weekly, key=_weekly.__getitem__)
+
     print('\n' + '=' * 62)
     print('  PRODUCTION FORECAST COMPLETE')
     print('=' * 62)
+
     print(f'\n  Model              : {MODEL_VERSION}')
-    print(f'  Trained on         : {len(X_all):,} rows  (weeks 9–{MAX_OBS_WEEK})')
-    print(f'  Horizon            : wk {MAX_OBS_WEEK+1}–{MAX_OBS_WEEK+HORIZON_WEEKS}'
-          f'  ({_week_to_date(MAX_OBS_WEEK+1)} → {_week_to_date(MAX_OBS_WEEK+HORIZON_WEEKS)})')
-    _n_facilities = len(set(f for f, _ in series_list))
-    _n_skus       = len(set(s for _, s in series_list))
-    _n_series     = len(series_list)
+    print(f'  Forecast run ID    : {run_id}')
+    print(f'  Origin date        : {date.today()}')
+    print(f'  Trained through    : week {MAX_OBS_WEEK}  ({WEEK_145_DATE})')
+
     print(f'\n  Forecast Coverage:')
     print(f'    Facilities              : {_n_facilities}')
     print(f'    SKUs                    : {_n_skus}')
     print(f'    SKU × Facility series   : {_n_series}')
-    print(f'  Forecast rows      : {n_inserted:,}')
-    print(f'  Predicted demand   : min={min(all_preds):,.0f}  '
-          f'mean={np.mean(all_preds):,.0f}  max={max(all_preds):,.0f}')
-    print(f'  DB forecast_run_id : {run_id}')
+    print(f'    Grain check             : {_grain_note}  '
+          f'({_actual_rows:,} rows = {_n_series} series × {HORIZON_WEEKS} weeks)')
+
+    print(f'\n  Planning Horizon:')
+    print(f'    Start               : {_horizon_start}  (week {MAX_OBS_WEEK + 1})')
+    print(f'    End                 : {_horizon_end}  (week {MAX_OBS_WEEK + HORIZON_WEEKS})')
+    print(f'    Duration            : {HORIZON_WEEKS} weeks')
+
+    print(f'\n  Demand Overview:')
+    print(f'    Total forecasted demand : {_total_demand:>12,.0f} units')
+    print(f'    Average weekly demand   : {_avg_weekly:>12,.0f} units/week')
+    print(f'    Peak week               : {_peak_date}  →  '
+          f'{_weekly[_peak_date]:>10,.0f} units')
+    print(f'    Lowest week             : {_lowest_date}  →  '
+          f'{_weekly[_lowest_date]:>10,.0f} units')
+
+    print(f'\n  DB forecast_run_id  : {run_id}')
     print(f'\n  Lead-time coverage:')
-    print(f'    Max supplier LT  : 127 days = 18.1 wks  → covered ✓')
-    print(f'    Mean supplier LT :  94 days = 13.4 wks  → covered ✓')
+    print(f'    Max supplier LT   : 127 days = 18.1 wks  → covered ✓')
+    print(f'    Mean supplier LT  :  94 days = 13.4 wks  → covered ✓')
     print(f'\n  Ready for BOM explosion layer.')
     print('=' * 62)
 
