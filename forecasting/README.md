@@ -202,3 +202,57 @@ python -m forecasting.run_production
 ```
 
 All commands must be run from the project root.
+
+## Agent-facing forecast retrieval and explainability helpers
+
+The forecasting layer now includes business-facing helpers for agent-side retrieval and explainability.
+
+These helpers do **not** retrain the model and do **not** change forecast generation logic. They read from already-stored production forecast outputs and artifacts. This makes them safe for demo use and faster for conversational retrieval. :contentReference[oaicite:4]{index=4}
+
+### Helper categories
+
+#### 1) Forecast summary
+Returns a clean planning-window summary of the latest production forecast, including:
+- planning horizon
+- total forecasted demand
+- facility / SKU coverage
+- weekly totals
+- forecast metadata
+
+#### 2) Forecast drill-down
+Returns week × facility × semiconductor detail for the production forecast, including:
+- predicted demand
+- lower / upper confidence bounds
+- horizon week
+
+This is used when the user wants to inspect:
+- which SKUs are needed at which facilities
+- where demand is concentrated
+- how the forecast behaves across the horizon
+
+#### 3) Forecast model assessment / explainability
+Returns business-facing summaries and artifacts for:
+- validation / training performance
+- feature importance
+- baseline comparison
+
+This allows the agent to answer questions like:
+- “How was the model trained and validated?”
+- “What features drove the forecast most?”
+- “How does the model compare to baseline approaches?”
+
+### Why this matters
+
+The forecasting layer now supports two distinct user needs:
+
+1. **Operational planning**
+   - What demand are we expecting?
+   - Where is that demand located?
+   - How uncertain is it?
+
+2. **Model understanding**
+   - Why should we trust the forecast?
+   - What drives the prediction?
+   - How much better is the model than simple baselines?
+
+This separation helps the system feel like a real decision-support workflow rather than a single static output.
