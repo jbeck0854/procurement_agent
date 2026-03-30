@@ -5,6 +5,11 @@ Entry points (independently callable):
     format_component_requirements(conn, forecast_run_id=None) -> str
     format_procurement_status(conn, forecast_run_id=None)     -> str
 
+LangChain @tool wrappers (manage their own DB connection):
+    get_component_requirements_summary_tool(forecast_run_id=0) -> str
+    get_procurement_status_summary_tool(forecast_run_id=0)     -> str
+    get_procurement_planning_summary_tool(forecast_run_id=0)   -> str
+
 Reads from:
     vw_component_requirement_lp          (BOM-exploded full-horizon demand)
     vw_procurement_requirement           (inventory-adjusted net requirement)
@@ -35,6 +40,12 @@ import os
 
 import psycopg2
 from dotenv import load_dotenv
+
+try:
+    from langchain_core.tools import tool
+except ImportError:
+    def tool(fn):  # no-op decorator when langchain_core is not installed
+        return fn
 
 load_dotenv()
 
@@ -430,3 +441,77 @@ def format_procurement_status(conn, forecast_run_id=None) -> str:
     ]
 
     return "\n".join(lines)
+
+
+# ── LangChain @tool wrappers (Option B — no demo/* modified) ─────────────────
+
+@tool
+def get_component_requirements_summary_tool(forecast_run_id: int = 0) -> str:
+    """Return the full-horizon BOM-exploded component requirements summary.
+
+    Shows gross component demand across all facilities and all forecast weeks,
+    before any inventory or safety stock adjustment. Use this to understand
+    the raw procurement volume implied by the finished-goods demand forecast.
+
+    Args:
+        forecast_run_id: Specific forecast run to retrieve. Pass 0 (default)
+                         to retrieve the most recent production forecast run.
+    """
+    conn = _get_conn()
+    try:
+        run_id = forecast_run_id if forecast_run_id > 0 else None
+        return format_component_requirements(conn, forecast_run_id=run_id)
+    except Exception as e:
+        logger.error("[COMPONENT_REQ] Tool call failed: %s", e, exc_info=True)
+        return f"Error retrieving component requirements: {e}"
+    finally:
+        conn.close()
+
+
+@tool
+def get_procurement_status_summary_tool(forecast_run_id: int = 0) -> str:
+    """Return the inventory-adjusted procurement buy signal.
+
+    Shows net procurement requirement after applying current inventory position
+    and safety stock policy to the BOM-exploded component demand. This is the
+    direct input to the LP procurement optimization layer.
+
+    Args:
+        forecast_run_id: Specific forecast run to retrieve. Pass 0 (default)
+                         to retrieve the most recent production forecast run.
+    """
+    conn = _get_conn()
+    try:
+        run_id = forecast_run_id if forecast_run_id > 0 else None
+        return format_procurement_status(conn, forecast_run_id=run_id)
+    except Exception as e:
+        logger.error("[PROCUREMENT_STATUS] Tool call failed: %s", e, exc_info=True)
+        return f"Error retrieving procurement status: {e}"
+    finally:
+        conn.close()
+
+
+@tool
+def get_procurement_planning_summary_tool(forecast_run_id: int = 0) -> str:
+    """Return both the component requirements and procurement buy signal in sequence.
+
+    Combines format_component_requirements (gross BOM-exploded demand) and
+    format_procurement_status (inventory-adjusted net requirement) into a single
+    output. Use this for a complete view of the procurement planning picture:
+    from raw component demand through to the final buy signal.
+
+    Args:
+        forecast_run_id: Specific forecast run to retrieve. Pass 0 (default)
+                         to retrieve the most recent production forecast run.
+    """
+    conn = _get_conn()
+    try:
+        run_id = forecast_run_id if forecast_run_id > 0 else None
+        comp_req = format_component_requirements(conn, forecast_run_id=run_id)
+        proc_status = format_procurement_status(conn, forecast_run_id=run_id)
+        return comp_req + "\n\n" + proc_status
+    except Exception as e:
+        logger.error("[PROCUREMENT_PLANNING] Tool call failed: %s", e, exc_info=True)
+        return f"Error retrieving procurement planning summary: {e}"
+    finally:
+        conn.close()
