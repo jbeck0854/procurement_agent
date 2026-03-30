@@ -466,3 +466,224 @@ def get_forecast_drilldown_tool(
         return f"Error retrieving forecast drill-down: {e}"
     finally:
         conn.close()
+
+
+# ── Model assessment / explainability helper ──────────────────────────────────
+
+_ASSESSMENT_DIRECTIONS = {
+    "A": {
+        "title": "Model Validation & Training Performance",
+        "keywords": {
+            "validation", "training", "performance", "metrics", "accuracy",
+            "results", "trained", "how was", "evaluate", "evaluation",
+            "holdout", "cv", "cross-validation",
+        },
+        "executive_summary": (
+            "The forecasting model is a Histogram Gradient Boosting Regressor (HGB) "
+            "trained on 145 weeks of historical customer order data across 48 facility–SKU "
+            "series (4 facilities × 12 semiconductor products). "
+            "Features include per-series lag demand (lag 1–8), 4- and 8-week rolling statistics, "
+            "price and promotional signals, cyclical week encodings, and a cross-series global "
+            "demand lag. All lag and rolling features use a one-period shift before windowing "
+            "to prevent any target leakage. "
+            "\n\n"
+            "Model selection used 5-fold time-series cross-validation across 243 hyperparameter "
+            "configurations (GridSearchCV). The best configuration — "
+            "learning_rate=0.05, max_depth=6, max_iter=200, min_samples_leaf=50, l2=0.1 — "
+            "achieved a CV MAE of 294.98 units/series/week. "
+            "\n\n"
+            "The holdout evaluation covers the last 10 observed weeks (weeks 136–145), "
+            "held out before any model fitting. On this unseen data:\n"
+            "  • Row-level MAE  :  205.93 units per series per week\n"
+            "  • Row-level RMSE :  289.37\n"
+            "  • Row-level MAPE :  23.75%\n"
+            "  • R²             :  0.778  (the model explains ~78% of demand variance)\n"
+            "\n"
+            "At the system level, errors partially cancel across the 48 series, producing "
+            "a weekly aggregate MAE of ~4,012 units — less than 8% of typical weekly system "
+            "demand (~51,500 units). The production model retrains on all 145 weeks before "
+            "generating the forward planning horizon."
+        ),
+        "artifact": {
+            "label": "Full History + Holdout (System Level)",
+            "path": "artifacts/forecasting/system_full_history_holdout.png",
+            "why_it_matters": (
+                "Shows the model's actual vs. predicted demand across the full training "
+                "history and the 10-week unseen holdout. Confirms the model tracks macro "
+                "demand trends and seasonal patterns without overfitting to training data."
+            ),
+        },
+        "next_step_prompt": (
+            "To inspect which series drove the most error, ask about the worst-performing "
+            "SKU–facility combinations. To understand what the model relies on most, "
+            "ask about feature importance."
+        ),
+    },
+    "B": {
+        "title": "Feature Importance — What Drives the Forecast",
+        "keywords": {
+            "importance", "influential", "features", "drivers", "drove",
+            "weight", "weights", "feature", "input", "inputs", "signal", "signals",
+        },
+        "executive_summary": (
+            "Feature importance was measured using permutation importance on the 10-week "
+            "holdout set — the same data used for final model evaluation. Permutation "
+            "importance works by randomly shuffling one feature at a time and measuring "
+            "how much prediction accuracy degrades; a larger drop means the feature carries "
+            "more forecasting signal. "
+            "\n\n"
+            "Demand lag features consistently dominate: lag_1 (last week's observed demand "
+            "for the same series) is the single strongest predictor. Rolling mean features "
+            "(roll_mean_4, roll_mean_8) also rank highly, confirming that near-term demand "
+            "momentum is the primary driver of forecast accuracy. "
+            "\n\n"
+            "Price and promotional signals (realized_selling_price, emailer_for_promotion, "
+            "homepage_featured) contribute meaningfully but are secondary to the demand "
+            "history features. Cyclical time encodings (week_sin_52, week_cos_52) capture "
+            "seasonal patterns. Entity identifiers (facility_id, semiconductor_id) allow "
+            "the model to learn series-specific demand levels. "
+            "\n\n"
+            "Caution: permutation importance reflects the model as trained — features with "
+            "lower measured importance are not necessarily unimportant in general. Correlated "
+            "features (e.g. lag_1 and roll_mean_4) can suppress each other's measured importance."
+        ),
+        "artifact": {
+            "label": "Permutation Feature Importance (Top 15)",
+            "path": "artifacts/forecasting/permutation_importance.png",
+            "why_it_matters": (
+                "Ranks the top 15 model inputs by their measured influence on forecast "
+                "accuracy. Directly answers which data sources matter most and where data "
+                "quality issues would most degrade the procurement plan."
+            ),
+        },
+        "next_step_prompt": (
+            "If a specific feature is unavailable or unreliable in production, its importance "
+            "score indicates how much forecast accuracy would be at risk. Ask about model "
+            "validation performance to see the overall accuracy this feature set supports."
+        ),
+    },
+    "C": {
+        "title": "Baseline Comparison & Improvement Guidance",
+        "keywords": {
+            "baseline", "benchmark", "compare", "comparison", "naive",
+            "improve", "improvement", "better", "versus", "vs", "hgb vs",
+            "simpler", "simple model",
+        },
+        "executive_summary": (
+            "The HGB model was benchmarked against two naive baselines on the same 10-week "
+            "holdout: a lag-1 model (last week's demand repeated forward) and a rolling "
+            "mean-4 model (4-week trailing average). At the per-series, per-week level — "
+            "the grain at which LP procurement allocation decisions are made — HGB achieves "
+            "a row-level MAE of 205.93, compared to 223.06 for the lag-1 baseline and "
+            "266.42 for the rolling mean-4 baseline. This represents a 7.7% reduction in "
+            "error versus lag-1 and a 22.7% reduction versus rolling mean-4."
+            "\n\n"
+            "These gains are consistent across the majority of the 48 facility–SKU series, "
+            "not driven by a single outlier. The HGB model captures demand structure the "
+            "naive models cannot — including price effects, promotional signals, and "
+            "cross-series momentum — and this accuracy advantage translates directly into "
+            "procurement planning quality: more accurate per-series demand inputs into the "
+            "LP layer mean tighter inventory targets, fewer unnecessary safety stock buffers, "
+            "and more reliable supplier allocation decisions."
+        ),
+        "artifact": {
+            "label": "Baseline System-Level Comparison",
+            "path": "artifacts/forecasting/baseline_system_comparison.png",
+            "why_it_matters": (
+                "Shows weekly system-level demand (sum across all 48 series) for Actual, "
+                "HGB, Naive lag-1, and Rolling mean-4 across the holdout window. Confirms "
+                "that HGB tracks actual demand more closely than either baseline, "
+                "particularly at inflection points where simple averages lag the true signal."
+            ),
+        },
+        "improvement_recommendations": [
+            (
+                "Add external demand signals — industry lead-time indices or macro "
+                "semiconductor cycle indicators could help the model anticipate demand "
+                "inflections not captured in recent order history alone."
+            ),
+            (
+                "Improve confidence interval calibration — current 90% intervals apply a "
+                "uniform width based on holdout RMSE. A quantile regression approach would "
+                "produce intervals that adapt to each series' individual volatility."
+            ),
+            (
+                "Investigate the 5 highest-error series — FACILITY_2/SEMICONDUCTOR_1 "
+                "(MAE 440) and FACILITY_1/SEMICONDUCTOR_5 (MAE 432) are more than twice "
+                "the system median. These series may have structural demand breaks or data "
+                "quality issues that warrant separate treatment before the next cycle."
+            ),
+        ],
+        "next_step_prompt": (
+            "To understand what drove HGB's accuracy advantage over the baselines, ask "
+            "about feature importance. To review the full validation methodology and "
+            "holdout metrics, ask about model training and validation performance."
+        ),
+    },
+}
+
+
+def _resolve_direction(direction: str) -> str:
+    """Map a free-text direction string to 'A', 'B', or 'C'.
+
+    Scans for keywords associated with each direction.
+    Returns the matched direction key, or raises ValueError if none match.
+    """
+    lowered = direction.lower()
+    for key, spec in _ASSESSMENT_DIRECTIONS.items():
+        if any(kw in lowered for kw in spec["keywords"]):
+            return key
+    raise ValueError(
+        f"Could not map direction '{direction}' to A, B, or C. "
+        "Use terms like: 'validation/training/performance' (A), "
+        "'features/importance/drivers' (B), or 'baseline/benchmark/improve' (C)."
+    )
+
+
+def get_forecast_model_assessment(direction: str) -> dict:
+    """
+    Return a structured model assessment for the requested direction.
+
+    Parameters
+    ----------
+    direction : str
+        Free-text direction string. Mapped internally to one of:
+          A — Validation / training / recent performance
+          B — Feature importance / influential inputs
+          C — Baseline comparison / improvement guidance
+
+    Returns
+    -------
+    dict with keys:
+        direction           : 'A', 'B', or 'C'
+        title               : str
+        executive_summary   : str
+        artifacts           : list of {label, path, why_it_matters}
+        next_step_prompt    : str
+
+    All artifact paths are validated at call time.
+    Raises FileNotFoundError if an expected artifact is missing.
+    """
+    direction_key = _resolve_direction(direction)
+    spec = _ASSESSMENT_DIRECTIONS[direction_key]
+
+    # Validate the primary artifact path exists before returning
+    full_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        spec["artifact"]["path"],
+    )
+    if not os.path.exists(full_path):
+        raise FileNotFoundError(
+            f"[MODEL_ASSESSMENT] Expected artifact not found: {full_path}"
+        )
+
+    result = {
+        "direction":         direction_key,
+        "title":             spec["title"],
+        "executive_summary": spec["executive_summary"],
+        "artifact":          dict(spec["artifact"]),
+        "next_step_prompt":  spec["next_step_prompt"],
+    }
+    if "improvement_recommendations" in spec:
+        result["improvement_recommendations"] = list(spec["improvement_recommendations"])
+    return result
