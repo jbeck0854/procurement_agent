@@ -65,6 +65,7 @@ def _extract_lp_record(lp_result: dict) -> dict:
         'diversification_mode':   params.get('diversification_mode', 'none'),
         'service_level_target':   params.get('service_level_target', 1.0),
         'executive_summary':      lp_result.get('executive_summary', ''),
+        'baseline':               lp_result.get('baseline', {}),
     }
 
 class TaskOutput(BaseModel):

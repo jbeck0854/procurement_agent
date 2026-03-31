@@ -171,7 +171,74 @@ def _build_session_summary(approved_runs: list) -> str:
             lines.append(f'    Summary        : {exec_s}')
         lines.append('')
 
+    # ── Baseline comparison ────────────────────────────────────────────────────
+    baseline_rows = [(i, r, r.get('baseline', {}))
+                     for i, r in enumerate(approved_runs, 1)
+                     if r.get('baseline', {}).get('baseline_total_cost')]
+    if baseline_rows:
+        lines += [
+            '',
+            'Baseline = lowest-cost sourcing plan with no diversification or budget constraints applied.',
+            'Baseline comparison  (cheapest feasible plan vs approved):',
+            f'  {"Run":<5} {"Product":<32} {"Baseline $":>12} {"Approved $":>12} '
+            f'{"Delta $":>10} {"Delta %":>8} {"Sup Δ":>6} {"Ctry Δ":>6}',
+            '  ' + '-' * 92,
+        ]
+        agg_baseline = 0.0
+        for i, r, bl in baseline_rows:
+            prod         = (r.get('product') or 'N/A').replace('_', ' ')[:30]
+            approved_c   = r.get('total_cost', 0.0)
+            baseline_c   = bl['baseline_total_cost']
+            delta        = approved_c - baseline_c
+            delta_pct    = delta / baseline_c * 100 if baseline_c > 0 else 0.0
+            n_app_sup    = len(r.get('selected_suppliers', []))
+            n_bas_sup    = len(bl.get('baseline_selected_suppliers', []))
+            n_app_ctry   = len(r.get('supplier_countries', []))
+            n_bas_ctry   = bl.get('baseline_country_count', 0)
+            dsup  = n_app_sup  - n_bas_sup
+            dctry = n_app_ctry - n_bas_ctry
+            lines.append(
+                f'  Run {i:<2} {prod:<32} ${baseline_c:>11,.2f} ${approved_c:>11,.2f} '
+                f'${delta:>9,.2f} {delta_pct:>7.1f}%  '
+                f'{"+" if dsup  >= 0 else ""}{dsup:>3}   '
+                f'{"+" if dctry >= 0 else ""}{dctry:>3}'
+            )
+            agg_baseline += baseline_c
+
+        if len(baseline_rows) > 1:
+            agg_delta     = total_cost - agg_baseline
+            agg_delta_pct = agg_delta / agg_baseline * 100 if agg_baseline > 0 else 0.0
+            lines += [
+                '  ' + '-' * 92,
+                f'  {"TOTAL":<37} ${agg_baseline:>11,.2f} ${total_cost:>11,.2f} '
+                f'${agg_delta:>9,.2f} {agg_delta_pct:>7.1f}%',
+            ]
+        else:
+            agg_delta     = total_cost - agg_baseline
+            agg_delta_pct = agg_delta / agg_baseline * 100 if agg_baseline > 0 else 0.0
+
+        lines += [
+            '',
+            f'  Interpretation: approved plan costs ${agg_delta:,.2f} '
+            f'({agg_delta_pct:.1f}%) more than the cheapest feasible plan.',
+        ]
+        if agg_delta_pct <= 1.0:
+            lines.append(
+                '  The premium is negligible — constraints had minimal cost impact.'
+            )
+        elif agg_delta_pct <= 10.0:
+            lines.append(
+                '  This is a modest premium for the diversification and risk '
+                'management applied.'
+            )
+        else:
+            lines.append(
+                '  This is a material premium — review whether all constraints '
+                'remain business-justified at current demand levels.'
+            )
+
     lines += [
+        '',
         'Key recommendations:',
         '  1. Cross-check supplier countries against current geopolitical risk alerts.',
         '  2. Confirm MOQ compliance for each selected supplier before issuing POs.',
