@@ -287,9 +287,59 @@ For suppliers not used:
 
 ### Formula description
 A business-readable explanation of how the optimization was solved.
+Describes the objective function in plain language, interprets each active
+constraint (budget, diversification mode, service-level multiplier), and notes
+any constraints that were binding or skipped.
 
 ### Executive summary
 A short procurement-facing explanation of the result.
+
+### Baseline comparison record
+A silent, lightweight comparison run is computed alongside every LP run.
+
+The baseline is the **cheapest feasible compliant plan** for the same product
+and demand level, with:
+- `lambda_risk = 0` (cost-only objective, no risk penalty)
+- `diversification_mode = 'none'` (no concentration or country constraints)
+- `max_supplier_share = 1.0` (single-supplier concentration allowed)
+- same compliance filter applied
+
+The baseline record is stored in the result dict under the key `'baseline'`
+and contains:
+- `baseline_total_cost`
+- `baseline_selected_suppliers`
+- `baseline_lead_supplier_share`
+- `baseline_country_count`
+
+**The baseline is NOT printed in standard LP run output (`_print_result`).**
+It is reserved for session-level decision justification. This keeps routine
+output clean and avoids confusion between the optimized plan and the
+hypothetical unconstrained plan.
+
+---
+
+## Session-Level Summary Behavior
+
+When multiple LP runs are approved within a single agent session, the demo
+synthesizer assembles a final procurement session summary. This summary:
+
+- lists all approved products, suppliers, countries, and total spend
+- shows diversification posture across runs
+- includes a baseline comparison table — showing each approved plan's cost
+  relative to the cheapest feasible unconstrained plan for the same demand
+
+The baseline comparison uses the `'baseline'` record stored in each approved
+run. It computes cost delta (absolute and percentage) and supplier/country
+delta (how many more suppliers or countries the approved plan selected versus
+the unconstrained baseline). An interpretation line classifies the premium as
+negligible (≤1%), modest (≤10%), or material (>10%).
+
+This framing helps a procurement manager justify a diversified or
+risk-adjusted plan to stakeholders — showing how much extra cost the
+constraints added and why.
+
+**The baseline comparison appears only in the final session summary, not in
+standard individual run output.**
 
 ---
 
