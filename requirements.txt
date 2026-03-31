@@ -9,3 +9,5 @@ psycopg2-binary>=2.9
 pytest>=7.0
 python-dotenv>=0.19
 pulp>=2.7
+pydantic>=2.10
+langchain-core>=0.0.150
