@@ -135,11 +135,19 @@ The script reads procurement need for the selected product from:
 
 By default:
 - it aggregates across all facilities with `net_requirement > 0`
+- it uses the most recent `forecast_run_id` in `dim_forecast_run`
 
 Optional:
 - if `facility_id` is provided, it filters to that facility only
+- if `forecast_run_id` is provided explicitly, it filters to that run
 
 This produces total procurement demand for the LP run.
+
+> **Data currency note.** The inventory state used in `vw_procurement_requirement`
+> (on-hand inventory, safety stock) is sourced from the most recent execution of
+> `run_inventory.py`. If the forecast is regenerated, `run_inventory.py` should be
+> re-run before running the LP to ensure the inventory snapshot is aligned with the
+> current forecast horizon.
 
 ---
 

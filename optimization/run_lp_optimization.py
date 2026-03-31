@@ -399,56 +399,129 @@ def _build_formula_description(D: float, params: LPParams,
                                 n_eligible: int, n_total: int,
                                 solve_result: dict) -> str:
     """
-    Return a clean, business-readable description of the LP that was solved.
+    Return a structured, business-readable description of the LP that was solved.
+    Shows the objective function, active constraints, and parameter interpretation.
     """
-    lam_pct  = int(params.lambda_risk * 100)
-    sl_pct   = int(params.service_level_target * 100)
-    demand   = f'{solve_result["demand_floor"]:,.0f}'
+    lam     = params.lambda_risk
+    lam_pct = int(lam * 100)
+    sl_pct  = int(params.service_level_target * 100)
+    floor    = solve_result["demand_floor"]
     product  = params.product.replace('_', ' ')
 
-    parts = [
-        f'Minimize total procurement spend for {product}, '
-        f'weighted {100 - lam_pct}% cost / {lam_pct}% risk.',
-        '',
-        f'Procurement target: {demand} units '
-        f'({sl_pct}% of net requirement = {D:,.0f} units; '
-        f'safety stock coverage already included).',
-    ]
+    urg_term = ' + urgency_penalty_j' if params.urgency else ''
 
+    # ── Layer 1: Plain-English ─────────────────────────────────────────────────
+    if lam == 0.0:
+        tradeoff = 'no risk penalty — optimises on landed cost only'
+    elif lam == 1.0:
+        tradeoff = 'maximum risk penalty — cost still present but risk dominates'
+    elif lam < 0.5:
+        tradeoff = 'mild risk penalty — cost is the primary driver'
+    elif lam > 0.5:
+        tradeoff = 'stronger risk penalty — higher-risk suppliers are more heavily penalised'
+    else:
+        tradeoff = 'moderate risk penalty — balances landed cost with supplier risk'
+
+    lines = [
+        f'Goal: select the lowest-cost, lowest-risk supplier mix for {product}',
+        f'      that satisfies all active business rules below.',
+        '',
+        f'Risk/cost tradeoff:  λ = {lam:.2f}  →  {tradeoff}',
+        f'  A higher λ shifts volume toward lower-risk suppliers even at higher cost.',
+        f'  A lower λ prioritises unit cost over risk profile.',
+    ]
+    if params.urgency:
+        lines.append(
+            '  Urgency mode on: slow-lead-time suppliers carry an additional '
+            'cost penalty — the optimizer favours faster suppliers.'
+        )
+
+    # Business rules
+    lines += ['', 'Active business rules:']
+
+    # Demand rule
+    lines.append(
+        f'  Demand rule       : procure at least {floor:,.0f} units'
+        + (
+            f'  (={sl_pct}% × {D:,.0f} net requirement)'
+            if params.service_level_target != 1.0
+            else f'  (= net requirement of {D:,.0f} units; safety stock already included)'
+        )
+    )
+
+    # Budget rule
     if params.budget_cap:
-        parts.append(f'Budget cap: ${params.budget_cap:,.0f} USD.')
+        lines.append(
+            f'  Budget rule       : total spend ≤ ${params.budget_cap:,.0f} USD  [active]'
+        )
+    else:
+        lines.append('  Budget rule       : no cap set  [inactive]')
+
+    # Diversification rule
+    if params.max_supplier_share < 1.0:
+        pct     = int(params.max_supplier_share * 100)
+        min_sup = int(-(-1 // params.max_supplier_share))   # ceiling division
+        lines.append(
+            f'  Diversification   : no supplier may exceed {pct}% of volume'
+            f'  → at least {min_sup} suppliers required  [active]'
+        )
+    else:
+        lines.append('  Diversification   : no concentration limit  [inactive]')
+
+    # Compliance rule
+    lines.append(
+        f'  Compliance gate   : suppliers with eligibility < {params.compliance_threshold:.0%} excluded'
+        f'  →  {n_eligible} of {n_total} {product} suppliers eligible'
+    )
+
+    # Facility scope
+    if params.facility_id:
+        lines.append(f'  Facility scope    : {params.facility_id} only')
+    else:
+        lines.append('  Facility scope    : all facilities with net_requirement > 0')
+
+    if params.exclude_supplier_ids:
+        lines.append(
+            f'  Scenario exclusion: {len(params.exclude_supplier_ids)} supplier(s) '
+            f'forced out  ({", ".join(params.exclude_supplier_ids)})'
+        )
+
+    # ── Layer 2: Formula / Technical ──────────────────────────────────────────
+    lines += [
+        '',
+        'Objective function:',
+        f'  minimize  Σ_j  c_j × (1 + {lam:.2f} × r_j{urg_term})  ×  x_j',
+        '',
+        '  c_j  landed unit cost (USD/unit)',
+        '  r_j  risk penalty, normalised 0–1',
+        '  x_j  units allocated to supplier j  (continuous, ≥ 0)',
+    ]
+    if params.urgency:
+        lines.append(
+            '  urgency_penalty_j  lead_time_mean_j × 0.002  (penalises slow suppliers)'
+        )
+
+    lines += [
+        '',
+        'Constraints:',
+        f'  C1  Σ x_j  ≥  {floor:,.0f}                        [demand rule]',
+    ]
+    if params.budget_cap:
+        lines.append(
+            f'  C2  Σ c_j × x_j  ≤  {params.budget_cap:,.0f}                [budget rule]'
+        )
+    else:
+        lines.append('  C2  —                                          [budget rule inactive]')
 
     if params.max_supplier_share < 1.0:
         pct = int(params.max_supplier_share * 100)
-        min_sup = -(-1 // params.max_supplier_share)  # ceiling division
-        parts.append(
-            f'Diversification: no single supplier may receive more than '
-            f'{pct}% of volume (requires at least {int(min_sup)} suppliers).'
+        lines.append(
+            f'  C3  x_j  ≤  {pct}% × {floor:,.0f}  for all j      [diversification rule]'
         )
-
-    if params.urgency:
-        parts.append(
-            'Urgency mode: slow-lead-time suppliers carry an additional '
-            'cost penalty in the objective.'
-        )
-
-    if params.exclude_supplier_ids:
-        parts.append(
-            f'Scenario exclusions: {len(params.exclude_supplier_ids)} supplier(s) '
-            f'forced out ({", ".join(params.exclude_supplier_ids)}).'
-        )
-
-    parts.append(
-        f'Supplier pool: {n_eligible} of {n_total} {product} suppliers '
-        f'eligible after compliance threshold ≥ {params.compliance_threshold:.0%}.'
-    )
-
-    if params.facility_id:
-        parts.append(f'Facility filter: {params.facility_id} only.')
     else:
-        parts.append('Facility scope: all facilities with positive net requirement.')
+        lines.append('  C3  —                                          [diversification inactive]')
 
-    return '\n'.join(parts)
+    return '\n'.join(lines)
 
 
 # ── Main pipeline ───────────────────────────────────────────────────────────────
@@ -789,7 +862,7 @@ def _print_result(result: dict) -> None:
             print(f'  Zero-allocation (LP) : {len(zero_alloc)} suppliers '
                   f'(eligible but not selected)')
 
-    print(f'\n── Formula Description ──────────────────────────────────────────────')
+    print(f'\n── LP Problem Definition ────────────────────────────────────────────')
     for line in result['formula_description'].split('\n'):
         print(f'  {line}')
 
