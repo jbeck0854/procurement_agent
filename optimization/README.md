@@ -81,15 +81,20 @@ Provides supplier-level cost / risk information used by the LP.
 The LP primarily consumes:
 
 ### Procurement requirement
-From:
 
-- `vw_procurement_requirement`
+The LP computes a **horizon-level** net procurement requirement by aggregating
+the full-horizon gross demand and applying the inventory offset (on-hand,
+safety stock, scheduled receipts, backorder) **once per facility**.
 
-This view tells the LP:
+This is distinct from the weekly procurement trigger view, which applies the
+inventory offset once per forecast week and is intended for drill-down
+explainability — not LP sizing.
+
+The LP demand floor tells the optimizer:
 - which product / component needs procurement
-- how much is needed
-- which facilities are involved
-- how much net requirement remains after inventory coverage
+- total quantity needed across the planning horizon
+- which facilities are involved and their demand shares
+- the correct demand floor for supplier allocation
 
 ### Supplier universe
 From:
@@ -148,25 +153,43 @@ are excluded and no feasibility risk is introduced.
 
 ## Step 1 — Load procurement requirement
 
-The script reads procurement need for the selected product from:
+The script computes horizon-level net procurement need for the selected product.
 
-- `vw_procurement_requirement`
+**The LP does NOT consume the weekly procurement trigger view directly.**
+Summing per-week net values from the weekly view would apply the inventory
+offset N times (once per forecast week), producing a demand floor that is
+40–1000× too small.
+
+Instead, the LP applies the inventory offset ONCE per facility against the
+total horizon gross demand:
+
+```
+facility_net_req = max(0,
+    SUM(gross_requirement over all forecast weeks)
+    + backorder_qty
+    + safety_stock_qty
+    - on_hand_qty
+    - scheduled_receipts_qty
+)
+```
 
 By default:
-- it aggregates across all facilities with `net_requirement > 0`
+- it aggregates across all facilities with positive horizon net requirement
 - it uses the most recent `forecast_run_id` in `dim_forecast_run`
 
 Optional:
-- if `facility_id` is provided, it filters to that facility only
-- if `forecast_run_id` is provided explicitly, it filters to that run
+- if `facility_id` is provided, it restricts to that facility only
+- if `forecast_run_id` is provided explicitly, it restricts to that run
 
-This produces total procurement demand for the LP run.
+This produces total procurement demand `D` for the LP run.
 
-> **Data currency note.** The inventory state used in `vw_procurement_requirement`
-> (on-hand inventory, safety stock) is sourced from the most recent execution of
-> `run_inventory.py`. If the forecast is regenerated, `run_inventory.py` should be
-> re-run before running the LP to ensure the inventory snapshot is aligned with the
-> current forecast horizon.
+To inspect this demand floor in plain English before running the LP, use
+`get_aggregated_procurement_need_tool()` from the inventory planning layer.
+
+> **Data currency note.** The inventory state (on-hand, safety stock) is sourced
+> from the most recent execution of `run_inventory.py`. If the forecast is
+> regenerated, `run_inventory.py` should be re-run before running the LP to
+> ensure the inventory snapshot is aligned with the current forecast horizon.
 
 ---
 
