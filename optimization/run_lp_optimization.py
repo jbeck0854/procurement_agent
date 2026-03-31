@@ -145,30 +145,79 @@ def _resolve_forecast_run_id(conn, forecast_run_id: Optional[int]) -> int:
 
 def _load_requirement(conn, params: LPParams, forecast_run_id: int) -> tuple[float, pd.DataFrame]:
     """
-    Query vw_procurement_requirement for the selected product (and optionally
-    facility), keeping only rows with net_requirement > 0.
+    Compute horizon-level net procurement requirement for the selected product.
+
+    The inventory offset (on_hand, scheduled_receipts, backorder, safety_stock)
+    is applied ONCE against the total gross demand for the planning horizon,
+    per facility.  This is the correct formulation for a single-run LP that
+    covers the full forecast window.
+
+    Previous behaviour summed per-week max(0, gross_T + K) values, which
+    applied the inventory offset N times (once per triggered week) and produced
+    a demand floor 40–1000× below the correct horizon procurement need.
+
+    Formula (per facility):
+        facility_net_req = max(0,
+            SUM(gross_requirement over all forecast weeks)
+            + backorder_qty
+            + safety_stock_qty
+            - on_hand_qty
+            - scheduled_receipts_qty
+        )
 
     Returns
     -------
     D : float
-        Total net requirement (sum across included facility × week rows).
+        Total net requirement summed across included facilities.
     facility_df : pd.DataFrame
         One row per facility with columns [facility_id, net_req, share_pct].
     """
     sql = """
-        SELECT pr.facility_id,
-               dp.product,
-               SUM(pr.net_requirement) AS facility_net_req
-        FROM vw_procurement_requirement pr
-        JOIN dim_product dp ON dp.product_key = pr.product_key
-        WHERE dp.product           = %(product)s
-          AND pr.forecast_run_id   = %(forecast_run_id)s
-          AND pr.net_requirement   > 0
+        SELECT
+            lp.facility_id,
+            dp.product,
+            GREATEST(0,
+                SUM(lp.total_component_requirement)
+                + MAX(dp_snap.backorder_qty)
+                + MAX(pol.safety_stock_qty)
+                - MAX(dp_snap.on_hand_qty)
+                - MAX(dp_snap.scheduled_receipts_qty)
+            ) AS facility_net_req
+        FROM vw_component_requirement_lp lp
+        JOIN dim_product dp
+            ON  dp.product_key = lp.product_key
+        JOIN (
+            SELECT facility_id,
+                   product_key,
+                   on_hand_qty,
+                   scheduled_receipts_qty,
+                   backorder_qty
+            FROM   fact_component_inventory_history
+            WHERE  week_date = (
+                       SELECT MAX(week_date)
+                       FROM   fact_component_inventory_history
+                   )
+        ) dp_snap
+            ON  dp_snap.facility_id = lp.facility_id
+            AND dp_snap.product_key = lp.product_key
+        JOIN fact_inventory_policy pol
+            ON  pol.forecast_run_id = lp.forecast_run_id
+            AND pol.facility_id     = lp.facility_id
+            AND pol.product_key     = lp.product_key
+        WHERE dp.product          = %(product)s
+          AND lp.forecast_run_id  = %(forecast_run_id)s
           {facility_filter}
-        GROUP BY pr.facility_id, dp.product
-        ORDER BY pr.facility_id
+        GROUP BY lp.facility_id, dp.product
+        HAVING GREATEST(0,
+            SUM(lp.total_component_requirement)
+            + MAX(dp_snap.backorder_qty)
+            + MAX(pol.safety_stock_qty)
+            - MAX(dp_snap.on_hand_qty)
+            - MAX(dp_snap.scheduled_receipts_qty)
+        ) > 0
+        ORDER BY lp.facility_id
     """.format(
-        facility_filter="AND pr.facility_id = %(facility_id)s"
+        facility_filter="AND lp.facility_id = %(facility_id)s"
         if params.facility_id else ""
     )
     qparams = {'product': params.product, 'forecast_run_id': forecast_run_id}
@@ -293,10 +342,17 @@ def _build_and_solve(
                            eligible_df['landed_unit_cost'].astype(float)))
     risk_norm   = dict(zip(eligible_df['supplier_id'],
                            eligible_df['risk_penalty_norm'].astype(float)))
-    lead_time     = dict(zip(eligible_df['supplier_id'],
-                             eligible_df['lead_time_mean'].astype(float)))
-    lead_time_norm = dict(zip(eligible_df['supplier_id'],
-                              eligible_df['lead_time_mean_norm'].astype(float)))
+    # Normalise lead_time_mean to [0,1] within the eligible pool:
+    #   0 = fastest supplier, 1 = slowest.
+    # Computed here (not from scorer output) so the range reflects the
+    # compliance-filtered pool, which is what the LP objective should penalise against.
+    _lt_vals = eligible_df['lead_time_mean'].astype(float)
+    _lt_min, _lt_max = _lt_vals.min(), _lt_vals.max()
+    if _lt_max > _lt_min:
+        _lt_norm_series = (_lt_vals - _lt_min) / (_lt_max - _lt_min)
+    else:
+        _lt_norm_series = _lt_vals * 0.0   # all equal — urgency has no effect
+    lead_time_norm = dict(zip(eligible_df['supplier_id'], _lt_norm_series))
 
     lam   = float(params.lambda_risk)
     alpha = float(params.max_supplier_share)
