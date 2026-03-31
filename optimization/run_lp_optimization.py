@@ -428,6 +428,65 @@ def _build_and_solve(
     }
 
 
+# ── Baseline comparison helper ─────────────────────────────────────────────────
+
+def _run_baseline(D: float, eligible_df: pd.DataFrame, params: LPParams) -> dict:
+    """
+    Compute the cheapest-feasible baseline plan for session-summary comparison.
+
+    Fixes: λ=0, diversification_mode='none', max_supplier_share=1.0, urgency=False.
+    Inherits: product, compliance_threshold, service_level_target, order_quantity.
+    Same compliance-filtered supplier pool as the main run.
+
+    Returns a compact dict used by the session summary baseline comparison section.
+    Returns {} if the eligible pool is empty or the baseline solve is infeasible.
+
+    NOT shown in standard LP run output (_print_result).
+    Only surfaced in the final session summary or on explicit comparison request.
+    """
+    if eligible_df.empty:
+        return {}
+
+    # Minimal params — pure cost, no extra constraints
+    baseline_lp = LPParams(
+        product              = params.product,
+        compliance_threshold = params.compliance_threshold,
+        lambda_risk          = 0.0,
+        max_supplier_share   = 1.0,
+        service_level_target = params.service_level_target,
+        diversification_mode = 'none',
+        urgency              = False,
+        order_quantity       = params.order_quantity,
+    )
+    solve = _build_and_solve(D, eligible_df, baseline_lp)
+
+    if solve['status'] != 'Optimal':
+        return {}
+
+    alloc = {j: q for j, q in solve['allocation'].items() if q >= 0.01}
+    if not alloc:
+        return {}
+
+    total_alloc = sum(alloc.values())
+    cost_map    = dict(zip(eligible_df['supplier_id'],
+                           eligible_df['landed_unit_cost'].astype(float)))
+    total_cost  = sum(cost_map.get(j, 0.0) * q for j, q in alloc.items())
+
+    lead_sup   = max(alloc, key=lambda j: alloc[j])
+    lead_share = alloc[lead_sup] / total_alloc * 100 if total_alloc > 0 else 0.0
+
+    ctry_map  = dict(zip(eligible_df['supplier_id'],
+                         eligible_df['country_code'].astype(str)))
+    countries = {ctry_map.get(j, 'UNK') for j in alloc}
+
+    return {
+        'baseline_total_cost':          round(total_cost, 2),
+        'baseline_selected_suppliers':  sorted(alloc.keys()),
+        'baseline_lead_supplier_share': round(lead_share, 1),
+        'baseline_country_count':       len(countries),
+    }
+
+
 # ── Post-processing ─────────────────────────────────────────────────────────────
 
 def _facility_split(
@@ -810,12 +869,15 @@ def run(params: LPParams) -> dict:
             'country_share_rule_satisfied': solve.get('country_share_rule_sat'),
         }
 
-        # ── Step 8: Formula description ────────────────────────────────────────
+        # ── Step 8: Baseline comparison (silent — not printed; for session summary) ─
+        baseline = _run_baseline(D, eligible_df, params)
+
+        # ── Step 9: Formula description ────────────────────────────────────────
         formula_desc = _build_formula_description(
             D, params, n_eligible, n_total, solve
         )
 
-        # ── Step 9: Executive summary (business-readable one-paragraph string) ──
+        # ── Step 10: Executive summary (business-readable one-paragraph string) ──
         if solve['status'] == 'Optimal' and allocation_rows:
             n_excl_comp = sum(
                 1 for e in excluded if 'compliance' in e.get('exclusion_reason', '')
@@ -887,6 +949,7 @@ def run(params: LPParams) -> dict:
             'constraint_diagnostics': constraint_diagnostics,
             'formula_description':    formula_desc,
             'executive_summary':      exec_summary,
+            'baseline':               baseline,
         }
 
     finally:
