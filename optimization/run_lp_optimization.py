@@ -88,6 +88,13 @@ class LPParams:
                           (supports disruption / what-if scenarios)
     forecast_run_id     : forecast run to source demand from; None = most recent
                           run in dim_forecast_run (resolved at query time)
+    diversification_mode: controls supplier/country diversification constraint;
+                          "none"                → no diversification constraint
+                          "supplier_share_only" → apply max_supplier_share cap only
+                          "country_diversified" → select exactly 3 suppliers, each from
+                                                  a different country, each allocated
+                                                  roughly one-third of volume (30–35%);
+                                                  requires ≥ 3 countries in eligible pool
     """
     product:               str
     facility_id:           Optional[str]   = None
@@ -100,6 +107,7 @@ class LPParams:
     urgency:               bool            = False
     exclude_supplier_ids:  list            = field(default_factory=list)
     forecast_run_id:       Optional[int]   = None
+    diversification_mode:  str             = "none"
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
@@ -264,7 +272,11 @@ def _build_and_solve(
         C1  Σ x_j  ≥  sl * D                         (demand fulfillment)
         C2  Σ c_j * x_j  ≤  B                        (budget, optional)
         C3  x_j  ≤  α * sl * D    for all j          (max share per supplier)
-        C4  x_j  ≥  0                                 (non-negativity, default)
+        C4a Σ_j y_j  =  3                                 (country_diversified: exactly 3)
+        C4b Σ_{j ∈ country_c} y_j  ≤  1  for each c   (one supplier per country)
+        C4c 0.30*D  ≤  x_j  ≤  0.35*D  for selected j (30–35% share each; x_j=0 if unselected)
+            y_j ∈ {0,1}
+        C5  x_j  ≥  0                                 (non-negativity, default)
 
     Returns raw solve result dict.
     """
@@ -305,10 +317,54 @@ def _build_and_solve(
         c2 = pulp.lpSum(cost[j] * x[j] for j in suppliers) <= params.budget_cap
         model += c2, 'budget_cap'
 
-    # C3: max supplier share
-    if alpha < 1.0:
-        for j in suppliers:
-            model += x[j] <= alpha * demand_floor, f'max_share_{j}'
+    # C3 / diversification — modes are mutually exclusive
+    country_map: dict = dict(zip(eligible_df['supplier_id'],
+                                 eligible_df['country_code'].astype(str)))
+    country_groups: dict = {}
+    for j in suppliers:
+        country_groups.setdefault(country_map.get(j, 'UNK'), []).append(j)
+
+    country_diversity_applied:    bool       = False
+    country_diversity_skip_reason: str | None = None
+    y_vars:                       dict       = {}   # MIP binary selection variables
+    country_share_lo:             float      = 0.0
+    country_share_hi:             float      = 0.0
+
+    if params.diversification_mode == "country_diversified":
+        n_ctry = len(country_groups)
+        n_sup  = len(suppliers)
+        if n_ctry >= 3 and n_sup >= 3:
+            # MIP: binary variable y_j = 1 if supplier j is selected
+            y_vars = pulp.LpVariable.dicts('y', suppliers, cat='Binary')
+            # Exactly 3 suppliers selected
+            model += pulp.lpSum(y_vars[j] for j in suppliers) == 3, 'cd_exactly_3'
+            # At most 1 supplier per country
+            for ctry, grp in country_groups.items():
+                model += pulp.lpSum(y_vars[j] for j in grp) <= 1, f'cd_one_per_{ctry}'
+            # Per-supplier share bounds (tied to demand_floor): 30–35% when selected, 0 otherwise
+            country_share_lo = 0.30 * demand_floor
+            country_share_hi = 0.35 * demand_floor
+            for j in suppliers:
+                model += x[j] >= country_share_lo * y_vars[j], f'cd_lo_{j}'
+                model += x[j] <= country_share_hi * y_vars[j], f'cd_hi_{j}'
+            country_diversity_applied = True
+        else:
+            if n_ctry < 3:
+                country_diversity_skip_reason = (
+                    f"only {n_ctry} "
+                    f"{'country' if n_ctry == 1 else 'countries'} "
+                    f"in eligible pool — need ≥ 3; constraint skipped"
+                )
+            else:
+                country_diversity_skip_reason = (
+                    f"only {n_sup} eligible supplier(s) — need ≥ 3 "
+                    f"across ≥ 3 countries; constraint skipped"
+                )
+    else:
+        # "none" or "supplier_share_only": apply simple per-supplier share cap if set
+        if alpha < 1.0:
+            for j in suppliers:
+                model += x[j] <= alpha * demand_floor, f'max_share_{j}'
 
     # Solve (suppress CBC console output)
     solver = pulp.PULP_CBC_CMD(msg=0)
@@ -321,9 +377,12 @@ def _build_and_solve(
         allocation = {j: max(0.0, x[j].varValue or 0.0) for j in suppliers}
 
     # Constraint diagnostics
-    budget_binding = False
-    demand_binding = False
+    budget_binding      = False
+    demand_binding      = False
     share_binding_count = 0
+    country_n_selected: int        = 0
+    country_n_distinct: int        = 0
+    country_share_rule_sat: bool | None = None
 
     if status == 'Optimal':
         total_alloc = sum(allocation.values())
@@ -334,19 +393,38 @@ def _build_and_solve(
         if params.budget_cap is not None:
             budget_binding = abs(total_cost - params.budget_cap) / max(params.budget_cap, 1) < 0.01
 
-        if alpha < 1.0:
+        if params.diversification_mode != "country_diversified" and alpha < 1.0:
             for j in suppliers:
                 if abs(allocation[j] - alpha * demand_floor) < 1.0:
                     share_binding_count += 1
 
+        if country_diversity_applied and y_vars:
+            sel = [j for j in suppliers if (y_vars[j].varValue or 0) > 0.5]
+            country_n_selected = len(sel)
+            country_n_distinct = len({country_map.get(j, 'UNK') for j in sel})
+            if total_alloc > 0 and sel:
+                shares = [allocation[j] / total_alloc for j in sel]
+                # Allow slight rounding tolerance (±2pp)
+                country_share_rule_sat = all(0.28 <= s <= 0.37 for s in shares)
+            else:
+                country_share_rule_sat = False
+
     return {
-        'status':               status,
-        'allocation':           allocation,
-        'obj_coeff':            obj_coeff,
-        'demand_floor':         demand_floor,
-        'demand_binding':       demand_binding,
-        'budget_binding':       budget_binding,
-        'share_binding_count':  share_binding_count,
+        'status':                        status,
+        'allocation':                    allocation,
+        'obj_coeff':                     obj_coeff,
+        'demand_floor':                  demand_floor,
+        'demand_binding':                demand_binding,
+        'budget_binding':                budget_binding,
+        'share_binding_count':           share_binding_count,
+        'country_diversity_applied':     country_diversity_applied,
+        'country_diversity_skip_reason': country_diversity_skip_reason,
+        'country_n_selected':            country_n_selected,
+        'country_n_distinct':            country_n_distinct,
+        'country_share_lo':              country_share_lo,
+        'country_share_hi':              country_share_hi,
+        'country_share_rule_sat':        country_share_rule_sat,
+        'country_map':                   country_map,
     }
 
 
@@ -402,9 +480,8 @@ def _build_formula_description(D: float, params: LPParams,
     Return a structured, business-readable description of the LP that was solved.
     Shows the objective function, active constraints, and parameter interpretation.
     """
-    lam     = params.lambda_risk
-    lam_pct = int(lam * 100)
-    sl_pct  = int(params.service_level_target * 100)
+    lam    = params.lambda_risk
+    sl_pct = int(params.service_level_target * 100)
     floor    = solve_result["demand_floor"]
     product  = params.product.replace('_', ' ')
 
@@ -457,16 +534,30 @@ def _build_formula_description(D: float, params: LPParams,
     else:
         lines.append('  Budget rule       : no cap set  [inactive]')
 
-    # Diversification rule
-    if params.max_supplier_share < 1.0:
+    # Diversification rule — labeled by mode
+    div_mode = params.diversification_mode
+    if div_mode == "country_diversified":
+        if solve_result.get('country_diversity_applied'):
+            lines.append('  Diversification   : country-diversified  [active]')
+            lines.append('                      exactly 3 suppliers selected')
+            lines.append('                      all from different countries')
+            lines.append('                      each allocated roughly one-third of volume (30–35%)')
+        else:
+            reason = solve_result.get('country_diversity_skip_reason', 'insufficient data')
+            lines.append('  Diversification   : country-diversified requested — constraint skipped')
+            lines.append(f'                      ({reason})')
+    elif div_mode == "supplier_share_only" or params.max_supplier_share < 1.0:
         pct     = int(params.max_supplier_share * 100)
-        min_sup = int(-(-1 // params.max_supplier_share))   # ceiling division
+        min_sup = int(-(-1 // params.max_supplier_share))
         lines.append(
-            f'  Diversification   : no supplier may exceed {pct}% of volume'
-            f'  → at least {min_sup} suppliers required  [active]'
+            f'  Diversification   : supplier share cap  [active]'
+        )
+        lines.append(
+            f'                      no supplier may exceed {pct}% of volume'
+            f'  → at least {min_sup} suppliers required'
         )
     else:
-        lines.append('  Diversification   : no concentration limit  [inactive]')
+        lines.append('  Diversification   : none  [inactive]')
 
     # Compliance rule
     lines.append(
@@ -477,8 +568,16 @@ def _build_formula_description(D: float, params: LPParams,
     # Facility scope
     if params.facility_id:
         lines.append(f'  Facility scope    : {params.facility_id} only')
+        lines.append(
+            f'                      demand reflects that facility\'s net requirement only;'
+            f' allocation satisfies {params.facility_id} independently'
+        )
     else:
         lines.append('  Facility scope    : all facilities with net_requirement > 0')
+        lines.append(
+            '                      demand is summed across all triggered facilities;'
+            ' supplier allocation then split proportionally by facility share'
+        )
 
     if params.exclude_supplier_ids:
         lines.append(
@@ -513,10 +612,19 @@ def _build_formula_description(D: float, params: LPParams,
     else:
         lines.append('  C2  —                                          [budget rule inactive]')
 
-    if params.max_supplier_share < 1.0:
+    if div_mode == "country_diversified" and solve_result.get('country_diversity_applied'):
+        lo = _qty_int(0.30 * floor)
+        hi = _qty_int(0.35 * floor)
+        lines += [
+            '  C3a Σ_j y_j = 3                               [exactly 3 suppliers]',
+            '  C3b Σ_{j ∈ country_c} y_j ≤ 1  ∀ c          [one supplier per country]',
+            f'  C3c {lo:,} ≤ x_j ≤ {hi:,}  for selected j  [30–35% share each]',
+            '       y_j ∈ {0,1}',
+        ]
+    elif params.max_supplier_share < 1.0:
         pct = int(params.max_supplier_share * 100)
         lines.append(
-            f'  C3  x_j  ≤  {pct}% × {floor:,.0f}  for all j      [diversification rule]'
+            f'  C3  x_j  ≤  {pct}% × {floor:,.0f}  for all j      [supplier share rule]'
         )
     else:
         lines.append('  C3  —                                          [diversification inactive]')
@@ -676,17 +784,30 @@ def run(params: LPParams) -> dict:
         # ── Step 6: Facility split ─────────────────────────────────────────────
         facility_breakdown = _facility_split(solve['allocation'], facility_df, D)
 
+        # Countries selected — derived from allocation rows
+        countries_selected = sorted({r['country_code'] for r in allocation_rows
+                                      if r['country_code']})
+
         # ── Step 7: Constraint diagnostics ────────────────────────────────────
         constraint_diagnostics = {
-            'lp_status':                  solve['status'],
-            'demand_constraint_binding':  solve['demand_binding'],
-            'budget_constraint_binding':  solve['budget_binding'] if params.budget_cap else None,
-            'n_share_constraints_binding':solve['share_binding_count'],
-            'total_allocated':            total_alloc_qty,
-            'demand_floor':               _qty_int(solve['demand_floor']),
-            'demand_satisfied':           total_alloc_raw >= solve['demand_floor'] - 1.0,
-            'infeasibility_reason':       None if solve['status'] == 'Optimal' else
-                                          'Check budget vs. demand floor feasibility.',
+            'lp_status':                    solve['status'],
+            'demand_constraint_binding':    solve['demand_binding'],
+            'budget_constraint_binding':    solve['budget_binding'] if params.budget_cap else None,
+            'n_share_constraints_binding':  solve['share_binding_count'],
+            'total_allocated':              total_alloc_qty,
+            'demand_floor':                 _qty_int(solve['demand_floor']),
+            'demand_satisfied':             total_alloc_raw >= solve['demand_floor'] - 1.0,
+            'infeasibility_reason':         None if solve['status'] == 'Optimal' else
+                                            'Check budget vs. demand floor feasibility.',
+            'diversification_mode':         params.diversification_mode,
+            'countries_selected':           countries_selected,
+            'country_diversity_applied':    solve['country_diversity_applied'],
+            'country_diversity_skip_reason': solve.get('country_diversity_skip_reason'),
+            'country_n_selected':           solve.get('country_n_selected', 0),
+            'country_n_distinct':           solve.get('country_n_distinct', 0),
+            'country_share_lo':             solve.get('country_share_lo', 0.0),
+            'country_share_hi':             solve.get('country_share_hi', 0.0),
+            'country_share_rule_satisfied': solve.get('country_share_rule_sat'),
         }
 
         # ── Step 8: Formula description ────────────────────────────────────────
@@ -740,8 +861,9 @@ def run(params: LPParams) -> dict:
                 'service_level_target':  params.service_level_target,
                 'order_quantity':        params.order_quantity,
                 'urgency':               params.urgency,
-                'exclude_supplier_ids':  params.exclude_supplier_ids,
-                'forecast_run_id':       resolved_run_id,
+                'exclude_supplier_ids':   params.exclude_supplier_ids,
+                'forecast_run_id':        resolved_run_id,
+                'diversification_mode':   params.diversification_mode,
             },
             'requirement': {
                 'total_net_requirement':  _qty_int(D),
@@ -850,6 +972,29 @@ def _print_result(result: dict) -> None:
           f'(floor = {cd["demand_floor"]:,})')
     print(f'  Demand satisfied          : {cd["demand_satisfied"]}')
 
+    # Diversification diagnostics
+    div_mode = cd.get('diversification_mode', 'none')
+    countries = cd.get('countries_selected', [])
+    print(f'  Diversification mode      : {div_mode}')
+    if countries:
+        print(f'  Countries selected        : {", ".join(countries)}'
+              f'  ({len(countries)} {"country" if len(countries) == 1 else "countries"})')
+    if div_mode == 'country_diversified':
+        if cd.get('country_diversity_applied'):
+            n_sel  = cd.get('country_n_selected', 0)
+            n_dis  = cd.get('country_n_distinct', 0)
+            sh_ok  = cd.get('country_share_rule_satisfied')
+            lo_qty = _qty_int(cd.get('country_share_lo', 0))
+            hi_qty = _qty_int(cd.get('country_share_hi', 0))
+            print(f'  Suppliers selected (MIP)  : {n_sel}  (required: 3)')
+            print(f'  Distinct countries        : {n_dis}  (required: 3)')
+            print(f'  Share rule (30–35%)       : '
+                  f'{"satisfied" if sh_ok else "NOT satisfied"}  '
+                  f'[{lo_qty:,}–{hi_qty:,} units per supplier]')
+        else:
+            reason = cd.get('country_diversity_skip_reason', 'insufficient data')
+            print(f'  Country diversity         : SKIPPED — {reason}')
+
     if result['excluded_suppliers']:
         comp_excluded = [e for e in result['excluded_suppliers']
                          if 'compliance' in e.get('exclusion_reason', '')]
@@ -870,7 +1015,7 @@ def _print_result(result: dict) -> None:
 
 
 if __name__ == '__main__':
-    # ── Validation run — transistors, default params ───────────────────────────
+    # ── Scenario 1: no diversification ────────────────────────────────────────
     params = LPParams(
         product              = 'transistors',
         lambda_risk          = 0.50,
@@ -878,13 +1023,14 @@ if __name__ == '__main__':
         max_supplier_share   = 1.00,
         service_level_target = 1.00,
         order_quantity       = 5_000,
+        diversification_mode = 'none',
     )
     result = run(params)
     _print_result(result)
 
-    # ── Second validation — with budget + diversification ─────────────────────
+    # ── Scenario 2: supplier share cap (max 40% per supplier) ─────────────────
     print('\n\n' + '─' * 70)
-    print('  SCENARIO 2: Budget cap + diversification (max 40% per supplier)')
+    print('  SCENARIO 2: Supplier share cap  (max 40% per supplier)')
     print('─' * 70)
     params2 = LPParams(
         product              = 'transistors',
@@ -894,6 +1040,23 @@ if __name__ == '__main__':
         budget_cap           = 5_000,
         service_level_target = 1.00,
         order_quantity       = 5_000,
+        diversification_mode = 'supplier_share_only',
     )
     result2 = run(params2)
     _print_result(result2)
+
+    # ── Scenario 3: country-diversified MIP (3 suppliers, 3 countries, ~1/3) ──
+    print('\n\n' + '─' * 70)
+    print('  SCENARIO 3: Country-diversified (3 suppliers, 3 countries, ~1/3 each)')
+    print('─' * 70)
+    params3 = LPParams(
+        product              = 'transistors',
+        lambda_risk          = 0.50,
+        compliance_threshold = 0.60,
+        max_supplier_share   = 1.00,
+        service_level_target = 1.00,
+        order_quantity       = 5_000,
+        diversification_mode = 'country_diversified',
+    )
+    result3 = run(params3)
+    _print_result(result3)

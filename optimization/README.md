@@ -122,6 +122,7 @@ Minimize total procurement cost adjusted for risk.
 - excluding non-compliant suppliers
 - limiting supplier concentration (if provided)
 - optionally adding extra procurement buffer via service level target
+- optionally enforcing country diversification (see `diversification_mode`)
 
 ---
 
@@ -185,8 +186,24 @@ Total allocated quantity must cover required procurement demand.
 #### Budget constraint (optional)
 Total spend must remain below the user’s budget cap.
 
-#### Diversification / share cap constraint (optional)
-No supplier can exceed a specified share of total procurement.
+#### Diversification constraint (optional, controlled by `diversification_mode`)
+
+Three modes are available:
+
+- **`none`** — no diversification constraint; LP selects the lowest-cost supplier(s)
+- **`supplier_share_only`** — no single supplier may exceed `max_supplier_share` of total volume
+- **`country_diversified`** — Mixed Integer Program (MIP) extension:
+  - exactly 3 suppliers selected
+  - each from a different country
+  - each allocated roughly one-third of volume (30–35% each)
+  - requires ≥ 3 countries in the eligible supplier pool; falls back gracefully if not feasible
+
+When `country_diversified` is active, binary selection variables `y_j ∈ {0,1}` are added:
+- `Σ y_j = 3`
+- `Σ_{j ∈ country_c} y_j ≤ 1` for each country `c`
+- `0.30·D ≤ x_j ≤ 0.35·D` for selected suppliers (forces `x_j = 0` when unselected)
+
+The objective function is **not changed** in any mode — only constraints are added.
 
 #### Service level target (optional user parameter)
 Used as an additive procurement buffer multiplier on top of the already-computed procurement requirement.
@@ -348,6 +365,7 @@ The LP is designed to support parameters such as:
 - `urgency`
 - `exclude_supplier_ids` (for disruption / what-if scenarios)
 - `order_quantity`
+- `diversification_mode` (`"none"`, `"supplier_share_only"`, `"country_diversified"`)
 
 ---
 
