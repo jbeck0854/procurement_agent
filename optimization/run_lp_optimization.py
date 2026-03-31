@@ -86,6 +86,8 @@ class LPParams:
                           in objective coefficient (no hard cut-off)
     exclude_supplier_ids: optional list of supplier IDs to forcibly exclude
                           (supports disruption / what-if scenarios)
+    forecast_run_id     : forecast run to source demand from; None = most recent
+                          run in dim_forecast_run (resolved at query time)
     """
     product:               str
     facility_id:           Optional[str]   = None
@@ -97,6 +99,7 @@ class LPParams:
     order_quantity:        int             = 5_000
     urgency:               bool            = False
     exclude_supplier_ids:  list            = field(default_factory=list)
+    forecast_run_id:       Optional[int]   = None
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
@@ -105,7 +108,29 @@ def _get_conn():
     return psycopg2.connect(DATABASE_URL)
 
 
-def _load_requirement(conn, params: LPParams) -> tuple[float, pd.DataFrame]:
+def _resolve_forecast_run_id(conn, forecast_run_id: Optional[int]) -> int:
+    """Return the requested run_id, or the most recent one if None."""
+    with conn.cursor() as cur:
+        if forecast_run_id is not None:
+            cur.execute(
+                "SELECT forecast_run_id FROM dim_forecast_run "
+                "WHERE forecast_run_id = %s",
+                (forecast_run_id,),
+            )
+        else:
+            cur.execute(
+                "SELECT MAX(forecast_run_id) FROM dim_forecast_run"
+            )
+        row = cur.fetchone()
+    if row is None or row[0] is None:
+        raise RuntimeError(
+            "No forecast run found in dim_forecast_run. "
+            "Run forecasting/run_production.py first."
+        )
+    return int(row[0])
+
+
+def _load_requirement(conn, params: LPParams, forecast_run_id: int) -> tuple[float, pd.DataFrame]:
     """
     Query vw_procurement_requirement for the selected product (and optionally
     facility), keeping only rows with net_requirement > 0.
@@ -123,8 +148,9 @@ def _load_requirement(conn, params: LPParams) -> tuple[float, pd.DataFrame]:
                SUM(pr.net_requirement) AS facility_net_req
         FROM vw_procurement_requirement pr
         JOIN dim_product dp ON dp.product_key = pr.product_key
-        WHERE dp.product        = %(product)s
-          AND pr.net_requirement > 0
+        WHERE dp.product           = %(product)s
+          AND pr.forecast_run_id   = %(forecast_run_id)s
+          AND pr.net_requirement   > 0
           {facility_filter}
         GROUP BY pr.facility_id, dp.product
         ORDER BY pr.facility_id
@@ -132,7 +158,7 @@ def _load_requirement(conn, params: LPParams) -> tuple[float, pd.DataFrame]:
         facility_filter="AND pr.facility_id = %(facility_id)s"
         if params.facility_id else ""
     )
-    qparams = {'product': params.product}
+    qparams = {'product': params.product, 'forecast_run_id': forecast_run_id}
     if params.facility_id:
         qparams['facility_id'] = params.facility_id
 
@@ -444,8 +470,11 @@ def run(params: LPParams) -> dict:
     """
     conn = _get_conn()
     try:
+        # ── Step 0: Resolve forecast run ──────────────────────────────────────
+        resolved_run_id = _resolve_forecast_run_id(conn, params.forecast_run_id)
+
         # ── Step 1: Net procurement requirement ───────────────────────────────
-        D, facility_df = _load_requirement(conn, params)
+        D, facility_df = _load_requirement(conn, params, resolved_run_id)
 
         if D <= 0:
             return {
@@ -639,6 +668,7 @@ def run(params: LPParams) -> dict:
                 'order_quantity':        params.order_quantity,
                 'urgency':               params.urgency,
                 'exclude_supplier_ids':  params.exclude_supplier_ids,
+                'forecast_run_id':       resolved_run_id,
             },
             'requirement': {
                 'total_net_requirement':  _qty_int(D),
@@ -676,6 +706,15 @@ def _print_result(result: dict) -> None:
     print('\n' + '=' * 70)
     print('  SUPPLIER ALLOCATION — LP OPTIMIZATION RESULT')
     print('=' * 70)
+
+    exec_summary = result.get('executive_summary', '')
+    if exec_summary:
+        print(f'\n── Executive Summary ────────────────────────────────────────────────')
+        for line in exec_summary.split('. '):
+            line = line.strip()
+            if line:
+                print(f'  {line}{"." if not line.endswith(".") else ""}')
+        print(f'{"─" * 70}')
 
     status = result.get('constraint_diagnostics', {}).get('lp_status') or result.get('lp_status')
     print(f'\n  Solver status : {status}')
