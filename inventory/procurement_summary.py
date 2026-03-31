@@ -4,23 +4,32 @@ procurement_summary.py — Business-facing BOM / inventory planning layer summar
 Entry points (independently callable):
     format_component_requirements(conn, forecast_run_id=None) -> str
     format_procurement_status(conn, forecast_run_id=None)     -> str
+    format_bom_translation(conn, semiconductor_id,            -> str
+                           forecast_run_id=None,
+                           facility_id=None,
+                           target_week_date=None)
 
 LangChain @tool wrappers (manage their own DB connection):
-    get_component_requirements_summary_tool(forecast_run_id=0) -> str
-    get_procurement_status_summary_tool(forecast_run_id=0)     -> str
-    get_procurement_planning_summary_tool(forecast_run_id=0)   -> str
+    get_component_requirements_summary_tool(forecast_run_id=0)   -> str
+    get_procurement_status_summary_tool(forecast_run_id=0)       -> str
+    get_procurement_planning_summary_tool(forecast_run_id=0)     -> str
+    get_bom_translation_tool(semiconductor_id,                   -> str
+                             forecast_run_id=0,
+                             facility_id='',
+                             target_week_date='')
 
 Reads from:
     vw_component_requirement_lp          (BOM-exploded full-horizon demand)
+    vw_component_requirement_detail      (per-SKU per-week BOM explosion detail)
     vw_procurement_requirement           (inventory-adjusted net requirement)
     fact_component_inventory_history     (decision-point on-hand / inventory state)
     fact_inventory_policy                (safety stock and policy parameters)
     dim_forecast_run                     (run metadata)
     dim_product                          (product name lookup)
+    dim_bom                              (BOM recipe: SKU → component mappings)
 
 Does NOT modify any computational logic, formulas, or DB tables.
 All values are read from pre-computed tables and views.
-No @tool wrappers — these are pure formatting helpers for future integration.
 
 Usage:
     import psycopg2
@@ -916,5 +925,285 @@ def get_procurement_planning_summary_tool(forecast_run_id: int = 0) -> str:
     except Exception as e:
         logger.error("[PROCUREMENT_PLANNING] Tool call failed: %s", e, exc_info=True)
         return f"Error retrieving procurement planning summary: {e}"
+    finally:
+        conn.close()
+
+
+# ── BOM Translation Explainability ───────────────────────────────────────────
+
+def format_bom_translation(
+    conn,
+    semiconductor_id: str,
+    forecast_run_id=None,
+    facility_id: str | None = None,
+    target_week_date: str | None = None,
+) -> str:
+    """
+    Return a business-facing explanation of how a finished-good semiconductor SKU
+    is translated through the BOM into procurement component demand.
+
+    Mode A — SKU-level BOM recipe (semiconductor_id only):
+        Shows the BOM structure for the SKU: which components are required
+        and how many units per finished SKU. No forecast data needed.
+
+    Mode B — Forecast-row explosion (all args provided):
+        Shows a specific forecast week's demand for the SKU, applies the BOM
+        multipliers, and explains the resulting gross component requirement.
+        Includes context block (SKU, facility, week, run) and a gross vs net note.
+
+    Parameters
+    ----------
+    conn : psycopg2 connection
+        Open DB connection. Caller is responsible for closing it.
+    semiconductor_id : str
+        The finished-good SKU to explain (e.g. 'SEMICONDUCTOR_6').
+    forecast_run_id : int, optional
+        Specific forecast run. If None, uses the most recent run (Mode B only).
+    facility_id : str, optional
+        Facility to filter to. If None, Mode A is used regardless of other args.
+    target_week_date : str, optional
+        ISO date string (YYYY-MM-DD) for the specific forecast week (Mode B).
+        If None, Mode A is used.
+    """
+    run_id = _resolve_run_id(conn, forecast_run_id)
+
+    # ── Mode A: SKU-level BOM recipe ──────────────────────────────────────────
+    if facility_id is None or target_week_date is None:
+        with conn.cursor() as cur:
+            # SKU display name
+            cur.execute(
+                """
+                SELECT s.semiconductor_id
+                FROM dim_bom b
+                JOIN dim_product s ON s.product_key = b.semiconductor_product_key
+                WHERE s.semiconductor_id = %s
+                LIMIT 1
+                """,
+                (semiconductor_id,),
+            )
+            sku_row = cur.fetchone()
+            if sku_row is None:
+                return (
+                    f"No BOM record found for semiconductor_id '{semiconductor_id}'.\n"
+                    "Check that the SKU exists in dim_bom."
+                )
+
+            # BOM components for this SKU
+            cur.execute(
+                """
+                SELECT
+                    p.product                       AS component_name,
+                    b.units_per_sku                 AS units_per_sku
+                FROM dim_bom b
+                JOIN dim_product s ON s.product_key = b.semiconductor_product_key
+                JOIN dim_product p ON p.product_key = b.component_product_key
+                WHERE s.semiconductor_id = %s
+                ORDER BY b.units_per_sku DESC, p.product
+                """,
+                (semiconductor_id,),
+            )
+            bom_rows = cur.fetchall()
+
+        total_units_per_sku = sum(float(r[1]) for r in bom_rows)
+        n_components = len(bom_rows)
+
+        lines = [
+            "═" * _W,
+            f"  BOM TRANSLATION — {semiconductor_id}",
+            "═" * _W,
+            "",
+            "  This output explains how one finished-good semiconductor SKU maps",
+            "  to procurement components via the Bill of Materials (BOM).",
+            "",
+            "  The BOM defines how many units of each component are required",
+            "  to produce one unit of the finished SKU.",
+            "",
+            _rule("SKU"),
+            f"  Semiconductor ID   : {semiconductor_id}",
+            f"  Component types    : {n_components}",
+            f"  Total units / SKU  : {total_units_per_sku:,.1f}  "
+            f"(sum of all component quantities per finished unit)",
+            "",
+            _rule("BOM Recipe — Units Required per Finished SKU"),
+            f"  {'Component':<32}  {'Units / SKU':>12}",
+            "  " + "-" * (_W - 4),
+        ]
+        for component_name, units_per_sku in bom_rows:
+            lines.append(f"  {component_name:<32}  {float(units_per_sku):>12,.1f}")
+        lines += [
+            "  " + "-" * (_W - 4),
+            f"  {'TOTAL':<32}  {total_units_per_sku:>12,.1f}",
+            "",
+            _rule("How to Read This"),
+            "  To calculate gross component demand for any forecast period:",
+            "    gross_component_requirement = forecasted_SKU_demand × units_per_sku",
+            "",
+            "  Example: if demand for this SKU is 1,000 units in a given week,",
+        ]
+        for component_name, units_per_sku in bom_rows:
+            ex_units = 1000 * float(units_per_sku)
+            lines.append(
+                f"    → {ex_units:>10,.0f}  units of  {component_name}  required"
+            )
+        lines += [
+            "",
+            "  These gross figures are before any inventory offset.",
+            "  Run format_procurement_status() for the net buy signal.",
+            "═" * _W,
+        ]
+        return "\n".join(lines)
+
+    # ── Mode B: Forecast-row explosion ────────────────────────────────────────
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                d.semiconductor_id,
+                v.facility_id,
+                v.target_week_date,
+                v.forecast_run_id,
+                p.product                       AS component_name,
+                v.predicted_demand,
+                b.units_per_sku,
+                v.gross_component_requirement
+            FROM vw_component_requirement_detail v
+            JOIN dim_product s ON s.product_key = v.semiconductor_product_key
+            JOIN dim_product p ON p.product_key = v.product_key
+            JOIN dim_bom b
+                ON  b.semiconductor_product_key = v.semiconductor_product_key
+                AND b.component_product_key     = v.product_key
+            JOIN (
+                SELECT DISTINCT semiconductor_id, product_key AS semiconductor_product_key
+                FROM dim_bom
+                JOIN dim_product ON dim_product.product_key = dim_bom.semiconductor_product_key
+            ) d ON d.semiconductor_product_key = v.semiconductor_product_key
+            WHERE s.semiconductor_id = %s
+              AND v.facility_id      = %s
+              AND v.target_week_date = %s
+              AND v.forecast_run_id  = %s
+            ORDER BY v.gross_component_requirement DESC, p.product
+            """,
+            (semiconductor_id, facility_id, target_week_date, run_id),
+        )
+        detail_rows = cur.fetchall()
+
+    if not detail_rows:
+        return (
+            f"No BOM explosion data found for:\n"
+            f"  semiconductor_id : {semiconductor_id}\n"
+            f"  facility_id      : {facility_id}\n"
+            f"  target_week_date : {target_week_date}\n"
+            f"  forecast_run_id  : {run_id}\n\n"
+            "Check that the SKU, facility, and week exist in vw_component_requirement_detail."
+        )
+
+    # All rows share the same context fields
+    _, fac, week, actual_run_id, _, predicted_demand, _, _ = detail_rows[0]
+    predicted_demand = float(predicted_demand)
+    total_gross = sum(float(r[7]) for r in detail_rows)
+    n_components = len(detail_rows)
+
+    lines = [
+        "═" * _W,
+        f"  BOM TRANSLATION — {semiconductor_id}  (Forecast-Row Explosion)",
+        "═" * _W,
+        "",
+        "  This output explains how a specific forecast week's finished-good",
+        "  demand for this SKU is translated through the BOM into gross",
+        "  procurement component demand.",
+        "",
+        _rule("Context"),
+        f"  Semiconductor ID   : {semiconductor_id}",
+        f"  Facility           : {fac}",
+        f"  Week               : {week}",
+        f"  Forecast run ID    : {actual_run_id}",
+        "",
+        _rule("Forecast Demand"),
+        f"  Predicted demand   : {predicted_demand:>12,.1f}  finished units",
+        "",
+        _rule("BOM Explosion — Gross Component Requirement"),
+        f"  {'Component':<32}  {'Units/SKU':>10}  {'Gross Req':>12}",
+        "  " + "-" * (_W - 4),
+    ]
+    for _, _, _, _, component_name, _, units_per_sku, gross_req in detail_rows:
+        lines.append(
+            f"  {component_name:<32}  {float(units_per_sku):>10,.1f}  "
+            f"{float(gross_req):>12,.1f}"
+        )
+    lines += [
+        "  " + "-" * (_W - 4),
+        f"  {'TOTAL GROSS COMPONENT DEMAND':<32}  {'':>10}  {total_gross:>12,.1f}",
+        "",
+        _rule("How to Read This"),
+        "  gross_component_requirement = predicted_demand × units_per_sku",
+        "",
+    ]
+    for _, _, _, _, component_name, _, units_per_sku, gross_req in detail_rows:
+        lines.append(
+            f"    {predicted_demand:,.1f}  ×  {float(units_per_sku):.1f}  =  "
+            f"{float(gross_req):,.1f}  units of  {component_name}"
+        )
+    lines += [
+        "",
+        _rule("Gross vs Net Demand"),
+        "  The figures above are GROSS component demand — before any inventory",
+        "  offset, safety stock, or open receipt credit is applied.",
+        "",
+        "  The NET procurement requirement (the actual buy signal) accounts for:",
+        "    • on-hand inventory at the facility",
+        "    • open purchase receipts already in transit",
+        "    • safety stock policy targets",
+        "",
+        "  Run format_procurement_status() to see the net buy signal.",
+        "═" * _W,
+    ]
+    return "\n".join(lines)
+
+
+@tool
+def get_bom_translation_tool(
+    semiconductor_id: str,
+    forecast_run_id: int = 0,
+    facility_id: str = "",
+    target_week_date: str = "",
+) -> str:
+    """Explain how a finished-good semiconductor SKU maps to procurement components.
+
+    Two modes depending on arguments provided:
+
+    Mode A — BOM recipe (semiconductor_id only):
+        Shows the BOM structure: which components are required per finished unit.
+        Use when the user asks about the BOM recipe, component breakdown, or
+        "what goes into" a semiconductor SKU. No forecast run needed.
+
+    Mode B — Forecast-row explosion (all args):
+        Shows a specific forecast week's SKU demand exploded through the BOM
+        into gross component demand. Use when the user asks how a specific
+        forecast translates into component procurement need.
+
+    Args:
+        semiconductor_id: The finished-good SKU (e.g. 'SEMICONDUCTOR_6').
+        forecast_run_id:  Specific forecast run ID. Pass 0 (default) to use
+                          the most recent run (Mode B only).
+        facility_id:      Facility to filter to (e.g. 'FAC_001'). Leave blank
+                          for Mode A (BOM recipe only).
+        target_week_date: ISO date of the forecast week (e.g. '2024-03-04').
+                          Leave blank for Mode A.
+    """
+    conn = _get_conn()
+    try:
+        run_id = forecast_run_id if forecast_run_id > 0 else None
+        fac    = facility_id.strip() or None
+        week   = target_week_date.strip() or None
+        return format_bom_translation(
+            conn,
+            semiconductor_id=semiconductor_id,
+            forecast_run_id=run_id,
+            facility_id=fac,
+            target_week_date=week,
+        )
+    except Exception as e:
+        logger.error("[BOM_TRANSLATION] Tool call failed: %s", e, exc_info=True)
+        return f"Error retrieving BOM translation: {e}"
     finally:
         conn.close()
