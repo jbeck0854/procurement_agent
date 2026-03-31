@@ -101,6 +101,7 @@ retrieves the most recent run.
 | `get_component_requirements_summary_tool(forecast_run_id=0)` | Component requirements output |
 | `get_procurement_status_summary_tool(forecast_run_id=0)` | Procurement buy signal output |
 | `get_procurement_planning_summary_tool(forecast_run_id=0)` | Both outputs in sequence |
+| `get_bom_translation_tool(semiconductor_id, forecast_run_id=0, facility_id='', target_week_date='')` | BOM translation explainability output |
 
 ---
 
@@ -118,13 +119,45 @@ to isolate where and when the buy signal is active.
 
 ---
 
+### BOM translation explainability helper
+
+**`format_bom_translation(conn, semiconductor_id, forecast_run_id=None, facility_id=None, target_week_date=None) -> str`**
+
+Explains how a finished-good semiconductor SKU maps to procurement components
+via the Bill of Materials. Two modes:
+
+**Mode A — SKU-level BOM recipe** (`semiconductor_id` only, no facility or week):
+Shows which components make up one unit of the SKU and how many units of each
+are required. Use this to answer: *"What goes into this SKU?"* or *"How does
+the BOM for SEMICONDUCTOR_6 break down?"*
+
+**Mode B — Forecast-row explosion** (all arguments provided):
+Takes a specific forecast week's finished-good demand for the SKU, applies the
+BOM multipliers, and shows the resulting gross component requirement row by row.
+Includes a context block (SKU, facility, week, run), the arithmetic walkthrough,
+and a note explaining that these figures are gross demand before any inventory
+or safety stock offset. Use this to answer: *"Show me how the forecast for
+SEMICONDUCTOR_6 at FACILITY_2 translates into component demand for week X."*
+
+This helper is distinct from:
+- **Component Requirements** — which aggregates gross demand across all SKUs,
+  all facilities, and all weeks into a single horizon-level total per component
+- **Procurement Status** — which shows the inventory-adjusted net buy signal
+
+The BOM translation helper explains the *recipe and mapping logic* for a single
+SKU, not the aggregated planning totals.
+
+---
+
 ### Key conceptual distinctions
 
 | Output | What it represents |
 |---|---|
-| **Component Requirements** | Full-horizon gross BOM demand — all 320 rows, all weeks, before any inventory offset |
+| **Component Requirements** | Full-horizon gross BOM demand — all weeks, before any inventory offset |
 | **Procurement Status** | Inventory-adjusted buy signal — net requirement after on-hand and safety stock are applied |
 | **Triggered rows** | The subset of rows where `net_requirement > 0` — the actual procurement signal |
+| **BOM Translation (Mode A)** | BOM recipe for one SKU — components and units-per-SKU |
+| **BOM Translation (Mode B)** | One forecast row exploded through the BOM — gross component demand for a specific SKU × facility × week |
 
 Most weeks have gross demand but net requirement = 0. Procurement is triggered
 only in the weeks and facilities where on-hand inventory plus safety stock
@@ -150,6 +183,32 @@ print(get_triggered_procurement_rows(conn))
 
 # Drill down: one component, one facility, all forecast weeks
 print(get_procurement_requirement_drilldown(conn, product='transistors', facility_id='FACILITY_3'))
+conn.close()
+```
+
+```python
+from inventory.procurement_summary import (
+    format_bom_translation,
+    get_bom_translation_tool,
+)
+
+# Mode A — BOM recipe for a SKU (no connection needed via tool wrapper)
+# "How does the BOM for SEMICONDUCTOR_6 break down?"
+# "What components does SEMICONDUCTOR_6 require?"
+print(get_bom_translation_tool('SEMICONDUCTOR_6'))
+
+# Mode A via direct helper (caller manages connection)
+conn = psycopg2.connect(DATABASE_URL)
+print(format_bom_translation(conn, semiconductor_id='SEMICONDUCTOR_6'))
+
+# Mode B — forecast-row explosion for a specific SKU × facility × week
+# "Show me how the forecast for SEMICONDUCTOR_6 at FACILITY_2 is converted to component demand"
+print(format_bom_translation(
+    conn,
+    semiconductor_id='SEMICONDUCTOR_6',
+    facility_id='FACILITY_2',
+    target_week_date='2024-03-04',
+))
 conn.close()
 ```
 
