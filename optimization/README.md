@@ -114,7 +114,25 @@ The LP solves a sourcing allocation problem.
 It determines the quantity to purchase from each eligible supplier for a selected product.
 
 ### Objective
-Minimize total procurement cost adjusted for risk.
+Minimize total procurement cost adjusted for risk and, optionally, delivery speed.
+
+The objective function per supplier `j` is:
+
+```
+c_j × (1 + λ_risk × r_j + λ_urgency × lt_norm_j)
+```
+
+where:
+- `c_j` = landed unit cost (USD/unit)
+- `r_j` = risk penalty, normalised 0–1
+- `lt_norm_j` = lead-time mean, normalised 0–1 within the eligible pool (0 = fastest, 1 = slowest)
+- `λ_risk` = user-controlled risk weight (default 0.50)
+- `λ_urgency` = `URGENCY_LEAD_TIME_WEIGHT` (0.25) when `urgency=True`, else 0
+
+**Urgency mode** adds a lead-time cost premium using the same multiplicative structure as
+`λ_risk`. The slowest eligible supplier carries a 25% cost premium; the fastest supplier
+carries no urgency premium. This is a continuous dial, not a hard cutoff — no suppliers
+are excluded and no feasibility risk is introduced.
 
 ### Subject to
 - meeting required demand

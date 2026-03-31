@@ -49,8 +49,11 @@ load_dotenv()
 DATABASE_URL         = os.getenv('DATABASE_URL', 'postgresql://localhost:5432/procurement_agent')
 METRIC_CONTRACT_PATH = _PROJECT_ROOT / 'analytics' / 'metric_contract.yaml'
 
-URGENCY_LEAD_TIME_PENALTY = 0.002   # $ per day of lead-time mean added to unit cost
-                                     # scales slow suppliers' effective cost upward
+URGENCY_LEAD_TIME_WEIGHT = 0.25     # multiplicative weight applied to lead_time_mean_norm
+                                     # (0–1, already scored) when urgency=True.
+                                     # slowest supplier in the pool pays a 25% cost premium;
+                                     # fastest supplier pays no urgency premium.
+                                     # same structural form as lambda_risk.
 
 
 def _qty_int(x: float) -> int:
@@ -82,8 +85,10 @@ class LPParams:
                           requirement (95% SL already baked in); 1.05 = +5% buffer
     order_quantity      : units passed to SupplierScorer for bulk-discount
                           calculation; default 5000
-    urgency             : if True, penalise slow suppliers via lead-time term
-                          in objective coefficient (no hard cut-off)
+    urgency             : if True, add a normalised lead-time cost premium
+                          (λ_urgency × lead_time_mean_norm) to each supplier's
+                          objective coefficient; 0=fastest supplier, no premium;
+                          1=slowest supplier, URGENCY_LEAD_TIME_WEIGHT premium
     exclude_supplier_ids: optional list of supplier IDs to forcibly exclude
                           (supports disruption / what-if scenarios)
     forecast_run_id     : forecast run to source demand from; None = most recent
@@ -261,12 +266,13 @@ def _build_and_solve(
     Build and solve the LP using PuLP + CBC.
 
     Objective (minimize):
-        Σ_j  c_j * (1 + λ * r_j + urgency_j)  *  x_j
+        Σ_j  c_j * (1 + λ_risk * r_j + λ_urgency * lt_norm_j)  *  x_j
 
     where:
         c_j          = landed_unit_cost (per unit, USD)
         r_j          = risk_penalty_norm (0–1)
-        urgency_j    = URGENCY_LEAD_TIME_PENALTY * lead_time_mean_j  if urgency else 0
+        lt_norm_j    = lead_time_mean_norm (0–1, 0=fastest in pool, 1=slowest)
+        λ_urgency    = URGENCY_LEAD_TIME_WEIGHT (0.25) if urgency else 0
 
     Constraints:
         C1  Σ x_j  ≥  sl * D                         (demand fulfillment)
@@ -287,17 +293,20 @@ def _build_and_solve(
                            eligible_df['landed_unit_cost'].astype(float)))
     risk_norm   = dict(zip(eligible_df['supplier_id'],
                            eligible_df['risk_penalty_norm'].astype(float)))
-    lead_time   = dict(zip(eligible_df['supplier_id'],
-                           eligible_df['lead_time_mean'].astype(float)))
+    lead_time     = dict(zip(eligible_df['supplier_id'],
+                             eligible_df['lead_time_mean'].astype(float)))
+    lead_time_norm = dict(zip(eligible_df['supplier_id'],
+                              eligible_df['lead_time_mean_norm'].astype(float)))
 
     lam   = float(params.lambda_risk)
     alpha = float(params.max_supplier_share)
     urg   = params.urgency
+    lam_u = URGENCY_LEAD_TIME_WEIGHT if urg else 0.0
 
-    # Effective cost coefficient per supplier
+    # Effective cost coefficient per supplier:
+    #   c_j × (1 + λ_risk × r_j + λ_urgency × lt_norm_j)
     obj_coeff = {
-        j: cost[j] * (1 + lam * risk_norm[j])
-           + (URGENCY_LEAD_TIME_PENALTY * lead_time[j] if urg else 0.0)
+        j: cost[j] * (1 + lam * risk_norm[j] + lam_u * lead_time_norm[j])
         for j in suppliers
     }
 
@@ -544,7 +553,8 @@ def _build_formula_description(D: float, params: LPParams,
     floor    = solve_result["demand_floor"]
     product  = params.product.replace('_', ' ')
 
-    urg_term = ' + urgency_penalty_j' if params.urgency else ''
+    lam_u    = URGENCY_LEAD_TIME_WEIGHT if params.urgency else 0.0
+    urg_term = f' + {lam_u:.2f} × lt_norm_j' if params.urgency else ''
 
     # ── Layer 1: Plain-English ─────────────────────────────────────────────────
     if lam == 0.0:
@@ -562,15 +572,19 @@ def _build_formula_description(D: float, params: LPParams,
         f'Goal: select the lowest-cost, lowest-risk supplier mix for {product}',
         f'      that satisfies all active business rules below.',
         '',
-        f'Risk/cost tradeoff:  λ = {lam:.2f}  →  {tradeoff}',
-        f'  A higher λ shifts volume toward lower-risk suppliers even at higher cost.',
-        f'  A lower λ prioritises unit cost over risk profile.',
+        f'Risk/cost tradeoff:  λ_risk = {lam:.2f}  →  {tradeoff}',
+        f'  A higher λ_risk shifts volume toward lower-risk suppliers even at higher cost.',
+        f'  A lower λ_risk prioritises unit cost over risk profile.',
     ]
     if params.urgency:
-        lines.append(
-            '  Urgency mode on: slow-lead-time suppliers carry an additional '
-            'cost penalty — the optimizer favours faster suppliers.'
-        )
+        lines += [
+            f'  Urgency mode active  (λ_urgency = {lam_u:.2f}):',
+            '    Slow-lead-time suppliers carry a cost premium proportional to their',
+            '    normalised lead time within the eligible pool.',
+            f'    Slowest supplier  → effective cost ×{1 + lam_u:.2f}  (+{lam_u*100:.0f}% premium)',
+            '    Fastest supplier  → no urgency premium  (lead_time_mean_norm = 0)',
+            '    Same mechanism as λ_risk — a dial, not a hard cutoff.',
+        ]
 
     # Business rules
     lines += ['', 'Active business rules:']
@@ -650,14 +664,17 @@ def _build_formula_description(D: float, params: LPParams,
         'Objective function:',
         f'  minimize  Σ_j  c_j × (1 + {lam:.2f} × r_j{urg_term})  ×  x_j',
         '',
-        '  c_j  landed unit cost (USD/unit)',
-        '  r_j  risk penalty, normalised 0–1',
-        '  x_j  units allocated to supplier j  (continuous, ≥ 0)',
+        '  c_j      landed unit cost (USD/unit)',
+        '  r_j      risk penalty, normalised 0–1',
+        '  x_j      units allocated to supplier j  (continuous, ≥ 0)',
     ]
     if params.urgency:
-        lines.append(
-            '  urgency_penalty_j  lead_time_mean_j × 0.002  (penalises slow suppliers)'
-        )
+        lines += [
+            f'  lt_norm_j  lead_time_mean_norm (0–1, scored within eligible pool)',
+            f'             0 = fastest supplier in pool;  1 = slowest',
+            f'             λ_urgency = {lam_u:.2f}  →  slowest supplier carries a '
+            f'{lam_u*100:.0f}% cost premium',
+        ]
 
     lines += [
         '',
@@ -895,8 +912,9 @@ def run(params: LPParams) -> dict:
             )
             if params.urgency:
                 exec_summary += (
-                    " Urgency mode active: slow-lead-time suppliers carry an "
-                    "additional cost penalty in the objective."
+                    f" Urgency mode active (λ_urgency = {URGENCY_LEAD_TIME_WEIGHT:.2f}): "
+                    "slow suppliers carry a lead-time cost premium; "
+                    "the allocation favours faster suppliers."
                 )
             if n_excl_comp > 0:
                 exec_summary += (
@@ -1123,3 +1141,36 @@ if __name__ == '__main__':
     )
     result3 = run(params3)
     _print_result(result3)
+
+    # ── Scenario 4: urgency mode (normalised lead-time cost premium) ───────────
+    print('\n\n' + '─' * 70)
+    print('  SCENARIO 4a: Baseline — no urgency')
+    print('─' * 70)
+    params4a = LPParams(
+        product              = 'transistors',
+        lambda_risk          = 0.50,
+        compliance_threshold = 0.60,
+        max_supplier_share   = 0.40,
+        service_level_target = 1.00,
+        order_quantity       = 5_000,
+        diversification_mode = 'supplier_share_only',
+        urgency              = False,
+    )
+    result4a = run(params4a)
+    _print_result(result4a)
+
+    print('\n\n' + '─' * 70)
+    print('  SCENARIO 4b: Urgency mode ON (same params, urgency=True)')
+    print('─' * 70)
+    params4b = LPParams(
+        product              = 'transistors',
+        lambda_risk          = 0.50,
+        compliance_threshold = 0.60,
+        max_supplier_share   = 0.40,
+        service_level_target = 1.00,
+        order_quantity       = 5_000,
+        diversification_mode = 'supplier_share_only',
+        urgency              = True,
+    )
+    result4b = run(params4b)
+    _print_result(result4b)
