@@ -21,6 +21,11 @@ def merge_dicts(left: dict, right: dict) -> dict:
     return merged
 
 
+def _append_lp_runs(left: list | None, right: list | None) -> list:
+    """Reducer that accumulates approved LP runs across turns."""
+    return (left or []) + (right or [])
+
+
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
     intent: str
@@ -31,3 +36,6 @@ class AgentState(TypedDict):
     raw_data: Annotated[dict, merge_dicts]  # structured data from data_agent
     final_response: str
     timings: Annotated[dict, merge_dicts]
+    # ── LP session state ──────────────────────────────────────────────────────
+    pending_lp_run: dict | None  # LP result awaiting user approval; None = no pending run
+    approved_lp_runs: Annotated[list, _append_lp_runs]  # session-approved LP runs (accumulates)

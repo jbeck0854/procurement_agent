@@ -11,6 +11,62 @@ from llm import get_llm
 
 logger = logging.getLogger(__name__)
 
+# ── LP session-state tokens ────────────────────────────────────────────────────
+
+_APPROVAL_TOKENS = frozenset({
+    'approve', 'approved', 'lock it in', 'lock in', 'accept', 'accept this plan',
+    'go ahead', 'looks good', 'perfect', 'yes',
+})
+_REJECTION_TOKENS = frozenset({
+    'reject', 'rejected', 'rerun', 're-run', 'try again', 'discard',
+    'modify constraints', 'modify', 'change', 'no', 'cancel', 'redo',
+})
+_SESSION_SUMMARY_TOKENS = frozenset({
+    'session summary', 'final summary', 'procurement summary', 'wrap up',
+    'wrap-up', 'summarize session', 'show summary',
+})
+
+
+def _last_human_content(state: AgentState) -> str:
+    """Return the last human message content, lowercased and stripped."""
+    for m in reversed(state.get('messages', [])):
+        if hasattr(m, 'type') and m.type == 'human':
+            return (m.content or '').lower().strip()
+    return ''
+
+
+def _matches_any(text: str, tokens: frozenset) -> bool:
+    return any(tok in text for tok in tokens)
+
+
+def _extract_lp_record(lp_result: dict) -> dict:
+    """
+    Extract the session-level record from a full LP result dict.
+    Stored in approved_lp_runs; used by the session summary builder.
+    """
+    params = lp_result.get('params_recap', {})
+    req    = lp_result.get('requirement', {})
+    cs     = lp_result.get('cost_summary', {})
+    cd     = lp_result.get('constraint_diagnostics', {})
+    alloc  = lp_result.get('allocation', [])
+
+    return {
+        'product':                params.get('product', 'N/A'),
+        'facility_scope':         params.get('facility_id') or 'all facilities',
+        'total_units_procured':   req.get('adjusted_requirement', 0),
+        'selected_suppliers':     [r['supplier_id'] for r in alloc],
+        'supplier_countries':     cd.get('countries_selected', []),
+        'total_cost':             cs.get('total_cost_usd', 0.0),
+        'risk_adjusted_total':    cs.get('total_risk_adjusted_cost', 0.0),
+        'avg_landed_unit_cost':   cs.get('avg_landed_unit_cost', 0.0),
+        'avg_risk_penalty':       cs.get('avg_risk_penalty_norm', 0.0),
+        'budget_cap':             params.get('budget_cap'),
+        'budget_utilization_pct': cs.get('budget_utilization_pct'),
+        'diversification_mode':   params.get('diversification_mode', 'none'),
+        'service_level_target':   params.get('service_level_target', 1.0),
+        'executive_summary':      lp_result.get('executive_summary', ''),
+    }
+
 class TaskOutput(BaseModel):
     agent: str
     objective: str
@@ -100,6 +156,44 @@ TASK GENERATION RULES:
 async def orchestrator_node(state: AgentState) -> dict:
     start = time.perf_counter()
 
+    # ── LP approval / rejection pre-check (runs before LLM task planning) ─────
+    pending = state.get('pending_lp_run')
+    if pending:
+        msg = _last_human_content(state)
+        elapsed = round(time.perf_counter() - start, 3)
+
+        if _matches_any(msg, _APPROVAL_TOKENS):
+            logger.info("[ORCHESTRATOR] LP run approved by user")
+            run_record = _extract_lp_record(pending)
+            return {
+                'intent':           'lp_approved',
+                'tasks':            [],
+                'approved_lp_runs': [run_record],
+                'pending_lp_run':   None,
+                'timings':          {'orchestrator': elapsed},
+            }
+
+        if _matches_any(msg, _REJECTION_TOKENS):
+            logger.info("[ORCHESTRATOR] LP run rejected by user")
+            return {
+                'intent':         'lp_rejected',
+                'tasks':          [],
+                'pending_lp_run': None,
+                'timings':        {'orchestrator': elapsed},
+            }
+
+    # ── Session summary request ────────────────────────────────────────────────
+    msg = _last_human_content(state)
+    if _matches_any(msg, _SESSION_SUMMARY_TOKENS):
+        logger.info("[ORCHESTRATOR] Session summary requested")
+        elapsed = round(time.perf_counter() - start, 3)
+        return {
+            'intent':  'session_summary',
+            'tasks':   [],
+            'timings': {'orchestrator': elapsed},
+        }
+
+    # ── Normal LLM task planning ───────────────────────────────────────────────
     llm = get_llm().with_structured_output(OrchestratorOutput)
     messages = [SystemMessage(content=ORCHESTRATOR_PROMPT)] + state["messages"]
     response = await llm.ainvoke(messages)
