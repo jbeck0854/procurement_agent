@@ -2,25 +2,38 @@
 procurement_summary.py — Business-facing BOM / inventory planning layer summaries.
 
 Entry points (independently callable):
-    format_component_requirements(conn, forecast_run_id=None) -> str
-    format_procurement_status(conn, forecast_run_id=None)     -> str
+    format_component_requirements(conn, forecast_run_id=None)         -> str
+    format_procurement_status(conn, forecast_run_id=None)             -> str
+    format_aggregated_procurement_need(conn, forecast_run_id=None,    -> str
+                                       product=None, facility_id=None)
+    format_bom_translation(conn, semiconductor_id,                    -> str
+                           forecast_run_id=None,
+                           facility_id=None,
+                           target_week_date=None)
 
 LangChain @tool wrappers (manage their own DB connection):
-    get_component_requirements_summary_tool(forecast_run_id=0) -> str
-    get_procurement_status_summary_tool(forecast_run_id=0)     -> str
-    get_procurement_planning_summary_tool(forecast_run_id=0)   -> str
+    get_component_requirements_summary_tool(forecast_run_id=0)           -> str
+    get_procurement_status_summary_tool(forecast_run_id=0)               -> str
+    get_procurement_planning_summary_tool(forecast_run_id=0)             -> str
+    get_aggregated_procurement_need_tool(forecast_run_id=0,              -> str
+                                         product='', facility_id='')
+    get_bom_translation_tool(semiconductor_id,                           -> str
+                             forecast_run_id=0,
+                             facility_id='',
+                             target_week_date='')
 
 Reads from:
     vw_component_requirement_lp          (BOM-exploded full-horizon demand)
+    vw_component_requirement_detail      (per-SKU per-week BOM explosion detail)
     vw_procurement_requirement           (inventory-adjusted net requirement)
     fact_component_inventory_history     (decision-point on-hand / inventory state)
     fact_inventory_policy                (safety stock and policy parameters)
     dim_forecast_run                     (run metadata)
     dim_product                          (product name lookup)
+    dim_bom                              (BOM recipe: SKU → component mappings)
 
 Does NOT modify any computational logic, formulas, or DB tables.
 All values are read from pre-computed tables and views.
-No @tool wrappers — these are pure formatting helpers for future integration.
 
 Usage:
     import psycopg2
@@ -210,11 +223,16 @@ def format_component_requirements(conn, forecast_run_id=None) -> str:
 
 def format_procurement_status(conn, forecast_run_id=None) -> str:
     """
-    Return a business-facing inventory-adjusted procurement buy signal.
+    Return a business-facing week-by-week inventory-adjusted procurement signal.
 
-    Shows net procurement requirement after applying inventory position and
-    safety stock policy to the BOM-exploded component demand. This is the
-    direct input to the procurement optimization layer.
+    Shows where and when procurement is triggered across the planning horizon,
+    after applying inventory position and safety stock policy to BOM-exploded
+    component demand on a per-week basis.
+
+    This is a WEEKLY inventory trigger signal — NOT the LP demand floor.
+    The LP applies the inventory offset once at the horizon level, not per
+    forecast week.  See format_aggregated_procurement_need() for the
+    horizon-level quantity the optimizer actually allocates across suppliers.
 
     The 'Gross Req' column in the summary table reflects only the weeks where
     procurement is triggered (net_requirement > 0). Most weeks have gross
@@ -316,9 +334,18 @@ def format_procurement_status(conn, forecast_run_id=None) -> str:
         "═" * _W,
         "",
         "  This output applies current inventory position and safety stock",
-        "  policy to the BOM-exploded component demand to derive the net",
-        "  quantity that must be procured. It is the direct input to the",
-        "  procurement optimization layer.",
+        "  policy to the BOM-exploded component demand on a week-by-week",
+        "  basis. It shows WHERE and WHEN procurement is triggered across",
+        "  the planning horizon.",
+        "",
+        "  NOTE: This is a weekly inventory signal, not the LP demand floor.",
+        "  The LP applies the inventory offset once at the horizon level.",
+        "  See the Aggregated Procurement Need output for the quantity the",
+        "  optimizer actually allocates across suppliers.",
+        "",
+        "  on_hand and safety_stock appear constant across weeks in this output.",
+        "  This is intentional — both are decision-point values (fixed at the",
+        "  start of the horizon). Only gross demand varies week to week.",
         "",
         _rule("How This Differs from Component Requirements"),
         f"  Full-horizon gross demand     : {full_horizon_gross:>12,.0f} units",
@@ -377,9 +404,12 @@ def format_procurement_status(conn, forecast_run_id=None) -> str:
         "    Currently 0 — set to zero at the planning decision point by design.",
         "",
         "  net_requirement",
-        "    Actual procurement need after all offsets.",
-        "    The procurement optimizer uses this as the demand floor for",
-        "    supplier allocation decisions.",
+        "    Weekly net requirement after all offsets.",
+        "    Positive only in weeks and facilities where on-hand inventory",
+        "    plus safety stock coverage is insufficient for that week's demand.",
+        "    The LP does NOT sum these per-week values as its demand floor —",
+        "    it applies the inventory offset once at the horizon level.",
+        "    See the Aggregated Procurement Need output for the LP demand floor.",
         "",
         _rule("Procurement Signal by Component"),
         "  Metrics summed over procurement-triggered rows (net_requirement > 0).",
@@ -609,6 +639,12 @@ def get_procurement_requirement_drilldown(
         "  scheduled_receipts_qty currently zero by design at the decision point",
         "  backorder_qty          currently zero by design at the decision point",
         "  net_requirement        positive only when gross + SS exceeds on-hand coverage",
+        "",
+        "  Why on_hand and safety_stock look the same every week:",
+        "  Both are point-in-time values captured at the start of the planning",
+        "  horizon — they represent the fixed inventory position from which the",
+        "  planning decision is made. This view asks which weeks exceed that",
+        "  starting position, not how inventory depletes across the horizon.",
         "",
         _rule("Source"),
         "  vw_procurement_requirement  (grain: forecast_run_id × week × facility × product)",
@@ -846,6 +882,285 @@ def get_triggered_procurement_rows(
     return "\n".join(lines)
 
 
+# ── Aggregated Procurement Need (Horizon-Level LP Demand) ────────────────────
+
+def format_aggregated_procurement_need(
+    conn,
+    forecast_run_id=None,
+    product: str = None,
+    facility_id: str = None,
+) -> str:
+    """
+    Return the horizon-level aggregated procurement need used by the LP optimizer.
+
+    This is the quantity the optimizer actually allocates across suppliers:
+    total gross component demand for the planning horizon minus the inventory
+    offset applied ONCE per facility (not per forecast week).
+
+    Formula (per facility × component):
+        horizon_net_req = max(0,
+            SUM(gross_requirement over all forecast weeks)
+            + backorder_qty
+            + safety_stock_qty
+            - on_hand_qty
+            - scheduled_receipts_qty
+        )
+
+    Parameters
+    ----------
+    conn : psycopg2 connection
+        Open DB connection. Caller is responsible for closing it.
+    forecast_run_id : int, optional
+        Specific run to retrieve. If None, uses the most recent run.
+    product : str, optional
+        Filter to one component (case-insensitive exact then prefix match).
+        If None, returns all components.
+    facility_id : str, optional
+        Filter to one facility. If None, returns all facilities.
+    """
+    run_id = _resolve_run_id(conn, forecast_run_id)
+
+    # Resolve optional product filter
+    product_key = None
+    product_name_resolved = None
+    if product is not None:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT product_key, product FROM dim_product "
+                "WHERE LOWER(product) = LOWER(%s)",
+                (product,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                cur.execute(
+                    "SELECT product_key, product FROM dim_product "
+                    "WHERE LOWER(product) LIKE LOWER(%s) LIMIT 1",
+                    (f"{product}%",),
+                )
+                row = cur.fetchone()
+        if row is None:
+            return (
+                f"Component '{product}' not found. "
+                "Check spelling or use the exact product name."
+            )
+        product_key, product_name_resolved = row
+
+    # Build dynamic filters
+    filters = ["lp.forecast_run_id = %(forecast_run_id)s"]
+    qparams = {"forecast_run_id": run_id}
+    if product_key is not None:
+        filters.append("lp.product_key = %(product_key)s")
+        qparams["product_key"] = product_key
+    if facility_id is not None:
+        filters.append("lp.facility_id = %(facility_id)s")
+        qparams["facility_id"] = facility_id
+
+    where_clause = " AND ".join(filters)
+
+    sql = f"""
+        SELECT
+            lp.facility_id,
+            dp.product,
+            SUM(lp.total_component_requirement)        AS gross_total,
+            MAX(dp_snap.on_hand_qty)                   AS on_hand_qty,
+            MAX(dp_snap.scheduled_receipts_qty)        AS scheduled_receipts_qty,
+            MAX(dp_snap.backorder_qty)                 AS backorder_qty,
+            MAX(pol.safety_stock_qty)                  AS safety_stock_qty,
+            GREATEST(0,
+                SUM(lp.total_component_requirement)
+                + MAX(dp_snap.backorder_qty)
+                + MAX(pol.safety_stock_qty)
+                - MAX(dp_snap.on_hand_qty)
+                - MAX(dp_snap.scheduled_receipts_qty)
+            ) AS horizon_net_req
+        FROM vw_component_requirement_lp lp
+        JOIN dim_product dp ON dp.product_key = lp.product_key
+        JOIN (
+            SELECT facility_id, product_key,
+                   on_hand_qty, scheduled_receipts_qty, backorder_qty
+            FROM fact_component_inventory_history
+            WHERE week_date = (
+                SELECT MAX(week_date) FROM fact_component_inventory_history
+            )
+        ) dp_snap
+            ON  dp_snap.facility_id = lp.facility_id
+            AND dp_snap.product_key = lp.product_key
+        JOIN fact_inventory_policy pol
+            ON  pol.forecast_run_id = lp.forecast_run_id
+            AND pol.facility_id     = lp.facility_id
+            AND pol.product_key     = lp.product_key
+        WHERE {where_clause}
+        GROUP BY lp.facility_id, dp.product
+        ORDER BY dp.product, lp.facility_id
+    """
+
+    with conn.cursor() as cur:
+        # Planning window
+        cur.execute(
+            """
+            SELECT MIN(target_week_date), MAX(target_week_date),
+                   COUNT(DISTINCT target_week_date)
+            FROM vw_component_requirement_lp
+            WHERE forecast_run_id = %(forecast_run_id)s
+            """,
+            qparams,
+        )
+        horizon_start, horizon_end, n_weeks = cur.fetchone()
+
+        # Decision-point date
+        cur.execute("SELECT MAX(week_date) FROM fact_component_inventory_history")
+        decision_date = cur.fetchone()[0]
+
+        cur.execute(sql, qparams)
+        rows = cur.fetchall()
+
+    if not rows:
+        scope = (
+            f"component='{product_name_resolved or product}'"
+            if product else "all components"
+        )
+        return (
+            f"No aggregated procurement need found for {scope}, "
+            f"forecast_run_id={run_id}."
+        )
+
+    # ── Aggregate by product ─────────────────────────────────────────────────
+    # rows: facility_id, product, gross_total, on_hand, sched, backorder, ss, horizon_net_req
+
+    # product-level summary
+    from collections import defaultdict
+    prod_gross   = defaultdict(float)
+    prod_on_hand = defaultdict(float)
+    prod_ss      = defaultdict(float)
+    prod_net     = defaultdict(float)
+    fac_rows     = []  # kept for facility breakdown
+
+    for fac, prod, gross, oh, sched, bo, ss, net in rows:
+        prod_gross[prod]   += float(gross)
+        prod_on_hand[prod] += float(oh)
+        prod_ss[prod]      += float(ss)
+        prod_net[prod]     += float(net)
+        fac_rows.append((fac, prod, float(gross), float(oh), float(ss), float(net)))
+
+    products_ordered = sorted(prod_net.keys(), key=lambda p: -prod_net[p])
+    total_gross = sum(prod_gross.values())
+    total_net   = sum(prod_net.values())
+    n_facilities = len({r[0] for r in rows})
+    n_products   = len(prod_net)
+
+    scope_header = (
+        product_name_resolved if product_name_resolved
+        else f"all {n_products} component{'s' if n_products != 1 else ''}"
+    )
+    if facility_id:
+        scope_header += f"  ·  {facility_id}"
+
+    box_inner = _W - 4
+    net_line  = f"  HORIZON-LEVEL LP DEMAND FLOOR  →  {total_net:,.0f} units"
+    sub_line  = f"  ({scope_header}  ·  {n_facilities} facilit{'y' if n_facilities == 1 else 'ies'}  ·  full planning horizon)"
+
+    lines = [
+        "═" * _W,
+        "  AGGREGATED PROCUREMENT NEED — Horizon-Level LP Demand Floor",
+        f"  {scope_header}",
+        "═" * _W,
+        "",
+        "  This output shows the quantity the LP optimizer actually allocates",
+        "  across suppliers. The inventory offset (on-hand stock, safety stock,",
+        "  scheduled receipts) is applied ONCE against the total horizon demand,",
+        "  per facility — not once per forecast week.",
+        "",
+        "  ┌" + "─" * box_inner + "┐",
+        f"  │{net_line:<{box_inner}}│",
+        f"  │{sub_line:<{box_inner}}│",
+        "  └" + "─" * box_inner + "┘",
+        "",
+        _rule("Planning Window"),
+        f"  Inventory state date : {decision_date}  (last observed week)",
+        f"  Horizon start        : {horizon_start}",
+        f"  Horizon end          : {horizon_end}",
+        f"  Horizon weeks        : {n_weeks}",
+        f"  Forecast run ID      : {run_id}",
+        "",
+        _rule("Horizon-Level Formula (per facility × component)"),
+        "  horizon_net_req = max( 0,",
+        "      SUM(gross_requirement across all forecast weeks)",
+        "    + backorder_qty            [current backlog at decision point]",
+        "    + safety_stock_qty         [policy buffer, 95% service level]",
+        "    - on_hand_qty              [inventory at decision point]",
+        "    - scheduled_receipts_qty   [on-order at decision point]",
+        "  )",
+        "",
+        "  The inventory state values (on_hand, safety_stock, etc.) are",
+        "  point-in-time constants — applied once against the full horizon.",
+        "",
+        _rule("Aggregated Procurement Need by Component"),
+        f"  {'Component':<36} {'Gross Demand':>13} {'On Hand [-]':>11}"
+        f" {'Safety Stk [+]':>14} {'LP Net Req':>10}",
+        _rule(),
+    ]
+
+    for prod in products_ordered:
+        lines.append(
+            f"  {prod:<36}"
+            f" {prod_gross[prod]:>13,.0f}"
+            f" {prod_on_hand[prod]:>11,.0f}"
+            f" {prod_ss[prod]:>14,.0f}"
+            f" {prod_net[prod]:>10,.0f}"
+        )
+
+    lines += [
+        _rule(),
+        f"  {'TOTAL':<36}"
+        f" {total_gross:>13,.0f}"
+        f" {sum(prod_on_hand.values()):>11,.0f}"
+        f" {sum(prod_ss.values()):>14,.0f}"
+        f" {total_net:>10,.0f}",
+        "",
+    ]
+
+    # ── Optional facility breakdown ──────────────────────────────────────────
+    if n_facilities > 1 or facility_id:
+        lines += [
+            _rule("Facility Breakdown"),
+            f"  {'Component':<36} {'Facility':<12} {'Gross Demand':>13} {'LP Net Req':>10}",
+            _rule(),
+        ]
+        current_prod = None
+        for fac, prod, gross, oh, ss, net in sorted(fac_rows, key=lambda r: (r[1], r[0])):
+            if prod != current_prod:
+                if current_prod is not None:
+                    lines.append("")
+                current_prod = prod
+            lines.append(
+                f"  {prod:<36} {fac:<12} {gross:>13,.0f} {net:>10,.0f}"
+            )
+        lines.append("")
+
+    lines += [
+        _rule("How This Differs from Other Procurement Outputs"),
+        "  Component Requirements  — full-horizon GROSS BOM demand; no inventory",
+        "                            offset applied. Largest number.",
+        "",
+        "  Procurement Status      — week-by-week inventory trigger signal;",
+        "                            shows WHERE and WHEN procurement activates.",
+        "                            Sums per-week net values (each ≥ 0).",
+        "                            NOT the LP demand floor.",
+        "",
+        "  Triggered Rows          — subset of weekly rows where net > 0;",
+        "                            useful for drill-down, not for LP sizing.",
+        "",
+        "  Aggregated Procurement  — THIS OUTPUT. Inventory offset applied",
+        "  Need (LP demand floor)    once per horizon. The quantity the LP",
+        "                            allocates across suppliers. Correct for",
+        "                            comparing against LP allocation output.",
+        "",
+        "═" * _W,
+    ]
+
+    return "\n".join(lines)
+
+
 # ── LangChain @tool wrappers (Option B — no demo/* modified) ─────────────────
 
 @tool
@@ -873,11 +1188,16 @@ def get_component_requirements_summary_tool(forecast_run_id: int = 0) -> str:
 
 @tool
 def get_procurement_status_summary_tool(forecast_run_id: int = 0) -> str:
-    """Return the inventory-adjusted procurement buy signal.
+    """Return the week-by-week inventory-adjusted procurement trigger signal.
 
-    Shows net procurement requirement after applying current inventory position
-    and safety stock policy to the BOM-exploded component demand. This is the
-    direct input to the LP procurement optimization layer.
+    Shows where and when procurement is triggered across the planning horizon,
+    after applying inventory position and safety stock policy to BOM-exploded
+    component demand on a per-week basis. Use this to understand WHICH weeks
+    and facilities drive procurement need.
+
+    This is NOT the LP demand floor. The LP applies the inventory offset once
+    at the horizon level. Use get_aggregated_procurement_need_tool() to see
+    the quantity the optimizer actually allocates across suppliers.
 
     Args:
         forecast_run_id: Specific forecast run to retrieve. Pass 0 (default)
@@ -896,12 +1216,15 @@ def get_procurement_status_summary_tool(forecast_run_id: int = 0) -> str:
 
 @tool
 def get_procurement_planning_summary_tool(forecast_run_id: int = 0) -> str:
-    """Return both the component requirements and procurement buy signal in sequence.
+    """Return both the component requirements and procurement trigger signal in sequence.
 
     Combines format_component_requirements (gross BOM-exploded demand) and
-    format_procurement_status (inventory-adjusted net requirement) into a single
-    output. Use this for a complete view of the procurement planning picture:
-    from raw component demand through to the final buy signal.
+    format_procurement_status (week-by-week inventory trigger signal) into a
+    single output. Use this to understand the full planning picture: raw
+    component demand and where/when procurement is triggered week by week.
+
+    For the quantity the LP actually optimizes (horizon-level, inventory offset
+    applied once), use get_aggregated_procurement_need_tool() instead.
 
     Args:
         forecast_run_id: Specific forecast run to retrieve. Pass 0 (default)
@@ -916,5 +1239,328 @@ def get_procurement_planning_summary_tool(forecast_run_id: int = 0) -> str:
     except Exception as e:
         logger.error("[PROCUREMENT_PLANNING] Tool call failed: %s", e, exc_info=True)
         return f"Error retrieving procurement planning summary: {e}"
+    finally:
+        conn.close()
+
+
+@tool
+def get_aggregated_procurement_need_tool(
+    forecast_run_id: int = 0,
+    product: str = "",
+    facility_id: str = "",
+) -> str:
+    """Return the horizon-level aggregated procurement need used by the LP optimizer.
+
+    This is the quantity the LP actually allocates across suppliers: total
+    horizon gross demand minus the inventory offset (on-hand, safety stock,
+    scheduled receipts) applied ONCE per facility — not once per forecast week.
+
+    Use this to answer:
+      - "What demand quantity is the LP actually optimizing?"
+      - "What is the total procurement need across the planning horizon?"
+      - "How does the LP demand floor differ from the weekly trigger signal?"
+
+    This differs from Procurement Status, which shows the week-by-week
+    trigger signal and is NOT the LP demand floor.
+
+    Args:
+        forecast_run_id: Specific forecast run ID. Pass 0 (default) to use
+                         the most recent production forecast run.
+        product:         Component to filter to (e.g. 'transistors'). Leave
+                         blank to return all components.
+        facility_id:     Facility to filter to (e.g. 'FAC_001'). Leave blank
+                         to return all facilities.
+    """
+    conn = _get_conn()
+    try:
+        run_id = forecast_run_id if forecast_run_id > 0 else None
+        prod   = product.strip() or None
+        fac    = facility_id.strip() or None
+        return format_aggregated_procurement_need(
+            conn, forecast_run_id=run_id, product=prod, facility_id=fac
+        )
+    except Exception as e:
+        logger.error("[AGGREGATED_NEED] Tool call failed: %s", e, exc_info=True)
+        return f"Error retrieving aggregated procurement need: {e}"
+    finally:
+        conn.close()
+
+
+# ── BOM Translation Explainability ───────────────────────────────────────────
+
+def format_bom_translation(
+    conn,
+    semiconductor_id: str,
+    forecast_run_id=None,
+    facility_id: str | None = None,
+    target_week_date: str | None = None,
+) -> str:
+    """
+    Return a business-facing explanation of how a finished-good semiconductor SKU
+    is translated through the BOM into procurement component demand.
+
+    Mode A — SKU-level BOM recipe (semiconductor_id only):
+        Shows the BOM structure for the SKU: which components are required
+        and how many units per finished SKU. No forecast data needed.
+
+    Mode B — Forecast-row explosion (all args provided):
+        Shows a specific forecast week's demand for the SKU, applies the BOM
+        multipliers, and explains the resulting gross component requirement.
+        Includes context block (SKU, facility, week, run) and a gross vs net note.
+
+    Parameters
+    ----------
+    conn : psycopg2 connection
+        Open DB connection. Caller is responsible for closing it.
+    semiconductor_id : str
+        The finished-good SKU to explain (e.g. 'SEMICONDUCTOR_6').
+    forecast_run_id : int, optional
+        Specific forecast run. If None, uses the most recent run (Mode B only).
+    facility_id : str, optional
+        Facility to filter to. If None, Mode A is used regardless of other args.
+    target_week_date : str, optional
+        ISO date string (YYYY-MM-DD) for the specific forecast week (Mode B).
+        If None, Mode A is used.
+    """
+    run_id = _resolve_run_id(conn, forecast_run_id)
+
+    # ── Mode A: SKU-level BOM recipe ──────────────────────────────────────────
+    if facility_id is None or target_week_date is None:
+        with conn.cursor() as cur:
+            # SKU display name
+            cur.execute(
+                """
+                SELECT s.semiconductor_id
+                FROM dim_bom b
+                JOIN dim_product s ON s.product_key = b.semiconductor_product_key
+                WHERE s.semiconductor_id = %s
+                LIMIT 1
+                """,
+                (semiconductor_id,),
+            )
+            sku_row = cur.fetchone()
+            if sku_row is None:
+                return (
+                    f"No BOM record found for semiconductor_id '{semiconductor_id}'.\n"
+                    "Check that the SKU exists in dim_bom."
+                )
+
+            # BOM components for this SKU
+            cur.execute(
+                """
+                SELECT
+                    p.product                       AS component_name,
+                    b.units_per_sku                 AS units_per_sku
+                FROM dim_bom b
+                JOIN dim_product s ON s.product_key = b.semiconductor_product_key
+                JOIN dim_product p ON p.product_key = b.component_product_key
+                WHERE s.semiconductor_id = %s
+                ORDER BY b.units_per_sku DESC, p.product
+                """,
+                (semiconductor_id,),
+            )
+            bom_rows = cur.fetchall()
+
+        total_units_per_sku = sum(float(r[1]) for r in bom_rows)
+        n_components = len(bom_rows)
+
+        lines = [
+            "═" * _W,
+            f"  BOM TRANSLATION — {semiconductor_id}",
+            "═" * _W,
+            "",
+            "  This output explains how one finished-good semiconductor SKU maps",
+            "  to procurement components via the Bill of Materials (BOM).",
+            "",
+            "  The BOM defines how many units of each component are required",
+            "  to produce one unit of the finished SKU.",
+            "",
+            _rule("SKU"),
+            f"  Semiconductor ID   : {semiconductor_id}",
+            f"  Component types    : {n_components}",
+            f"  Total units / SKU  : {total_units_per_sku:,.1f}  "
+            f"(sum of all component quantities per finished unit)",
+            "",
+            _rule("BOM Recipe — Units Required per Finished SKU"),
+            f"  {'Component':<32}  {'Units / SKU':>12}",
+            "  " + "-" * (_W - 4),
+        ]
+        for component_name, units_per_sku in bom_rows:
+            lines.append(f"  {component_name:<32}  {float(units_per_sku):>12,.1f}")
+        lines += [
+            "  " + "-" * (_W - 4),
+            f"  {'TOTAL':<32}  {total_units_per_sku:>12,.1f}",
+            "",
+            _rule("How to Read This"),
+            "  To calculate gross component demand for any forecast period:",
+            "    gross_component_requirement = forecasted_SKU_demand × units_per_sku",
+            "",
+            "  Example: if demand for this SKU is 1,000 units in a given week,",
+        ]
+        for component_name, units_per_sku in bom_rows:
+            ex_units = 1000 * float(units_per_sku)
+            lines.append(
+                f"    → {ex_units:>10,.0f}  units of  {component_name}  required"
+            )
+        lines += [
+            "",
+            "  These gross figures are before any inventory offset.",
+            "  Run format_procurement_status() for the net buy signal.",
+            "═" * _W,
+        ]
+        return "\n".join(lines)
+
+    # ── Mode B: Forecast-row explosion ────────────────────────────────────────
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                d.semiconductor_id,
+                v.facility_id,
+                v.target_week_date,
+                v.forecast_run_id,
+                p.product                       AS component_name,
+                v.predicted_demand,
+                b.units_per_sku,
+                v.gross_component_requirement
+            FROM vw_component_requirement_detail v
+            JOIN dim_product s ON s.product_key = v.semiconductor_product_key
+            JOIN dim_product p ON p.product_key = v.product_key
+            JOIN dim_bom b
+                ON  b.semiconductor_product_key = v.semiconductor_product_key
+                AND b.component_product_key     = v.product_key
+            JOIN (
+                SELECT DISTINCT semiconductor_id, product_key AS semiconductor_product_key
+                FROM dim_bom
+                JOIN dim_product ON dim_product.product_key = dim_bom.semiconductor_product_key
+            ) d ON d.semiconductor_product_key = v.semiconductor_product_key
+            WHERE s.semiconductor_id = %s
+              AND v.facility_id      = %s
+              AND v.target_week_date = %s
+              AND v.forecast_run_id  = %s
+            ORDER BY v.gross_component_requirement DESC, p.product
+            """,
+            (semiconductor_id, facility_id, target_week_date, run_id),
+        )
+        detail_rows = cur.fetchall()
+
+    if not detail_rows:
+        return (
+            f"No BOM explosion data found for:\n"
+            f"  semiconductor_id : {semiconductor_id}\n"
+            f"  facility_id      : {facility_id}\n"
+            f"  target_week_date : {target_week_date}\n"
+            f"  forecast_run_id  : {run_id}\n\n"
+            "Check that the SKU, facility, and week exist in vw_component_requirement_detail."
+        )
+
+    # All rows share the same context fields
+    _, fac, week, actual_run_id, _, predicted_demand, _, _ = detail_rows[0]
+    predicted_demand = float(predicted_demand)
+    total_gross = sum(float(r[7]) for r in detail_rows)
+    n_components = len(detail_rows)
+
+    lines = [
+        "═" * _W,
+        f"  BOM TRANSLATION — {semiconductor_id}  (Forecast-Row Explosion)",
+        "═" * _W,
+        "",
+        "  This output explains how a specific forecast week's finished-good",
+        "  demand for this SKU is translated through the BOM into gross",
+        "  procurement component demand.",
+        "",
+        _rule("Context"),
+        f"  Semiconductor ID   : {semiconductor_id}",
+        f"  Facility           : {fac}",
+        f"  Week               : {week}",
+        f"  Forecast run ID    : {actual_run_id}",
+        "",
+        _rule("Forecast Demand"),
+        f"  Predicted demand   : {predicted_demand:>12,.1f}  finished units",
+        "",
+        _rule("BOM Explosion — Gross Component Requirement"),
+        f"  {'Component':<32}  {'Units/SKU':>10}  {'Gross Req':>12}",
+        "  " + "-" * (_W - 4),
+    ]
+    for _, _, _, _, component_name, _, units_per_sku, gross_req in detail_rows:
+        lines.append(
+            f"  {component_name:<32}  {float(units_per_sku):>10,.1f}  "
+            f"{float(gross_req):>12,.1f}"
+        )
+    lines += [
+        "  " + "-" * (_W - 4),
+        f"  {'TOTAL GROSS COMPONENT DEMAND':<32}  {'':>10}  {total_gross:>12,.1f}",
+        "",
+        _rule("How to Read This"),
+        "  gross_component_requirement = predicted_demand × units_per_sku",
+        "",
+    ]
+    for _, _, _, _, component_name, _, units_per_sku, gross_req in detail_rows:
+        lines.append(
+            f"    {predicted_demand:,.1f}  ×  {float(units_per_sku):.1f}  =  "
+            f"{float(gross_req):,.1f}  units of  {component_name}"
+        )
+    lines += [
+        "",
+        _rule("Gross vs Net Demand"),
+        "  The figures above are GROSS component demand — before any inventory",
+        "  offset, safety stock, or open receipt credit is applied.",
+        "",
+        "  The NET procurement requirement (the actual buy signal) accounts for:",
+        "    • on-hand inventory at the facility",
+        "    • open purchase receipts already in transit",
+        "    • safety stock policy targets",
+        "",
+        "  Run format_procurement_status() to see the net buy signal.",
+        "═" * _W,
+    ]
+    return "\n".join(lines)
+
+
+@tool
+def get_bom_translation_tool(
+    semiconductor_id: str,
+    forecast_run_id: int = 0,
+    facility_id: str = "",
+    target_week_date: str = "",
+) -> str:
+    """Explain how a finished-good semiconductor SKU maps to procurement components.
+
+    Two modes depending on arguments provided:
+
+    Mode A — BOM recipe (semiconductor_id only):
+        Shows the BOM structure: which components are required per finished unit.
+        Use when the user asks about the BOM recipe, component breakdown, or
+        "what goes into" a semiconductor SKU. No forecast run needed.
+
+    Mode B — Forecast-row explosion (all args):
+        Shows a specific forecast week's SKU demand exploded through the BOM
+        into gross component demand. Use when the user asks how a specific
+        forecast translates into component procurement need.
+
+    Args:
+        semiconductor_id: The finished-good SKU (e.g. 'SEMICONDUCTOR_6').
+        forecast_run_id:  Specific forecast run ID. Pass 0 (default) to use
+                          the most recent run (Mode B only).
+        facility_id:      Facility to filter to (e.g. 'FAC_001'). Leave blank
+                          for Mode A (BOM recipe only).
+        target_week_date: ISO date of the forecast week (e.g. '2024-03-04').
+                          Leave blank for Mode A.
+    """
+    conn = _get_conn()
+    try:
+        run_id = forecast_run_id if forecast_run_id > 0 else None
+        fac    = facility_id.strip() or None
+        week   = target_week_date.strip() or None
+        return format_bom_translation(
+            conn,
+            semiconductor_id=semiconductor_id,
+            forecast_run_id=run_id,
+            facility_id=fac,
+            target_week_date=week,
+        )
+    except Exception as e:
+        logger.error("[BOM_TRANSLATION] Tool call failed: %s", e, exc_info=True)
+        return f"Error retrieving BOM translation: {e}"
     finally:
         conn.close()

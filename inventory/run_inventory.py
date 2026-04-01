@@ -17,7 +17,7 @@ Pipeline:
   7. Write both tables to database
 
 Simulation policy:
-  - Cold start: on_hand = S at week 1
+  - Cold start: on_hand = 0.65 × S at week 1 (warm-up below full target to seed realistic early replenishment)
   - Review weeks: 1, 9, 17, 25, … (every 8 weeks)
   - Lead time: deterministic, round(μ_L_days / 7) weeks
   - scheduled_receipts_qty: total outstanding on-order (MRP convention)
@@ -192,7 +192,7 @@ def _simulate_series(
     """
     Periodic-review order-up-to-S simulation.
 
-    Cold start: on_hand = S, backorder = 0 at week 1.
+    Cold start: on_hand = 0.65 × S, backorder = 0 at week 1 (warm-up below full target to seed realistic early replenishment).
     Review weeks: t where (t-1) % review_period == 0  →  1, 9, 17, …
     Lead time: deterministic (L_weeks).
     scheduled_receipts_qty: total outstanding on-order at end of week (MRP).

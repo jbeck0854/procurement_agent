@@ -81,15 +81,20 @@ Provides supplier-level cost / risk information used by the LP.
 The LP primarily consumes:
 
 ### Procurement requirement
-From:
 
-- `vw_procurement_requirement`
+The LP computes a **horizon-level** net procurement requirement by aggregating
+the full-horizon gross demand and applying the inventory offset (on-hand,
+safety stock, scheduled receipts, backorder) **once per facility**.
 
-This view tells the LP:
+This is distinct from the weekly procurement trigger view, which applies the
+inventory offset once per forecast week and is intended for drill-down
+explainability — not LP sizing.
+
+The LP demand floor tells the optimizer:
 - which product / component needs procurement
-- how much is needed
-- which facilities are involved
-- how much net requirement remains after inventory coverage
+- total quantity needed across the planning horizon
+- which facilities are involved and their demand shares
+- the correct demand floor for supplier allocation
 
 ### Supplier universe
 From:
@@ -114,7 +119,25 @@ The LP solves a sourcing allocation problem.
 It determines the quantity to purchase from each eligible supplier for a selected product.
 
 ### Objective
-Minimize total procurement cost adjusted for risk.
+Minimize total procurement cost adjusted for risk and, optionally, delivery speed.
+
+The objective function per supplier `j` is:
+
+```
+c_j × (1 + λ_risk × r_j + λ_urgency × lt_norm_j)
+```
+
+where:
+- `c_j` = landed unit cost (USD/unit)
+- `r_j` = risk penalty, normalised 0–1
+- `lt_norm_j` = lead-time mean, normalised 0–1 within the eligible pool (0 = fastest, 1 = slowest)
+- `λ_risk` = user-controlled risk weight (default 0.50)
+- `λ_urgency` = `URGENCY_LEAD_TIME_WEIGHT` (0.25) when `urgency=True`, else 0
+
+**Urgency mode** adds a lead-time cost premium using the same multiplicative structure as
+`λ_risk`. The slowest eligible supplier carries a 25% cost premium; the fastest supplier
+carries no urgency premium. This is a continuous dial, not a hard cutoff — no suppliers
+are excluded and no feasibility risk is introduced.
 
 ### Subject to
 - meeting required demand
@@ -130,25 +153,43 @@ Minimize total procurement cost adjusted for risk.
 
 ## Step 1 — Load procurement requirement
 
-The script reads procurement need for the selected product from:
+The script computes horizon-level net procurement need for the selected product.
 
-- `vw_procurement_requirement`
+**The LP does NOT consume the weekly procurement trigger view directly.**
+Summing per-week net values from the weekly view would apply the inventory
+offset N times (once per forecast week), producing a demand floor that is
+40–1000× too small.
+
+Instead, the LP applies the inventory offset ONCE per facility against the
+total horizon gross demand:
+
+```
+facility_net_req = max(0,
+    SUM(gross_requirement over all forecast weeks)
+    + backorder_qty
+    + safety_stock_qty
+    - on_hand_qty
+    - scheduled_receipts_qty
+)
+```
 
 By default:
-- it aggregates across all facilities with `net_requirement > 0`
+- it aggregates across all facilities with positive horizon net requirement
 - it uses the most recent `forecast_run_id` in `dim_forecast_run`
 
 Optional:
-- if `facility_id` is provided, it filters to that facility only
-- if `forecast_run_id` is provided explicitly, it filters to that run
+- if `facility_id` is provided, it restricts to that facility only
+- if `forecast_run_id` is provided explicitly, it restricts to that run
 
-This produces total procurement demand for the LP run.
+This produces total procurement demand `D` for the LP run.
 
-> **Data currency note.** The inventory state used in `vw_procurement_requirement`
-> (on-hand inventory, safety stock) is sourced from the most recent execution of
-> `run_inventory.py`. If the forecast is regenerated, `run_inventory.py` should be
-> re-run before running the LP to ensure the inventory snapshot is aligned with the
-> current forecast horizon.
+To inspect this demand floor in plain English before running the LP, use
+`get_aggregated_procurement_need_tool()` from the inventory planning layer.
+
+> **Data currency note.** The inventory state (on-hand, safety stock) is sourced
+> from the most recent execution of `run_inventory.py`. If the forecast is
+> regenerated, `run_inventory.py` should be re-run before running the LP to
+> ensure the inventory snapshot is aligned with the current forecast horizon.
 
 ---
 
@@ -287,9 +328,59 @@ For suppliers not used:
 
 ### Formula description
 A business-readable explanation of how the optimization was solved.
+Describes the objective function in plain language, interprets each active
+constraint (budget, diversification mode, service-level multiplier), and notes
+any constraints that were binding or skipped.
 
 ### Executive summary
 A short procurement-facing explanation of the result.
+
+### Baseline comparison record
+A silent, lightweight comparison run is computed alongside every LP run.
+
+The baseline is the **cheapest feasible compliant plan** for the same product
+and demand level, with:
+- `lambda_risk = 0` (cost-only objective, no risk penalty)
+- `diversification_mode = 'none'` (no concentration or country constraints)
+- `max_supplier_share = 1.0` (single-supplier concentration allowed)
+- same compliance filter applied
+
+The baseline record is stored in the result dict under the key `'baseline'`
+and contains:
+- `baseline_total_cost`
+- `baseline_selected_suppliers`
+- `baseline_lead_supplier_share`
+- `baseline_country_count`
+
+**The baseline is NOT printed in standard LP run output (`_print_result`).**
+It is reserved for session-level decision justification. This keeps routine
+output clean and avoids confusion between the optimized plan and the
+hypothetical unconstrained plan.
+
+---
+
+## Session-Level Summary Behavior
+
+When multiple LP runs are approved within a single agent session, the demo
+synthesizer assembles a final procurement session summary. This summary:
+
+- lists all approved products, suppliers, countries, and total spend
+- shows diversification posture across runs
+- includes a baseline comparison table — showing each approved plan's cost
+  relative to the cheapest feasible unconstrained plan for the same demand
+
+The baseline comparison uses the `'baseline'` record stored in each approved
+run. It computes cost delta (absolute and percentage) and supplier/country
+delta (how many more suppliers or countries the approved plan selected versus
+the unconstrained baseline). An interpretation line classifies the premium as
+negligible (≤1%), modest (≤10%), or material (>10%).
+
+This framing helps a procurement manager justify a diversified or
+risk-adjusted plan to stakeholders — showing how much extra cost the
+constraints added and why.
+
+**The baseline comparison appears only in the final session summary, not in
+standard individual run output.**
 
 ---
 

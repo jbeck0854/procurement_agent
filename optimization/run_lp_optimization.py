@@ -49,8 +49,11 @@ load_dotenv()
 DATABASE_URL         = os.getenv('DATABASE_URL', 'postgresql://localhost:5432/procurement_agent')
 METRIC_CONTRACT_PATH = _PROJECT_ROOT / 'analytics' / 'metric_contract.yaml'
 
-URGENCY_LEAD_TIME_PENALTY = 0.002   # $ per day of lead-time mean added to unit cost
-                                     # scales slow suppliers' effective cost upward
+URGENCY_LEAD_TIME_WEIGHT = 0.25     # multiplicative weight applied to lead_time_mean_norm
+                                     # (0–1, already scored) when urgency=True.
+                                     # slowest supplier in the pool pays a 25% cost premium;
+                                     # fastest supplier pays no urgency premium.
+                                     # same structural form as lambda_risk.
 
 
 def _qty_int(x: float) -> int:
@@ -82,8 +85,10 @@ class LPParams:
                           requirement (95% SL already baked in); 1.05 = +5% buffer
     order_quantity      : units passed to SupplierScorer for bulk-discount
                           calculation; default 5000
-    urgency             : if True, penalise slow suppliers via lead-time term
-                          in objective coefficient (no hard cut-off)
+    urgency             : if True, add a normalised lead-time cost premium
+                          (λ_urgency × lead_time_mean_norm) to each supplier's
+                          objective coefficient; 0=fastest supplier, no premium;
+                          1=slowest supplier, URGENCY_LEAD_TIME_WEIGHT premium
     exclude_supplier_ids: optional list of supplier IDs to forcibly exclude
                           (supports disruption / what-if scenarios)
     forecast_run_id     : forecast run to source demand from; None = most recent
@@ -140,30 +145,79 @@ def _resolve_forecast_run_id(conn, forecast_run_id: Optional[int]) -> int:
 
 def _load_requirement(conn, params: LPParams, forecast_run_id: int) -> tuple[float, pd.DataFrame]:
     """
-    Query vw_procurement_requirement for the selected product (and optionally
-    facility), keeping only rows with net_requirement > 0.
+    Compute horizon-level net procurement requirement for the selected product.
+
+    The inventory offset (on_hand, scheduled_receipts, backorder, safety_stock)
+    is applied ONCE against the total gross demand for the planning horizon,
+    per facility.  This is the correct formulation for a single-run LP that
+    covers the full forecast window.
+
+    Previous behaviour summed per-week max(0, gross_T + K) values, which
+    applied the inventory offset N times (once per triggered week) and produced
+    a demand floor 40–1000× below the correct horizon procurement need.
+
+    Formula (per facility):
+        facility_net_req = max(0,
+            SUM(gross_requirement over all forecast weeks)
+            + backorder_qty
+            + safety_stock_qty
+            - on_hand_qty
+            - scheduled_receipts_qty
+        )
 
     Returns
     -------
     D : float
-        Total net requirement (sum across included facility × week rows).
+        Total net requirement summed across included facilities.
     facility_df : pd.DataFrame
         One row per facility with columns [facility_id, net_req, share_pct].
     """
     sql = """
-        SELECT pr.facility_id,
-               dp.product,
-               SUM(pr.net_requirement) AS facility_net_req
-        FROM vw_procurement_requirement pr
-        JOIN dim_product dp ON dp.product_key = pr.product_key
-        WHERE dp.product           = %(product)s
-          AND pr.forecast_run_id   = %(forecast_run_id)s
-          AND pr.net_requirement   > 0
+        SELECT
+            lp.facility_id,
+            dp.product,
+            GREATEST(0,
+                SUM(lp.total_component_requirement)
+                + MAX(dp_snap.backorder_qty)
+                + MAX(pol.safety_stock_qty)
+                - MAX(dp_snap.on_hand_qty)
+                - MAX(dp_snap.scheduled_receipts_qty)
+            ) AS facility_net_req
+        FROM vw_component_requirement_lp lp
+        JOIN dim_product dp
+            ON  dp.product_key = lp.product_key
+        JOIN (
+            SELECT facility_id,
+                   product_key,
+                   on_hand_qty,
+                   scheduled_receipts_qty,
+                   backorder_qty
+            FROM   fact_component_inventory_history
+            WHERE  week_date = (
+                       SELECT MAX(week_date)
+                       FROM   fact_component_inventory_history
+                   )
+        ) dp_snap
+            ON  dp_snap.facility_id = lp.facility_id
+            AND dp_snap.product_key = lp.product_key
+        JOIN fact_inventory_policy pol
+            ON  pol.forecast_run_id = lp.forecast_run_id
+            AND pol.facility_id     = lp.facility_id
+            AND pol.product_key     = lp.product_key
+        WHERE dp.product          = %(product)s
+          AND lp.forecast_run_id  = %(forecast_run_id)s
           {facility_filter}
-        GROUP BY pr.facility_id, dp.product
-        ORDER BY pr.facility_id
+        GROUP BY lp.facility_id, dp.product
+        HAVING GREATEST(0,
+            SUM(lp.total_component_requirement)
+            + MAX(dp_snap.backorder_qty)
+            + MAX(pol.safety_stock_qty)
+            - MAX(dp_snap.on_hand_qty)
+            - MAX(dp_snap.scheduled_receipts_qty)
+        ) > 0
+        ORDER BY lp.facility_id
     """.format(
-        facility_filter="AND pr.facility_id = %(facility_id)s"
+        facility_filter="AND lp.facility_id = %(facility_id)s"
         if params.facility_id else ""
     )
     qparams = {'product': params.product, 'forecast_run_id': forecast_run_id}
@@ -261,12 +315,13 @@ def _build_and_solve(
     Build and solve the LP using PuLP + CBC.
 
     Objective (minimize):
-        Σ_j  c_j * (1 + λ * r_j + urgency_j)  *  x_j
+        Σ_j  c_j * (1 + λ_risk * r_j + λ_urgency * lt_norm_j)  *  x_j
 
     where:
         c_j          = landed_unit_cost (per unit, USD)
         r_j          = risk_penalty_norm (0–1)
-        urgency_j    = URGENCY_LEAD_TIME_PENALTY * lead_time_mean_j  if urgency else 0
+        lt_norm_j    = lead_time_mean_norm (0–1, 0=fastest in pool, 1=slowest)
+        λ_urgency    = URGENCY_LEAD_TIME_WEIGHT (0.25) if urgency else 0
 
     Constraints:
         C1  Σ x_j  ≥  sl * D                         (demand fulfillment)
@@ -287,17 +342,27 @@ def _build_and_solve(
                            eligible_df['landed_unit_cost'].astype(float)))
     risk_norm   = dict(zip(eligible_df['supplier_id'],
                            eligible_df['risk_penalty_norm'].astype(float)))
-    lead_time   = dict(zip(eligible_df['supplier_id'],
-                           eligible_df['lead_time_mean'].astype(float)))
+    # Normalise lead_time_mean to [0,1] within the eligible pool:
+    #   0 = fastest supplier, 1 = slowest.
+    # Computed here (not from scorer output) so the range reflects the
+    # compliance-filtered pool, which is what the LP objective should penalise against.
+    _lt_vals = eligible_df['lead_time_mean'].astype(float)
+    _lt_min, _lt_max = _lt_vals.min(), _lt_vals.max()
+    if _lt_max > _lt_min:
+        _lt_norm_series = (_lt_vals - _lt_min) / (_lt_max - _lt_min)
+    else:
+        _lt_norm_series = _lt_vals * 0.0   # all equal — urgency has no effect
+    lead_time_norm = dict(zip(eligible_df['supplier_id'], _lt_norm_series))
 
     lam   = float(params.lambda_risk)
     alpha = float(params.max_supplier_share)
     urg   = params.urgency
+    lam_u = URGENCY_LEAD_TIME_WEIGHT if urg else 0.0
 
-    # Effective cost coefficient per supplier
+    # Effective cost coefficient per supplier:
+    #   c_j × (1 + λ_risk × r_j + λ_urgency × lt_norm_j)
     obj_coeff = {
-        j: cost[j] * (1 + lam * risk_norm[j])
-           + (URGENCY_LEAD_TIME_PENALTY * lead_time[j] if urg else 0.0)
+        j: cost[j] * (1 + lam * risk_norm[j] + lam_u * lead_time_norm[j])
         for j in suppliers
     }
 
@@ -428,6 +493,65 @@ def _build_and_solve(
     }
 
 
+# ── Baseline comparison helper ─────────────────────────────────────────────────
+
+def _run_baseline(D: float, eligible_df: pd.DataFrame, params: LPParams) -> dict:
+    """
+    Compute the cheapest-feasible baseline plan for session-summary comparison.
+
+    Fixes: λ=0, diversification_mode='none', max_supplier_share=1.0, urgency=False.
+    Inherits: product, compliance_threshold, service_level_target, order_quantity.
+    Same compliance-filtered supplier pool as the main run.
+
+    Returns a compact dict used by the session summary baseline comparison section.
+    Returns {} if the eligible pool is empty or the baseline solve is infeasible.
+
+    NOT shown in standard LP run output (_print_result).
+    Only surfaced in the final session summary or on explicit comparison request.
+    """
+    if eligible_df.empty:
+        return {}
+
+    # Minimal params — pure cost, no extra constraints
+    baseline_lp = LPParams(
+        product              = params.product,
+        compliance_threshold = params.compliance_threshold,
+        lambda_risk          = 0.0,
+        max_supplier_share   = 1.0,
+        service_level_target = params.service_level_target,
+        diversification_mode = 'none',
+        urgency              = False,
+        order_quantity       = params.order_quantity,
+    )
+    solve = _build_and_solve(D, eligible_df, baseline_lp)
+
+    if solve['status'] != 'Optimal':
+        return {}
+
+    alloc = {j: q for j, q in solve['allocation'].items() if q >= 0.01}
+    if not alloc:
+        return {}
+
+    total_alloc = sum(alloc.values())
+    cost_map    = dict(zip(eligible_df['supplier_id'],
+                           eligible_df['landed_unit_cost'].astype(float)))
+    total_cost  = sum(cost_map.get(j, 0.0) * q for j, q in alloc.items())
+
+    lead_sup   = max(alloc, key=lambda j: alloc[j])
+    lead_share = alloc[lead_sup] / total_alloc * 100 if total_alloc > 0 else 0.0
+
+    ctry_map  = dict(zip(eligible_df['supplier_id'],
+                         eligible_df['country_code'].astype(str)))
+    countries = {ctry_map.get(j, 'UNK') for j in alloc}
+
+    return {
+        'baseline_total_cost':          round(total_cost, 2),
+        'baseline_selected_suppliers':  sorted(alloc.keys()),
+        'baseline_lead_supplier_share': round(lead_share, 1),
+        'baseline_country_count':       len(countries),
+    }
+
+
 # ── Post-processing ─────────────────────────────────────────────────────────────
 
 def _facility_split(
@@ -485,7 +609,8 @@ def _build_formula_description(D: float, params: LPParams,
     floor    = solve_result["demand_floor"]
     product  = params.product.replace('_', ' ')
 
-    urg_term = ' + urgency_penalty_j' if params.urgency else ''
+    lam_u    = URGENCY_LEAD_TIME_WEIGHT if params.urgency else 0.0
+    urg_term = f' + {lam_u:.2f} × lt_norm_j' if params.urgency else ''
 
     # ── Layer 1: Plain-English ─────────────────────────────────────────────────
     if lam == 0.0:
@@ -503,15 +628,19 @@ def _build_formula_description(D: float, params: LPParams,
         f'Goal: select the lowest-cost, lowest-risk supplier mix for {product}',
         f'      that satisfies all active business rules below.',
         '',
-        f'Risk/cost tradeoff:  λ = {lam:.2f}  →  {tradeoff}',
-        f'  A higher λ shifts volume toward lower-risk suppliers even at higher cost.',
-        f'  A lower λ prioritises unit cost over risk profile.',
+        f'Risk/cost tradeoff:  λ_risk = {lam:.2f}  →  {tradeoff}',
+        f'  A higher λ_risk shifts volume toward lower-risk suppliers even at higher cost.',
+        f'  A lower λ_risk prioritises unit cost over risk profile.',
     ]
     if params.urgency:
-        lines.append(
-            '  Urgency mode on: slow-lead-time suppliers carry an additional '
-            'cost penalty — the optimizer favours faster suppliers.'
-        )
+        lines += [
+            f'  Urgency mode active  (λ_urgency = {lam_u:.2f}):',
+            '    Slow-lead-time suppliers carry a cost premium proportional to their',
+            '    normalised lead time within the eligible pool.',
+            f'    Slowest supplier  → effective cost ×{1 + lam_u:.2f}  (+{lam_u*100:.0f}% premium)',
+            '    Fastest supplier  → no urgency premium  (lead_time_mean_norm = 0)',
+            '    Same mechanism as λ_risk — a dial, not a hard cutoff.',
+        ]
 
     # Business rules
     lines += ['', 'Active business rules:']
@@ -591,14 +720,17 @@ def _build_formula_description(D: float, params: LPParams,
         'Objective function:',
         f'  minimize  Σ_j  c_j × (1 + {lam:.2f} × r_j{urg_term})  ×  x_j',
         '',
-        '  c_j  landed unit cost (USD/unit)',
-        '  r_j  risk penalty, normalised 0–1',
-        '  x_j  units allocated to supplier j  (continuous, ≥ 0)',
+        '  c_j      landed unit cost (USD/unit)',
+        '  r_j      risk penalty, normalised 0–1',
+        '  x_j      units allocated to supplier j  (continuous, ≥ 0)',
     ]
     if params.urgency:
-        lines.append(
-            '  urgency_penalty_j  lead_time_mean_j × 0.002  (penalises slow suppliers)'
-        )
+        lines += [
+            f'  lt_norm_j  lead_time_mean_norm (0–1, scored within eligible pool)',
+            f'             0 = fastest supplier in pool;  1 = slowest',
+            f'             λ_urgency = {lam_u:.2f}  →  slowest supplier carries a '
+            f'{lam_u*100:.0f}% cost premium',
+        ]
 
     lines += [
         '',
@@ -810,12 +942,15 @@ def run(params: LPParams) -> dict:
             'country_share_rule_satisfied': solve.get('country_share_rule_sat'),
         }
 
-        # ── Step 8: Formula description ────────────────────────────────────────
+        # ── Step 8: Baseline comparison (silent — not printed; for session summary) ─
+        baseline = _run_baseline(D, eligible_df, params)
+
+        # ── Step 9: Formula description ────────────────────────────────────────
         formula_desc = _build_formula_description(
             D, params, n_eligible, n_total, solve
         )
 
-        # ── Step 9: Executive summary (business-readable one-paragraph string) ──
+        # ── Step 10: Executive summary (business-readable one-paragraph string) ──
         if solve['status'] == 'Optimal' and allocation_rows:
             n_excl_comp = sum(
                 1 for e in excluded if 'compliance' in e.get('exclusion_reason', '')
@@ -833,8 +968,9 @@ def run(params: LPParams) -> dict:
             )
             if params.urgency:
                 exec_summary += (
-                    " Urgency mode active: slow-lead-time suppliers carry an "
-                    "additional cost penalty in the objective."
+                    f" Urgency mode active (λ_urgency = {URGENCY_LEAD_TIME_WEIGHT:.2f}): "
+                    "slow suppliers carry a lead-time cost premium; "
+                    "the allocation favours faster suppliers."
                 )
             if n_excl_comp > 0:
                 exec_summary += (
@@ -887,6 +1023,7 @@ def run(params: LPParams) -> dict:
             'constraint_diagnostics': constraint_diagnostics,
             'formula_description':    formula_desc,
             'executive_summary':      exec_summary,
+            'baseline':               baseline,
         }
 
     finally:
@@ -1060,3 +1197,36 @@ if __name__ == '__main__':
     )
     result3 = run(params3)
     _print_result(result3)
+
+    # ── Scenario 4: urgency mode (normalised lead-time cost premium) ───────────
+    print('\n\n' + '─' * 70)
+    print('  SCENARIO 4a: Baseline — no urgency')
+    print('─' * 70)
+    params4a = LPParams(
+        product              = 'transistors',
+        lambda_risk          = 0.50,
+        compliance_threshold = 0.60,
+        max_supplier_share   = 0.40,
+        service_level_target = 1.00,
+        order_quantity       = 5_000,
+        diversification_mode = 'supplier_share_only',
+        urgency              = False,
+    )
+    result4a = run(params4a)
+    _print_result(result4a)
+
+    print('\n\n' + '─' * 70)
+    print('  SCENARIO 4b: Urgency mode ON (same params, urgency=True)')
+    print('─' * 70)
+    params4b = LPParams(
+        product              = 'transistors',
+        lambda_risk          = 0.50,
+        compliance_threshold = 0.60,
+        max_supplier_share   = 0.40,
+        service_level_target = 1.00,
+        order_quantity       = 5_000,
+        diversification_mode = 'supplier_share_only',
+        urgency              = True,
+    )
+    result4b = run(params4b)
+    _print_result(result4b)
