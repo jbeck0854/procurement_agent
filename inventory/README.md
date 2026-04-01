@@ -345,6 +345,104 @@ Where:
 
 ---
 
+## Interpreting On-Hand Inventory and Safety Stock in Planning Outputs
+
+The values for on-hand inventory, safety stock, scheduled receipts, and backorders
+behave differently from gross demand across the planning horizon. Understanding
+this distinction prevents misreading the weekly drill-down outputs.
+
+---
+
+### Decision-point inventory snapshot
+
+At the end of the historical simulation, a single **decision-point** inventory
+state is recorded for each facility × component. This represents what is
+available at the moment the planning horizon begins:
+
+- **on_hand_qty** — stock physically on hand at the decision point; set to
+  `safety_stock + one week of average demand (SS + μ_D)`
+- **scheduled_receipts_qty** — quantity already on order and inbound; currently
+  zero by design at the decision point
+- **backorder_qty** — unfilled demand carried forward; currently zero by design
+  at the decision point
+
+These are **point-in-time values**. They do not change as the forecast advances
+week by week — they capture the starting inventory position at the beginning of
+the planning window.
+
+---
+
+### Safety stock
+
+**safety_stock_qty** is a policy-computed buffer derived from historical demand
+and lead-time statistics per facility × component. It represents the minimum
+inventory cushion required to achieve the 95% service level target.
+
+It is computed once per forecast run — not separately for each future week.
+In all planning outputs it appears as a **fixed threshold** for a given facility
+× component pair, identical across every row of the horizon.
+
+---
+
+### Why on_hand and safety_stock look constant in weekly outputs
+
+When using weekly drill-down helpers (Procurement Status, Triggered Rows,
+Procurement Requirement Drill-Down), `on_hand_qty` and `safety_stock_qty` do
+not change from week to week for a given facility × component. **This is
+intentional.**
+
+The weekly view asks: *"Given our starting inventory position and policy buffer,
+in which weeks does that week's gross demand exceed what we have?"* The starting
+inventory position and safety stock buffer are the same fixed reference across
+every week of the horizon — only gross demand varies week to week.
+
+The purpose of the weekly view is to identify **which weeks create shortfalls**,
+not to simulate ongoing inventory depletion. The historical depletion simulation
+already ran; this view is a planning decision tool looking forward from a fixed
+starting point.
+
+---
+
+### How the LP uses these values differently
+
+The LP does not subtract on-hand inventory separately for each forecast week.
+Instead, it applies the inventory offset **once** against the total horizon
+gross demand per facility:
+
+```
+LP demand floor = max(0,
+    SUM(gross_requirement across all forecast weeks)
+  + backorder_qty  +  safety_stock_qty
+  − on_hand_qty    −  scheduled_receipts_qty
+)
+```
+
+This is why the **Aggregated Procurement Need** output is materially larger than
+the sum of weekly net requirement values from Procurement Status. The LP sizes
+for the full horizon; the weekly view checks coverage one week at a time.
+
+---
+
+### Cold-start vs decision-point (for reference)
+
+The historical simulation begins with on_hand initialized at **65% of the
+base-stock target** — a warm-up assumption to seed realistic early replenishment
+behavior in the historical inventory trace.
+
+The planning horizon uses a **separate decision-point snapshot** taken from the
+final week of the historical simulation, where on_hand is anchored at
+`SS + μ_D`. These are two distinct concepts that should not be confused:
+
+| | What it is | Used for |
+|---|---|---|
+| Cold-start (65% × S) | Historical simulation warm-up | Generating representative inventory history |
+| Decision-point snapshot (SS + μ_D) | Starting inventory at the planning horizon | Driving procurement requirements and LP demand floor |
+
+All planning helpers and the LP use the **decision-point snapshot**, not the
+cold-start value.
+
+---
+
 ## Important design rules
 
 - Inventory is derived from historical BOM-implied component demand
