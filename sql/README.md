@@ -216,16 +216,21 @@ Week-by-week procurement trigger view. Applies the decision-point inventory stat
 
 **Key columns**
 - `forecast_run_id`
-- `target_week_date`
+- `target_week_date` — calendar date of the forecast week
+- `horizon_week` — sequential week index within the planning horizon (1 = first week, 20 = last); useful for sorting and display
 - `facility_id`
 - `product_key`
 - `gross_requirement` — that week's BOM-exploded component demand
-- `on_hand_qty` — decision-point on-hand stock (fixed across all horizon weeks)
-- `scheduled_receipts_qty` — on-order at decision point (fixed; currently 0)
-- `backorder_qty` — unfilled demand at decision point (fixed; currently 0)
-- `safety_stock_qty` — policy buffer per facility × product (fixed across horizon)
+- `on_hand_qty` (**Starting OH**) — decision-point on-hand stock; fixed across all horizon weeks
+- `scheduled_receipts_qty` — on-order at decision point; fixed (currently 0)
+- `backorder_qty` — unfilled demand at decision point; fixed (currently 0)
+- `safety_stock_qty` (**SS Floor**) — policy buffer; fixed across horizon; pre-deducted once in `available_above_ss`
 - `base_stock_target_qty` — base-stock target S from inventory policy
-- `net_requirement` — `max(0, gross + backorder + SS − on_hand − sched_rec)` applied per week
+- `available_above_ss` — `max(0, on_hand + SR − BO − SS)`; usable inventory above the SS floor; computed once per series
+- `remaining_inventory` — `max(0, available_above_ss − cumulative gross from prior weeks)`; decreases each week
+- `net_requirement` — `max(0, gross_N − remaining_inventory_N)`; stateful rolling depletion; SS pre-deducted once, NOT added per week
+
+**Formula validation note:** `net_requirement = gross − remaining` (not `gross + SS − on_hand`). SS is pre-deducted in `available_above_ss`, so adding it again per week would double-count it. When `on_hand ≥ SS`, `SUM(net_requirement over all weeks) = LP demand floor`.
 
 ---
 
@@ -247,8 +252,14 @@ Where:
 - `μ_L` = average lead time in weeks
 - `σ_L` = std dev of lead time in weeks
 
-### Net procurement requirement
-`net_requirement = max(0, gross_requirement + backorder_qty + safety_stock_qty - on_hand_qty - scheduled_receipts_qty)`
+### Net procurement requirement (weekly stateful depletion)
+```
+available_above_ss = max(0, on_hand + SR − BO − SS)   [once per series]
+remaining_N        = max(0, available_above_ss − cumulative_gross_{weeks 1..N−1})
+net_requirement_N  = max(0, gross_N − remaining_N)
+```
+SS is pre-deducted once in `available_above_ss`. It is NOT added per week.
+When `on_hand ≥ SS`: `SUM(net_requirement_N) = LP demand floor`.
 
 ---
 

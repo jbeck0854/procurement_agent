@@ -198,18 +198,18 @@ BOM translation explainer — shows which components make up each finished SKU a
 
 **Step 1 — Procurement Status (weekly trigger signal):**
 
-Shows *where* and *when* procurement is activated across the planning horizon — the specific weeks and facilities where existing inventory falls short.
+Shows *where* and *when* procurement is activated across the planning horizon using stateful rolling depletion. Forecast demand depletes starting inventory week by week; net requirement is positive only once the inventory above the safety stock floor is exhausted.
 
-| Component | On-Hand | Safety Stock | Weekly Gross | Weekly Net | Status |
+| Component | On-Hand | Safety Stock | Triggered Gross | Net Req (triggered weeks) | Status |
 |---|---|---|---|---|---|
-| transistors | ~X | ~Y | ~29,006 | ~29,006 | 🔴 Action required |
-| power_devices | ~X | ~Y | ~12,815 | ~12,815 | 🔴 Action required |
-| integrated_circuit_components | ... | ... | ~2,617 | ~2,617 | 🟡 Monitor |
-| microprocessors | ... | ... | ~43 | ~43 | 🟢 Covered |
+| transistors | ~X | ~Y | see output | see output | 🔴 Action required |
+| power_devices | ~X | ~Y | see output | see output | 🔴 Action required |
+| integrated_circuit_components | ... | ... | see output | see output | 🟡 Monitor |
+| microprocessors | ... | ... | see output | see output | 🟢 Covered |
 
-*These figures reflect triggered weeks only — the subset of the horizon where on-hand coverage is insufficient. Most weeks are covered; these are the gaps.*
+*These figures reflect triggered weeks only — weeks where cumulative demand has depleted available inventory below the safety stock floor. on_hand and safety_stock appear constant per series (decision-point values); the rolling state is in the "Remaining" column.*
 
-> "This tells us which components have inventory shortfalls and which periods they occur. Transistors and power_devices require procurement action this cycle."
+> "This tells us which components have inventory shortfalls and in which weeks they occur. Transistors and power_devices require procurement action this cycle."
 
 ---
 
@@ -218,14 +218,14 @@ Shows *where* and *when* procurement is activated across the planning horizon �
 **Suggested query:** "Show aggregated procurement need for transistors."
 
 **Agent returns:**
-The horizon-level procurement need the LP will actually optimize against. The inventory offset (on-hand stock, safety stock, scheduled receipts) is applied once across the full horizon — not week by week — producing the correct total quantity to source from suppliers.
+The horizon-level procurement need the LP will actually optimize against. The inventory offset (on-hand stock, safety stock, scheduled receipts) is applied once across the full horizon — not week by week — producing the correct total quantity to source from suppliers. When on_hand >= SS, this equals the sum of weekly net requirements from Procurement Status.
 
 | Component | Horizon Gross Demand | Inventory Offset | LP Demand Floor |
 |---|---|---|---|
 | transistors | large | applied once | the optimizer's target |
 | power_devices | large | applied once | the optimizer's target |
 
-*Exact figures shown on screen. These are materially larger than the weekly trigger values — because the LP is sizing for the full planning horizon, not a single week.*
+*Exact figures shown on screen.*
 
 > "The LP optimization in the next step will allocate supplier volume to cover this total. The weekly trigger signal told us *where* procurement is needed; this tells us *how much* to buy in total."
 
@@ -303,11 +303,11 @@ to isolate where and when procurement is triggered.
 | **Triggered rows** | Subset of weekly rows where net requirement > 0 | No — weekly subset |
 | **Aggregated Procurement Need** | Horizon-level net requirement, inventory offset applied once per facility | **Yes — LP demand floor** |
 
-Most weeks have gross demand but zero net requirement. The weekly trigger signal
-shows the shortfall weeks. The LP does not sum these per-week values — it
-computes the correct horizon total by applying the inventory offset once against
-the full gross demand, which is materially larger than the sum of triggered-week
-net values.
+Most weeks have gross demand but zero net requirement. The weekly view uses
+stateful rolling depletion: gross demand depletes the usable inventory above
+the SS floor week by week; procurement triggers only once that usable pool is
+exhausted. When `on_hand ≥ SS` at the decision point (which is always true by
+design), `SUM(weekly net_req) = LP demand floor`. The two outputs reconcile.
 
 ---
 

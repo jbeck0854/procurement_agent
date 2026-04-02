@@ -277,17 +277,15 @@ def format_procurement_status(conn, forecast_run_id=None) -> str:
         )
         full_horizon_gross = float(cur.fetchone()[0])
 
-        # Per-component aggregates using consistent triggered-row scope.
+        # Per-component aggregates over triggered rows (net_requirement > 0).
         #
-        # All six formula inputs (gross, backorder, SS, on_hand, sched, net)
-        # are summed over the same subset of rows: those where net_requirement > 0.
-        # This ensures the column totals satisfy the formula exactly:
-        #   SUM(triggered_gross) + SUM(triggered_backorder) + SUM(triggered_SS)
-        #   - SUM(triggered_on_hand) - SUM(triggered_sched) = SUM(net_requirement)
+        # on_hand and SS are decision-point constants (same value for every
+        # forecast week within a facility × product series).  Their sums here
+        # represent the aggregate starting inventory and policy buffer across
+        # facilities and triggered weeks — useful context, not a formula identity.
         #
-        # on_hand and SS are constant per (facility, product) across all forecast
-        # weeks, so summing over triggered rows captures the per-facility values
-        # for only the facilities and weeks where procurement is required.
+        # With stateful depletion, net_requirement = gross - remaining_inventory,
+        # so the column totals do not maintain the old formula identity.
         cur.execute(
             """
             SELECT
@@ -343,9 +341,12 @@ def format_procurement_status(conn, forecast_run_id=None) -> str:
         "  See the Aggregated Procurement Need output for the quantity the",
         "  optimizer actually allocates across suppliers.",
         "",
-        "  on_hand and safety_stock appear constant across weeks in this output.",
-        "  This is intentional — both are decision-point values (fixed at the",
-        "  start of the horizon). Only gross demand varies week to week.",
+        "  on_hand_qty and safety_stock_qty appear constant per series in this",
+        "  output — both are decision-point values fixed at the start of the",
+        "  horizon. Net requirement is computed via stateful rolling depletion:",
+        "  each week's gross demand reduces the available inventory carried",
+        "  forward, so procurement triggers only once the starting stock above",
+        "  the safety stock floor is exhausted across cumulative weeks.",
         "",
         _rule("How This Differs from Component Requirements"),
         f"  Full-horizon gross demand     : {full_horizon_gross:>12,.0f} units",
@@ -366,14 +367,26 @@ def format_procurement_status(conn, forecast_run_id=None) -> str:
         f"  Planning horizon end   : {horizon_end}",
         f"  Forecast run ID        : {run_id}",
         "",
-        _rule("Procurement Formula"),
-        "  net_requirement = max( 0,",
-        "      gross_requirement        [+]   BOM-translated forecast demand",
-        "    + backorder_qty            [+]   unfilled demand carried forward",
-        "    + safety_stock_qty         [+]   policy buffer (95% service level)",
-        "    - on_hand_qty              [-]   inventory at decision point",
-        "    - scheduled_receipts_qty   [-]   on-order at decision point",
-        "  )",
+        _rule("How Weekly Net Requirement Is Computed"),
+        "  Step 1 — Available above SS floor (computed once per facility × component):",
+        "    available_above_ss = max(0, on_hand + SR − BO − safety_stock)",
+        "    This is the inventory that demand is allowed to consume.",
+        "    Safety stock is reserved here as an untouchable floor.",
+        "",
+        "  Step 2 — Remaining usable inventory at the start of each week:",
+        "    remaining_N = max(0, available_above_ss − cumulative_gross_{weeks 1..N−1})",
+        "    Decreases each week as prior demand depletes the usable pool.",
+        "    When remaining_N = 0: the SS floor has been reached.",
+        "",
+        "  Step 3 — This week's net procurement requirement:",
+        "    net_requirement_N = max(0, gross_N − remaining_N)",
+        "    Procurement is triggered when gross demand exceeds remaining inventory.",
+        "",
+        "  WHY safety_stock is NOT added in Step 3:",
+        "    SS was already pre-deducted in Step 1. Adding it again per week",
+        "    would inflate requirements by SS × (number of triggered weeks).",
+        "    SS is a one-time reserve, not a weekly replenishment target.",
+        "    Proof: SUM(net_req) = SUM(gross) − available_above_ss = LP demand floor.",
         "",
         _rule("Metric Definitions"),
         "  gross_requirement        [+]",
@@ -385,43 +398,45 @@ def format_procurement_status(conn, forecast_run_id=None) -> str:
         "    Unfilled demand carried over at the decision point.",
         "    Currently 0 — set to zero at the planning decision point by design.",
         "",
-        "  safety_stock_qty         [+]",
+        "  safety_stock_qty  [SS Floor — context only in this table]",
         "    Policy-required buffer stock per facility × component.",
         "    Periodic-review base-stock formula, z = 1.65 (95% service level).",
-        "    Fixed at the decision point — the same physical value applies to",
-        "    every forecast week. In the summary table below it is summed over",
-        "    procurement-triggered rows only, not across the full horizon.",
+        "    Role in the formula: pre-deducted once in available_above_ss.",
+        "    NOT added per week in net_requirement — see formula section above.",
+        "    Shown here as context: summed over triggered rows to indicate total",
+        "    SS reserves held across the facilities where procurement activated.",
         "",
-        "  on_hand_qty              [-]",
-        "    Inventory on hand at the decision point.",
-        "    Set to safety_stock + one week of average demand (SS + μ_D).",
-        "    Fixed at the decision point — the same physical value applies to",
-        "    every forecast week. In the summary table below it is summed over",
-        "    procurement-triggered rows only, not across the full horizon.",
+        "  on_hand_qty  [Starting OH — context only in this table]",
+        "    Inventory on hand at the decision point (SS + μ_D per facility).",
+        "    Fixed — the same for every forecast week in a series.",
+        "    Role in the formula: used to derive available_above_ss.",
+        "    Shown here as context: summed over triggered rows to indicate total",
+        "    starting stock held across the facilities where procurement activated.",
         "",
         "  scheduled_receipts_qty   [-]",
         "    Quantity already on order at the decision point.",
         "    Currently 0 — set to zero at the planning decision point by design.",
         "",
         "  net_requirement",
-        "    Weekly net requirement after all offsets.",
-        "    Positive only in weeks and facilities where on-hand inventory",
-        "    plus safety stock coverage is insufficient for that week's demand.",
-        "    The LP does NOT sum these per-week values as its demand floor —",
-        "    it applies the inventory offset once at the horizon level.",
+        "    Weekly procurement trigger after stateful rolling depletion.",
+        "    Positive only in weeks where this week's gross demand exceeds the",
+        "    inventory remaining after all prior weeks have consumed from the",
+        "    starting stock above the safety stock floor.",
+        "    When on_hand >= SS at the decision point, SUM(weekly net_req) equals",
+        "    the LP horizon-level demand floor exactly.",
         "    See the Aggregated Procurement Need output for the LP demand floor.",
         "",
         _rule("Procurement Signal by Component"),
-        "  Metrics summed over procurement-triggered rows (net_requirement > 0).",
-        "  on_hand and safety stock reflect values for those rows and facilities.",
+        "  Triggered rows only (net_requirement > 0). Starting OH and SS Floor",
+        "  are decision-point constants shown for context, not formula inputs.",
         "",
         (
             f"  {'Component':<36}"
-            f" {'Gross Req [+]':>13}"
-            f" {'On Hand [-]':>11}"
-            f" {'Sched Rec [-]':>13}"
-            f" {'Backorder [+]':>13}"
-            f" {'Safety Stk [+]':>14}"
+            f" {'Gross Req':>13}"
+            f" {'Starting OH':>11}"
+            f" {'Sched Rec':>13}"
+            f" {'Backorder':>13}"
+            f" {'SS Floor':>14}"
             f" {'Net Req':>8}"
         ),
         _rule(),
@@ -560,11 +575,13 @@ def get_procurement_requirement_drilldown(
                     r.target_week_date,
                     r.facility_id,
                     p.product                   AS component,
+                    r.horizon_week,
                     r.gross_requirement,
                     r.on_hand_qty,
                     r.scheduled_receipts_qty,
                     r.backorder_qty,
                     r.safety_stock_qty,
+                    r.remaining_inventory,
                     r.net_requirement
                 FROM vw_procurement_requirement r
                 JOIN dim_product p ON p.product_key = r.product_key
@@ -582,11 +599,13 @@ def get_procurement_requirement_drilldown(
                     r.target_week_date,
                     r.facility_id,
                     p.product                   AS component,
+                    r.horizon_week,
                     r.gross_requirement,
                     r.on_hand_qty,
                     r.scheduled_receipts_qty,
                     r.backorder_qty,
                     r.safety_stock_qty,
+                    r.remaining_inventory,
                     r.net_requirement
                 FROM vw_procurement_requirement r
                 JOIN dim_product p ON p.product_key = r.product_key
@@ -614,13 +633,13 @@ def get_procurement_requirement_drilldown(
         scope_label = f"{product_name}  ·  all {n_fac} facilities"
         mode_note   = "All facilities — all forecast weeks"
 
-    # Column totals
-    tot_gross  = sum(float(r[3]) for r in rows)
-    tot_oh     = sum(float(r[4]) for r in rows)
-    tot_sched  = sum(float(r[5]) for r in rows)
-    tot_bo     = sum(float(r[6]) for r in rows)
-    tot_ss     = sum(float(r[7]) for r in rows)
-    tot_net    = sum(float(r[8]) for r in rows)
+    # Column totals (horizon_week at [3]; remaining at [9] — not additive)
+    tot_gross  = sum(float(r[4]) for r in rows)
+    tot_oh     = sum(float(r[5]) for r in rows)
+    tot_sched  = sum(float(r[6]) for r in rows)
+    tot_bo     = sum(float(r[7]) for r in rows)
+    tot_ss     = sum(float(r[8]) for r in rows)
+    tot_net    = sum(float(r[10]) for r in rows)
 
     lines = [
         "═" * _W,
@@ -632,62 +651,77 @@ def get_procurement_requirement_drilldown(
         f"  Forecast run   : {run_id}",
         f"  Rows returned  : {len(rows)}",
         "",
-        _rule("Field Notes"),
-        "  gross_requirement      varies week by week (BOM × predicted demand)",
-        "  on_hand_qty            fixed at the decision point across all horizon weeks",
-        "  safety_stock_qty       fixed at the decision point across all horizon weeks",
-        "  scheduled_receipts_qty currently zero by design at the decision point",
-        "  backorder_qty          currently zero by design at the decision point",
-        "  net_requirement        positive only when gross + SS exceeds on-hand coverage",
+        _rule("Column Guide"),
+        "  Horizon Wk    — week 1 = first forecast week, 20 = last",
+        "  Week Date     — calendar date of the forecast week",
+        "  Gross Req     — BOM-translated forecast demand for this week",
+        "  Starting OH   — on_hand at the decision point [FIXED per series]",
+        "  SS Floor      — safety stock threshold [FIXED per series]",
+        "  Remaining     — usable inventory above SS floor at START of this week",
+        "                  = max(0, (Starting OH + SR − BO − SS Floor)",
+        "                           − cumulative gross from prior weeks)",
+        "                  decreases each week as gross demand is consumed",
+        "  Net Req       — max(0, Gross Req − Remaining)",
+        "                  procurement needed this week",
+        "                  0 while Remaining covers gross demand; positive once",
+        "                  the usable pool is exhausted",
         "",
-        "  Why on_hand and safety_stock look the same every week:",
-        "  Both are point-in-time values captured at the start of the planning",
-        "  horizon — they represent the fixed inventory position from which the",
-        "  planning decision is made. This view asks which weeks exceed that",
-        "  starting position, not how inventory depletes across the horizon.",
+        "  WHY SS is not re-added per week:",
+        "    SS was already pre-deducted when computing Starting OH − SS = usable pool.",
+        "    Adding SS again in the net_requirement formula would double-count it.",
+        "    Proof: SUM(Net Req, all weeks) = SUM(Gross) − usable = LP demand floor.",
         "",
         _rule("Source"),
         "  vw_procurement_requirement  (grain: forecast_run_id × week × facility × product)",
-        "  Formula: max(0, gross_req + backorder + safety_stock - on_hand - sched_rec)",
+        "  net_requirement_N = max(0, gross_N − remaining_inventory_N)",
+        "  remaining_N       = max(0, available_above_ss − cumulative_gross_prior)",
+        "  available_above_ss = max(0, on_hand + SR − BO − safety_stock)  [once per series]",
         "",
         _rule("Detail"),
         (
-            f"  {'Week':<12}"
+            f"  {'Wk':>3}"
+            f"  {'Week Date':<12}"
             f" {'Facility':<10}"
             f" {'Gross Req':>10}"
-            f" {'On Hand':>10}"
+            f" {'Starting OH':>11}"
             f" {'Sched Rec':>10}"
             f" {'Backorder':>10}"
-            f" {'Safety Stk':>11}"
+            f" {'SS Floor':>9}"
+            f" {'Remaining':>10}"
             f" {'Net Req':>8}"
         ),
         _rule(),
     ]
 
     for r in rows:
-        week_date, fac, _, gross, oh, sched, bo, ss, net = r
+        week_date, fac, _, hw, gross, oh, sched, bo, ss, remaining, net = r
         lines.append(
+            f"  {int(hw):>3}"
             f"  {str(week_date):<12}"
             f" {fac:<10}"
             f" {float(gross):>10,.0f}"
-            f" {float(oh):>10,.0f}"
+            f" {float(oh):>11,.0f}"
             f" {float(sched):>10,.0f}"
             f" {float(bo):>10,.0f}"
-            f" {float(ss):>11,.0f}"
+            f" {float(ss):>9,.0f}"
+            f" {float(remaining):>10,.0f}"
             f" {float(net):>8,.0f}"
         )
 
     lines += [
         _rule(),
         (
+            f"  {'':>3}"
             f"  {'TOTAL':<23}"
             f" {tot_gross:>10,.0f}"
-            f" {tot_oh:>10,.0f}"
+            f" {tot_oh:>11,.0f}"
             f" {tot_sched:>10,.0f}"
             f" {tot_bo:>10,.0f}"
-            f" {tot_ss:>11,.0f}"
+            f" {tot_ss:>9,.0f}"
+            f" {'—':>10}"
             f" {tot_net:>8,.0f}"
         ),
+        "  (Remaining not summed — represents per-week inventory state, not additive)",
         "",
         "═" * _W,
     ]
@@ -773,11 +807,13 @@ def get_triggered_procurement_rows(
                 r.target_week_date,
                 r.facility_id,
                 p.product                   AS component,
+                r.horizon_week,
                 r.gross_requirement,
                 r.on_hand_qty,
                 r.scheduled_receipts_qty,
                 r.backorder_qty,
                 r.safety_stock_qty,
+                r.remaining_inventory,
                 r.net_requirement
             FROM vw_procurement_requirement r
             JOIN dim_product p ON p.product_key = r.product_key
@@ -811,11 +847,11 @@ def get_triggered_procurement_rows(
         scope_label = f"all {n_comp} components  ·  all {n_fac} facilities"
         mode_note   = "All components · all facilities"
 
-    # Totals (sched_rec and backorder omitted — zero by design at decision point)
-    tot_gross = sum(float(r[3]) for r in rows)
-    tot_oh    = sum(float(r[4]) for r in rows)
-    tot_ss    = sum(float(r[7]) for r in rows)
-    tot_net   = sum(float(r[8]) for r in rows)
+    # Totals: horizon_week at [3], gross at [4], on_hand at [5], ss at [8], net at [10]
+    tot_gross = sum(float(r[4]) for r in rows)
+    tot_oh    = sum(float(r[5]) for r in rows)
+    tot_ss    = sum(float(r[8]) for r in rows)
+    tot_net   = sum(float(r[10]) for r in rows)
 
     lines = [
         "═" * _W,
@@ -828,53 +864,68 @@ def get_triggered_procurement_rows(
         f"  Triggered rows : {len(rows)}",
         "",
         _rule("What This Shows"),
-        "  Only weeks and facilities where existing inventory and safety",
-        "  stock coverage is insufficient to meet forecast demand.",
+        "  Only weeks where this week's gross demand exceeds the remaining",
+        "  usable inventory (above SS floor) after prior weeks consumed stock.",
         "  Rows where net_requirement = 0 are excluded.",
+        "",
+        "  Column guide:",
+        "    Wk #        — horizon week number (1 = first forecast week)",
+        "    Gross Req   — BOM-translated demand for this week",
+        "    Starting OH — on_hand at decision point [FIXED per series]",
+        "    SS Floor    — safety stock threshold [FIXED per series; pre-deducted",
+        "                  from Starting OH to derive the usable pool]",
+        "    Remaining   — usable inventory above SS floor at START of this week",
+        "    Net Req     — max(0, Gross Req − Remaining)",
         "",
         _rule("Source"),
         "  vw_procurement_requirement  WHERE net_requirement > 0",
-        "  Formula: max(0, gross_req + backorder + safety_stock - on_hand - sched_rec)",
+        "  net_requirement_N = max(0, gross_N − remaining_inventory_N)",
+        "  remaining_N       = max(0, available_above_ss − cumulative_gross_prior)",
+        "  available_above_ss = max(0, Starting OH + SR − BO − SS Floor)  [once per series]",
         "",
         _rule("Triggered Detail"),
         (
-            f"  {'Component':<34}"
-            f" {'Week':<12}"
+            f"  {'Wk':>3}"
+            f"  {'Component':<32}"
+            f" {'Week Date':<12}"
             f" {'Facility':<10}"
             f" {'Gross Req':>10}"
-            f" {'On Hand':>10}"
-            f" {'Safety Stk':>11}"
+            f" {'Starting OH':>11}"
+            f" {'SS Floor':>9}"
+            f" {'Remaining':>10}"
             f" {'Net Req':>8}"
         ),
         _rule(),
     ]
 
     for r in rows:
-        week_date, fac, comp, gross, oh, _, _, ss, net = r
+        week_date, fac, comp, hw, gross, oh, _, _, ss, remaining, net = r
         lines.append(
-            f"  {comp:<34}"
+            f"  {int(hw):>3}"
+            f"  {comp:<32}"
             f" {str(week_date):<12}"
             f" {fac:<10}"
             f" {float(gross):>10,.0f}"
-            f" {float(oh):>10,.0f}"
-            f" {float(ss):>11,.0f}"
+            f" {float(oh):>11,.0f}"
+            f" {float(ss):>9,.0f}"
+            f" {float(remaining):>10,.0f}"
             f" {float(net):>8,.0f}"
         )
 
     lines += [
         _rule(),
         (
-            f"  {'TOTAL':<57}"
+            f"  {'':>3}"
+            f"  {'TOTAL':<55}"
             f" {tot_gross:>10,.0f}"
-            f" {tot_oh:>10,.0f}"
-            f" {tot_ss:>11,.0f}"
+            f" {tot_oh:>11,.0f}"
+            f" {tot_ss:>9,.0f}"
+            f" {'—':>10}"
             f" {tot_net:>8,.0f}"
         ),
         "",
-        "  Note: Sched Rec and Backorder are omitted from the detail columns",
-        "  because both are zero at the decision point by design. The formula",
-        "  still accounts for them — they will appear here if non-zero in",
-        "  future planning runs.",
+        "  Note: Sched Rec and Backorder omitted (zero by design at decision point).",
+        "  Remaining not summed — represents per-week inventory state, not additive.",
         "",
         "═" * _W,
     ]

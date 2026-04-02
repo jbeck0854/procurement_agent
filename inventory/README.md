@@ -54,16 +54,19 @@ Contains:
 ---
 
 ### 3) `vw_procurement_requirement`
-LP-ready procurement requirement view
+Weekly inventory trigger view for explainability
 
 **Grain**
 - `forecast_run_id × target_week_date × facility_id × product_key`
 
 Contains:
-- gross requirement
-- inventory state at the decision point
-- safety stock
-- net requirement
+- gross requirement (BOM-translated demand for this week)
+- decision-point inventory state (on_hand, SR, backorder — constant per series)
+- safety stock (constant per series)
+- remaining_inventory (rolling balance: inventory above SS floor after prior weeks consumed)
+- net requirement (demand this week that exceeds remaining_inventory)
+
+**Note:** This view is for planning explainability. The LP uses `vw_component_requirement_lp` and applies the inventory offset once at the horizon level.
 
 ---
 
@@ -341,7 +344,30 @@ Where:
 
 ## Procurement requirement formula
 
-`net_requirement = max(0, gross_requirement + backorder_qty + safety_stock_qty - on_hand_qty - scheduled_receipts_qty)`
+Stateful rolling depletion across forecast weeks:
+
+```
+Step 1 — Usable inventory above SS floor (computed once per facility × component):
+  available_above_ss = max(0, on_hand + SR − BO − safety_stock)
+
+Step 2 — Remaining usable inventory at the start of week N:
+  remaining_N = max(0, available_above_ss − cumulative_gross_{weeks 1..N−1})
+  Decreases each week as prior gross demand consumes the usable pool.
+
+Step 3 — Net procurement requirement for week N:
+  net_requirement_N = max(0, gross_N − remaining_N)
+```
+
+### Why safety stock is NOT added in Step 3
+
+Safety stock is pre-deducted in Step 1 when computing `available_above_ss`. The semantics of `remaining_N = 0` are "the SS floor has been reached — no usable inventory remains above it." At that point `net_req = gross_N`, meaning all of this week's demand must be procured. Adding SS again per week would inflate requirements by `SS × (triggered weeks)` — SS is a one-time reserve, not a weekly target.
+
+**Proof via LP reconciliation:**
+When `on_hand >= SS`: `SUM(net_requirement_N) = SUM(gross) − available_above_ss = LP demand floor`. SS cancels identically.
+
+### Planning week / horizon week
+
+`horizon_week` in `vw_procurement_requirement` is a sequential integer (1 = first forecast week, up to 20 = last). It is computed as `ROW_NUMBER() OVER (PARTITION BY forecast_run_id, facility_id, product_key ORDER BY target_week_date)`. Shown alongside the calendar date in all weekly drill-down outputs.
 
 ---
 
@@ -384,22 +410,22 @@ In all planning outputs it appears as a **fixed threshold** for a given facility
 
 ---
 
-### Why on_hand and safety_stock look constant in weekly outputs
+### Why Starting OH and SS Floor look constant in weekly outputs
 
-When using weekly drill-down helpers (Procurement Status, Triggered Rows,
-Procurement Requirement Drill-Down), `on_hand_qty` and `safety_stock_qty` do
-not change from week to week for a given facility × component. **This is
-intentional.**
+`on_hand_qty` (labelled **Starting OH**) and `safety_stock_qty` (labelled
+**SS Floor**) do not change from week to week for a given facility × component.
+**This is intentional** — both are decision-point snapshots taken once at the
+beginning of the planning horizon.
 
-The weekly view asks: *"Given our starting inventory position and policy buffer,
-in which weeks does that week's gross demand exceed what we have?"* The starting
-inventory position and safety stock buffer are the same fixed reference across
-every week of the horizon — only gross demand varies week to week.
+The rolling depletion is captured in **Remaining** (`remaining_inventory`),
+which decreases each week as gross demand consumes the usable pool above the SS
+floor. `Starting OH` and `SS Floor` are shown as fixed reference context, not
+as running balances.
 
-The purpose of the weekly view is to identify **which weeks create shortfalls**,
-not to simulate ongoing inventory depletion. The historical depletion simulation
-already ran; this view is a planning decision tool looking forward from a fixed
-starting point.
+**What changes week to week:**
+- `gross_requirement` — the BOM-translated demand for that specific week
+- `remaining_inventory` — how much usable stock is left at the start of this week
+- `net_requirement` — demand that exceeds remaining (0 until the usable pool is exhausted)
 
 ---
 
@@ -417,9 +443,10 @@ LP demand floor = max(0,
 )
 ```
 
-This is why the **Aggregated Procurement Need** output is materially larger than
-the sum of weekly net requirement values from Procurement Status. The LP sizes
-for the full horizon; the weekly view checks coverage one week at a time.
+When `on_hand >= SS` at the decision point, the **Aggregated Procurement Need**
+(LP demand floor) equals `SUM(weekly net_requirement)` from Procurement Status
+exactly — both formulas resolve to the same horizon total. If `on_hand < SS`,
+the LP additionally captures the SS deficit, making LP D slightly larger.
 
 ---
 

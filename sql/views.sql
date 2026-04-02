@@ -200,15 +200,25 @@ GROUP BY
 --
 -- Inventory state (on_hand, scheduled_receipts, backorder) is read from the
 -- last historical week of fact_component_inventory_history (the decision point).
--- These are FIXED starting conditions — the same for all forecast weeks.
+-- These are FIXED starting conditions representing the inventory position at
+-- the beginning of the planning horizon.
 --
 -- scheduled_receipts_qty = total outstanding on-order at decision point (MRP convention).
 --
--- Formula:
---   net_requirement = max(0,
---       gross_requirement + backorder_qty + safety_stock_qty
---       - on_hand_qty - scheduled_receipts_qty
---   )
+-- Stateful depletion logic:
+--   available_above_ss  = GREATEST(0, on_hand + SR − BO − SS)
+--     → usable inventory above the safety stock floor; computed once per series.
+--
+--   remaining_inventory = GREATEST(0, available_above_ss − cumulative_gross_prior_weeks)
+--     → inventory still available at the START of each week, after all prior
+--       weeks' gross demand has been consumed.
+--
+--   net_requirement     = GREATEST(0, gross_requirement − remaining_inventory)
+--     → procurement triggered only when this week's demand exceeds what remains.
+--
+-- Key property: when on_hand >= SS, SUM(net_requirement over all weeks) equals
+-- the LP's horizon-level demand floor exactly. Safety stock is subtracted once
+-- (in available_above_ss), never per-week, so it cannot be double-counted.
 CREATE OR REPLACE VIEW vw_procurement_requirement AS
 WITH decision_point AS (
     SELECT
@@ -220,31 +230,81 @@ WITH decision_point AS (
         inventory_position
     FROM fact_component_inventory_history
     WHERE week_date = (SELECT MAX(week_date) FROM fact_component_inventory_history)
+),
+horizon_with_policy AS (
+    SELECT
+        lp.forecast_run_id,
+        lp.target_week_date,
+        lp.facility_id,
+        lp.product_key,
+        lp.total_component_requirement                               AS gross_requirement,
+        dp.on_hand_qty,
+        dp.scheduled_receipts_qty,
+        dp.backorder_qty,
+        pol.safety_stock_qty,
+        pol.base_stock_target_qty,
+        -- Usable inventory above the SS floor at the decision point.
+        -- SS is subtracted here once so that procurement triggers the moment
+        -- cumulative demand exhausts everything above the SS floor.
+        GREATEST(0::numeric,
+            dp.on_hand_qty
+            + dp.scheduled_receipts_qty
+            - dp.backorder_qty
+            - pol.safety_stock_qty
+        )                                                            AS available_above_ss
+    FROM vw_component_requirement_lp lp
+    JOIN decision_point dp
+        ON  dp.facility_id = lp.facility_id
+        AND dp.product_key = lp.product_key
+    JOIN fact_inventory_policy pol
+        ON  pol.forecast_run_id = lp.forecast_run_id
+        AND pol.facility_id     = lp.facility_id
+        AND pol.product_key     = lp.product_key
+),
+rolling AS (
+    SELECT
+        *,
+        -- Cumulative gross demand consumed in all weeks prior to this one,
+        -- within the same forecast run × facility × product series.
+        -- COALESCE handles the first week (no preceding rows → 0).
+        COALESCE(
+            SUM(gross_requirement) OVER (
+                PARTITION BY forecast_run_id, facility_id, product_key
+                ORDER BY target_week_date
+                ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+            ),
+            0::numeric
+        )                                                            AS cumulative_gross_prior
+    FROM horizon_with_policy
 )
 SELECT
-    lp.forecast_run_id,
-    lp.target_week_date,
-    lp.facility_id,
-    lp.product_key,
-    lp.total_component_requirement          AS gross_requirement,
-    dp.on_hand_qty,
-    dp.scheduled_receipts_qty,
-    dp.backorder_qty,
-    pol.safety_stock_qty,
-    pol.base_stock_target_qty,
-    GREATEST(
-        0::numeric,
-        lp.total_component_requirement
-        + dp.backorder_qty
-        + pol.safety_stock_qty
-        - dp.on_hand_qty
-        - dp.scheduled_receipts_qty
-    )                                       AS net_requirement
-FROM vw_component_requirement_lp lp
-JOIN decision_point dp
-    ON  dp.facility_id = lp.facility_id
-    AND dp.product_key = lp.product_key
-JOIN fact_inventory_policy pol
-    ON  pol.forecast_run_id = lp.forecast_run_id
-    AND pol.facility_id     = lp.facility_id
-    AND pol.product_key     = lp.product_key;
+    forecast_run_id,
+    target_week_date,
+    facility_id,
+    product_key,
+    -- Sequential week position within the planning horizon for this series.
+    -- 1 = first forecast week, 2 = second, ..., 20 = last.
+    ROW_NUMBER() OVER (
+        PARTITION BY forecast_run_id, facility_id, product_key
+        ORDER BY target_week_date
+    )::integer                                                       AS horizon_week,
+    gross_requirement,
+    on_hand_qty,
+    scheduled_receipts_qty,
+    backorder_qty,
+    safety_stock_qty,
+    base_stock_target_qty,
+    available_above_ss,
+    cumulative_gross_prior,
+    -- Remaining usable inventory (above SS floor) at the start of this week.
+    -- Decreases each week as gross demand consumes from available_above_ss.
+    GREATEST(0::numeric,
+        available_above_ss - cumulative_gross_prior
+    )                                                                AS remaining_inventory,
+    -- Net procurement need: demand this week that exceeds remaining inventory.
+    -- SS is NOT added here — it was already pre-deducted in available_above_ss.
+    GREATEST(0::numeric,
+        gross_requirement
+        - GREATEST(0::numeric, available_above_ss - cumulative_gross_prior)
+    )                                                                AS net_requirement
+FROM rolling;
