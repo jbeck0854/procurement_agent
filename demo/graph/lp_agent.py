@@ -61,6 +61,11 @@ def _format_result(result: dict) -> str:
             f"Avg risk: {cost.get('avg_risk_penalty_norm', 0):.4f}"
         )
 
+    # Formula description
+    formula = result.get("formula_description", "")
+    if formula:
+        parts.append(f"\n{formula}")
+
     # Constraint diagnostics
     diag = result.get("constraint_diagnostics", {})
     if diag:
@@ -68,6 +73,20 @@ def _format_result(result: dict) -> str:
             f"\nLP status: {diag.get('lp_status')} | "
             f"Demand satisfied: {diag.get('demand_satisfied')} | "
             f"Share constraints binding: {diag.get('n_share_constraints_binding', 0)}"
+        )
+
+    # Baseline comparison
+    baseline = result.get("baseline", {})
+    if baseline and baseline.get("total_cost_usd"):
+        main_cost = cost.get("total_cost_usd", 0) if cost else 0
+        baseline_cost = baseline["total_cost_usd"]
+        delta = main_cost - baseline_cost
+        delta_pct = (delta / baseline_cost * 100) if baseline_cost else 0
+        parts.append(
+            f"\nBaseline comparison (cost-only, no risk/diversification):"
+            f"\n  Baseline cost: ${baseline_cost:,.2f}"
+            f"\n  Current plan:  ${main_cost:,.2f}"
+            f"\n  Delta: ${delta:+,.2f} ({delta_pct:+.1f}%)"
         )
 
     return "\n".join(parts)
@@ -134,6 +153,8 @@ def _merge_with_previous_params(params: dict) -> dict:
         "order_quantity": 5_000,
         "urgency": False,
         "facility_id": None,
+        "diversification_mode": "none",
+        "forecast_run_id": None,
     }
 
     merged = dict(params)

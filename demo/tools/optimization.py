@@ -26,6 +26,8 @@ def run_optimization(
     urgency: bool = False,
     facility_id: str | None = None,
     exclude_supplier_ids: list[str] | None = None,
+    diversification_mode: str = "none",
+    forecast_run_id: int | None = None,
 ) -> dict:
     """Run LP optimization for a single product and return structured result."""
     params = LPParams(
@@ -39,6 +41,8 @@ def run_optimization(
         order_quantity=order_quantity,
         urgency=urgency,
         exclude_supplier_ids=exclude_supplier_ids or [],
+        diversification_mode=diversification_mode,
+        forecast_run_id=forecast_run_id,
     )
     logger.info(f"[LP_TOOL] Running optimization for product={product}, lambda={lambda_risk}")
     result = run(params)

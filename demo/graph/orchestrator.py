@@ -72,12 +72,32 @@ CHART TOOLS (for chart_agent):
   params: {"country_code": str, "product": str}
 
 PIPELINE TOOLS (for pipeline_agent):
-- "query_forecast_summary": Returns the latest demand forecast summary with weekly totals,
-  forecast horizon, and metadata. No params needed.
-- "query_component_requirements": Returns gross component requirements by product type
-  from the BOM layer. No params needed.
-- "query_procurement_status": Returns which components need procurement action —
-  compares forecast demand vs inventory and safety stock. Shows net requirement. No params needed.
+
+Forecast:
+- "query_forecast_summary": Business-facing production demand forecast summary.
+  Shows planning horizon, total demand, weekly totals, model metadata. No params needed.
+- "query_forecast_drilldown": Week × facility × SKU detail with confidence bounds.
+  params: {"forecast_run_id": int} (optional, 0 = latest)
+- "query_forecast_model_assessment": Model explainability — validation, feature importance, or baseline.
+  params: {"direction": str} — use "validation", "features", or "baseline"
+
+BOM / Component Requirements:
+- "query_component_requirements": Full-horizon gross BOM demand across all components.
+  Shows raw procurement volume before inventory offset. No params needed.
+- "query_bom_translation": Explain how a finished-good SKU maps to procurement components.
+  params: {"semiconductor_id": str} (required, e.g. "SEMICONDUCTOR_6")
+  Optional: {"facility_id": str, "target_week_date": str} for forecast-row explosion.
+
+Inventory / Procurement:
+- "query_procurement_status": Week-by-week inventory-adjusted procurement trigger signal.
+  Shows WHERE and WHEN procurement is activated. NOT the LP demand floor. No params needed.
+- "query_procurement_planning_summary": Combined gross demand + weekly trigger signal. No params needed.
+- "query_aggregated_procurement_need": Horizon-level LP demand floor — the quantity the optimizer
+  actually allocates. params: {"product": str, "facility_id": str} (both optional, filter scope).
+- "query_procurement_drilldown": Full week-by-week detail at component × facility × week grain.
+  params: {"product": str} (required), optional: {"facility_id": str}
+- "query_triggered_procurement_rows": Only weeks/facilities where net requirement > 0.
+  params: {"product": str} (optional), optional: {"facility_id": str}
 
 LP TOOLS (for lp_agent):
 - "run_optimization": Optimize supplier allocation for one product.
@@ -85,9 +105,14 @@ LP TOOLS (for lp_agent):
            "budget_cap": float or null, "compliance_threshold": float,
            "service_level_target": float, "urgency": bool,
            "exclude_supplier_ids": list of supplier ID strings or [],
-           "facility_id": str or null}
+           "facility_id": str or null,
+           "diversification_mode": str — "none", "supplier_share_only", or "country_diversified"}
   Only "product" is required. Defaults: lambda_risk=0.5, max_supplier_share=1.0,
-  compliance_threshold=0.6, service_level_target=1.0, urgency=false, exclude_supplier_ids=[].
+  compliance_threshold=0.6, service_level_target=1.0, urgency=false, exclude_supplier_ids=[],
+  diversification_mode="none".
+  - "none": No diversification constraint.
+  - "supplier_share_only": Enforce max_supplier_share cap per supplier.
+  - "country_diversified": Exactly 3 suppliers, each from a different country, ~33% each (MIP).
 
 HOW TO WRITE WORK ORDERS:
 - objective: One sentence — WHAT the agent should accomplish.
@@ -131,14 +156,41 @@ TASK GENERATION RULES:
   → new params_json: {"product":"transistors","lambda_risk":0.5,"max_supplier_share":0.4,"exclude_supplier_ids":["SUP_HKG_38"]}
 - For urgency scenarios: generate lp_agent with urgency=true.
   CRITICAL: same rule — copy ALL parameters from the most recent lp_agent task, only add urgency=true.
+- For diversification / "diversify across countries" / "different countries" / "diversify":
+  generate lp_agent (phase=2) as the FIRST task, with diversification_mode="country_diversified".
+  CRITICAL: same rule — copy ALL parameters from the most recent lp_agent task.
+  Do NOT generate chart_agent as the first task for diversification requests.
 - For geopolitical/risk context: ALSO generate risk_agent (phase=1). ONLY when user explicitly mentions
   geopolitical, news, tariffs, sanctions, trade policy, or similar keywords.
 - For demand forecast / "what demand" / "forecast" / "planning window":
   generate pipeline_agent (phase=1) with tool="query_forecast_summary".
-- For component requirements / BOM / "what do we need" / "what components":
+- For forecast drill-down / "detail by facility" / "breakdown by SKU":
+  generate pipeline_agent (phase=1) with tool="query_forecast_drilldown".
+- For model assessment / "how was model validated" / "what drives forecast" / "compare to baseline":
+  generate pipeline_agent (phase=1) with tool="query_forecast_model_assessment".
+  Set direction to "validation", "features", or "baseline" based on user intent.
+- For component requirements / "what do we need" / "what components" / "total component demand":
   generate pipeline_agent (phase=1) with tool="query_component_requirements".
-- For inventory check / "do we have enough" / "procurement requirement" / "what to procure":
+  Use this for AGGREGATE component demand across the horizon (how many units of each component).
+- For BOM translation / "what goes into" / "BOM recipe" / "how does SKU translate" /
+  "translate into component" / "how does demand translate" / "BOM breakdown":
+  generate pipeline_agent (phase=1) with tool="query_bom_translation".
+  Use this when the user asks HOW finished-good demand converts to component demand (the recipe/math).
+  If user specifies a semiconductor ID, set semiconductor_id (e.g. "SEMICONDUCTOR_6").
+  If no specific SKU is mentioned, use "SEMICONDUCTOR_6" as default to show the translation logic.
+- For inventory check / "do we have enough" / "procurement status" / weekly trigger:
   generate pipeline_agent (phase=1) with tool="query_procurement_status".
+- For full planning summary (gross demand + trigger signal together):
+  generate pipeline_agent (phase=1) with tool="query_procurement_planning_summary".
+- For LP demand floor / "what does optimizer use" / "aggregated procurement need" / "how much to buy":
+  generate pipeline_agent (phase=1) with tool="query_aggregated_procurement_need".
+  Set product if user specifies one (e.g. "transistors").
+- For drill-down on specific component / "drill down transistors" / "week-by-week detail":
+  generate pipeline_agent (phase=1) with tool="query_procurement_drilldown".
+  Set product (required) and optionally facility_id.
+- For triggered procurement / "which weeks need action" / "where is procurement triggered":
+  generate pipeline_agent (phase=1) with tool="query_triggered_procurement_rows".
+  Optionally set product to filter.
 - For database exploration (counts, filters, "how many", "which"): generate data_agent (phase=1).
 - Do NOT set tool/params for data_agent or risk_agent — they decide their own tools.
 - ALWAYS generate at least one task. Never respond with zero tasks or ask for clarification.
