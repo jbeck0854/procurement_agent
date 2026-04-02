@@ -1,5 +1,38 @@
 # SQL Warehouse Build Order and Planning Layer Documentation
 
+## How to read procurement outputs (READ THIS FIRST)
+
+You have inventory on hand when the planning horizon starts. Some of that
+inventory is reserved as a safety buffer. The rest — everything **above** the
+safety stock floor — is what demand can actually consume week by week.
+Once that usable stock runs out, procurement is triggered.
+
+| Term | What it means |
+|---|---|
+| **Starting OH** | Total on-hand inventory at the start of the horizon. Fixed — same every week. |
+| **SS Floor** | Safety stock reserve. Set aside before any demand is counted. Fixed. |
+| **Available** | Starting OH − SS Floor = the inventory demand is allowed to consume. Computed once. |
+| **Remaining** | How much Available is left at the start of this week. **Decreases each week.** |
+| **Gross Req** | This week's component demand (forecast × BOM). Changes every week. |
+| **Net Req** | Procurement needed = max(0, Gross Req − Remaining). Zero while stock covers demand. |
+
+**Why Starting OH and SS Floor look constant:** They are point-in-time snapshots
+taken once at the start of the planning horizon. Only **Remaining** depletes.
+
+**Example — one facility × one component, 3 weeks**
+`Starting OH = 800 · SS Floor = 200 · Available = 600`
+
+| Wk | Gross Req | Remaining (start of week) | Net Req |
+|----|-----------|--------------------------|---------|
+| 1  | 300       | 600                      | 0       |
+| 2  | 300       | 300                      | 0       |
+| 3  | 280       | 0                        | **280** |
+
+Week 3 triggers because weeks 1 + 2 consumed the full Available pool (300 + 300 = 600).
+Safety stock was never touched — it was reserved from day one.
+
+---
+
 ## Full rebuild order
 
 Run the SQL files in this order:
