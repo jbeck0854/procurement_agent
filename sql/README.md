@@ -58,9 +58,87 @@ Maps finished semiconductor SKUs to procurement-side components.
 ### BOM-exploded forecast views
 `vw_component_requirement_detail`
 - SKU-level exploded component requirement view
+- **Grain:** `forecast_run_id × target_week_date × facility_id × semiconductor_id × product_key`
+- Joins `fact_semiconductor_demand_forecast` to `dim_bom`; computes `gross_component_requirement = predicted_demand × units_per_sku`
+- Used for BOM translation explainability; feeds `vw_component_requirement_lp`
 
 `vw_component_requirement_lp`
-- LP-ready aggregated component requirement view
+- Aggregated LP-ready component requirement view
+- **Grain:** `forecast_run_id × target_week_date × facility_id × product_key`
+- SKU dimension collapsed; sums `gross_component_requirement` across all finished-good SKUs
+- **LP input:** the LP optimizer queries this view directly to obtain horizon gross demand, then applies the inventory offset once per facility to compute the demand floor
+
+---
+
+## Supplier analytics layer
+
+### Supplier dimension
+`dim_supplier`
+
+One row per supplier. Contains all supplier-level risk and logistics attributes.
+
+**Grain**
+- `supplier_key` (one row per supplier)
+
+**Key columns**
+- `supplier_id` — supplier identifier
+- `country_code` — supplier country (used for diversification and country-risk context)
+- `product_key` — procurement component this supplier provides
+- `lead_time_mean` — average lead time in days (required for scoring)
+- `lead_time_stddev` — standard deviation of lead time in days (required for scoring)
+- `lead_time_variance` — variance of lead time (optional; explainability only)
+- `disruption_probability` — synthetic probability of supply disruption `[0,1]`
+- `compliance_eligibility` — governance/customs-derived compliance score `[0,1]`; suppliers below 0.60 are excluded before LP runs
+- `logistics_reliability` — weighted LPI-derived reliability score `[0,1]`
+
+**Pipeline role:** feeds `vw_supplier_complete_profile`; not used directly by LP demand computation
+
+---
+
+### Supplier product profile
+`fact_supplier_product_profile`
+
+One row per supplier. Contains product-level commercial and quality attributes.
+
+**Grain**
+- `supplier_key` (one row per supplier)
+
+**Key columns**
+- `probability_of_defect` — manufacturing defect probability `[0,1]`
+- `baseline_price` — base unit price (USD)
+- `price_volatility` — price volatility score `[0,1]`
+- `bulk_discount` — fractional discount when order quantity ≥ `bulk_units`
+- `bulk_units` — minimum order quantity to activate bulk pricing (units)
+- `hts8` — HTS-8 tariff code for tariff lookup (optional)
+
+**Pipeline role:** feeds `vw_supplier_complete_profile`; not used directly by LP demand computation
+
+---
+
+### Supplier scoring views
+`vw_supplier_complete_profile`
+
+Canonical scoring input. Joins `dim_supplier`, `fact_supplier_product_profile`, and tariff data into a single flat table at the supplier–product grain.
+
+**LP input:** the LP optimizer queries this view to build the eligible supplier pool and pass it to the scoring layer (`analytics/scoring.py`). This is the supplier-side LP input; `vw_component_requirement_lp` is the demand-side LP input.
+
+`vw_supplier_pricing_profile`
+- Debug view for cost, tariff, and bulk pricing fields. Not used by LP or scoring directly.
+
+`vw_supplier_risk_profile`
+- Debug view for risk and logistics fields. Not used by LP or scoring directly.
+
+---
+
+### Analytics context views
+`vw_product_price_history`
+- Monthly product–country price history for charting, price trend analysis, and cost explainability. Not used by LP.
+
+`vw_commodity_price_history`
+- Monthly commodity price history for indirect cost driver context. Not used by LP.
+
+`vw_country_risk_snapshot`
+- Country-level WGI and LPI indicators for risk annotation and supplier-country context visualizations. Not used by LP.
 
 ---
 
@@ -127,26 +205,27 @@ Stores the policy parameters and computed stock targets used for planning.
 ### Procurement requirement
 `vw_procurement_requirement`
 
-Combines forecasted component requirement with inventory state and policy outputs to produce net procurement requirement.
+Week-by-week procurement trigger view. Applies the decision-point inventory state and safety stock policy to each forecast week's gross demand to show where and when procurement is activated.
 
 **Grain**
 - `forecast_run_id × target_week_date × facility_id × product_key`
 
 **Purpose**
-- direct input surface for the LP optimization layer
+- weekly inventory trigger signal for explainability and drill-down
+- **NOT the LP demand floor** — the LP applies the inventory offset once at the horizon level via `vw_component_requirement_lp`; this view applies it per forecast week and is used only for planning diagnostics and agent-facing helpers
 
 **Key columns**
 - `forecast_run_id`
 - `target_week_date`
 - `facility_id`
 - `product_key`
-- `gross_requirement`
-- `on_hand_qty`
-- `scheduled_receipts_qty`
-- `backorder_qty`
-- `safety_stock_qty`
-- `base_stock_target_qty`
-- `net_requirement`
+- `gross_requirement` — that week's BOM-exploded component demand
+- `on_hand_qty` — decision-point on-hand stock (fixed across all horizon weeks)
+- `scheduled_receipts_qty` — on-order at decision point (fixed; currently 0)
+- `backorder_qty` — unfilled demand at decision point (fixed; currently 0)
+- `safety_stock_qty` — policy buffer per facility × product (fixed across horizon)
+- `base_stock_target_qty` — base-stock target S from inventory policy
+- `net_requirement` — `max(0, gross + backorder + SS − on_hand − sched_rec)` applied per week
 
 ---
 
@@ -176,11 +255,11 @@ Where:
 ## How the new planning layer works
 
 1. Forecast finished-good demand
-2. Explode that demand through the BOM into component demand
-3. Compare component demand against benchmark inventory state
-4. Add safety stock / inventory policy outputs
-5. Produce net procurement requirement
-6. Feed that requirement into the LP optimizer
+2. Explode that demand through the BOM into component demand (`vw_component_requirement_lp`)
+3. Compare component demand against benchmark inventory state (`fact_component_inventory_history` decision point)
+4. Add safety stock / inventory policy outputs (`fact_inventory_policy`)
+5. Produce weekly procurement trigger signal (`vw_procurement_requirement`) for explainability
+6. LP computes horizon-level demand floor directly from `vw_component_requirement_lp` + inventory snapshot (offset applied once per facility); LP also loads eligible suppliers from `vw_supplier_complete_profile`
 
 ---
 
@@ -197,3 +276,16 @@ Evaluates whether existing inventory plus policy coverage is enough.
 
 ### LP layer
 Decides how to allocate procurement across suppliers.
+
+**Demand-side inputs (what the LP optimizes against):**
+- `vw_component_requirement_lp` — horizon gross demand by facility × product × week
+- `fact_component_inventory_history` — decision-point on-hand, scheduled receipts, backorder
+- `fact_inventory_policy` — safety stock per facility × product
+
+The LP applies the inventory offset once at the horizon level (not per forecast week) to compute the demand floor per facility, then sums across facilities to get total D.
+
+**Supplier-side input:**
+- `vw_supplier_complete_profile` — eligible supplier pool with cost, risk, compliance, and lead-time data
+
+**Not used by LP for demand:**
+- `vw_procurement_requirement` — week-by-week trigger view; used only for planning explainability
