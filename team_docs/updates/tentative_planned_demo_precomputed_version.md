@@ -144,6 +144,12 @@ This separation helps the system feel like a real decision-support workflow rath
 
 **Precomputed:** Yes — forecasts are already in the database.
 
+**NOTE:** The system implicitly adopts a two-layer risk handling strategy:
+
+ - Inventory layer handles demand uncertainty via safety stock (σ_D-based buffering)
+ - Optimization layer assumes deterministic demand and focuses on supplier-side risk
+
+
 ---
 
 ### 2:30–3:45 — BOM translation to component requirements
