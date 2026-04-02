@@ -56,7 +56,7 @@ Specifies:
 
  ### Composite Metrics
 
- **risk_score**
+ **risk_penalty**
  Weighted combination of five risk components:
 
   - disruption
@@ -69,13 +69,13 @@ Specifies:
 
   **risk_adjusted_cost**
   Defined as:
-  `normalized_landed_cost + λ * normalized_risk_score`
+  `normalized_landed_unit_cost + λ * normalized_risk_penalty`
 
   Where λ (risk aversion):
   - Comes from the contract
   - Can be overriden at runtime.
 
-  A lower `risk_adjusted_score` is better.
+  A lower `risk_adjusted_cost` is better.
 
 ### Ranking Rules
 Defines:
@@ -94,7 +94,7 @@ The contract specifics
 Two explainability modes run simultaneously:
 
 1. **TopDrivers -** drivers of risk_adjusted_cost -> sorted(list[str])
-2. **TopRiskDrivers -** drivers of risk_score -> sorted(list[str])
+2. **TopRiskDrivers -** drivers of risk_penalty -> sorted(list[str])
 
 Both are contract driven.
 
@@ -120,7 +120,8 @@ This SQL view combines supplier attributes from several datasets, icluding:
  - supplier_id (supplier identifier)
  - product (semiconductor component)
  - lead_time_mean (expected lead time)
- - lead_time_variance (lead time variability)
+ - lead_time_stddev (lead time standard deviation; required for scoring)
+ - lead_time_variance (optional; used for explainability only)
  - disruption_probability (probability of disruption)
  - logistics_reliability (logistics reliability score)
  - baseline_price (base supplier price)
@@ -149,7 +150,7 @@ The scorer computes:
 **Lead Time Coefficient of Variation**
 Measures relative variability in delivery time.
 
-`lead_time_cv = lead_time_variance / lead_time_mean`
+`lead_time_cv = lead_time_stddev / lead_time_mean`
 
 Higher values indicate less predictable delivery.
 
@@ -195,16 +196,16 @@ Formula:
 
  ### Composite Scores
 
- **Risk Score**
+ **Risk Penalty (`risk_penalty`)**
  The system aggregates multiple risk dimensions.
 
- `risk_score = 0.3 * disruption_risk + 0.25 * leadtime_risk + 0.2 * logistics_risk + 0.15 * cost_instability + 0.1 * quality_risk
+ `risk_penalty = 0.32 * disruption_risk + 0.28 * leadtime_risk + 0.20 * logistics_risk + 0.12 * cost_instability + 0.08 * quality_risk`
 
  The final score is then scaled to be in the (0, 100) range, where a higher score indicates higher supply chain risk.
 
  **Risk-Adjusted Cost**
  The final primary supplier ranking metric is:
- `risk_adjusted_cost = normalized(landed_unit_cost) + λ × normalized(risk_score)`
+ `risk_adjusted_cost = normalized(landed_unit_cost) + λ × normalized(risk_penalty)`
 
  Where:
  - λ is a risk tolerance parameter.
@@ -239,12 +240,12 @@ Shows which components most influenced the **risk_adjusted_cost** metric.
 
 Since RAC has two components:
 - landed_unit_cost
-- risk_score
+- risk_penalty
 
 This columns shows which one contributed most for each supplier.
 
 #### 2. TopRiskDrivers (nested explainability)
-Breaks down **risk_score** into its five components and then returns the top N contributers per supplier. In other words, which components most contributed to a "poor" `risk_score`
+Breaks down **risk_penalty** into its five components and then returns the top N contributers per supplier. In other words, which components most contributed to a "poor" `risk_penalty`
 
 ## 5. Running the Scorer
 From the project root:
