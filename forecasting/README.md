@@ -20,6 +20,8 @@ The pipeline is built around a **HistGradientBoosting Regressor (HGB)** trained 
 
 Predictions are made at the row level. System-level totals (weekly SUM, series MEAN) are computed post-prediction for interpretability and procurement planning purposes only — the model is never trained on aggregated targets.
 
+**System-level modeling:** A single HGB model is trained jointly on all 48 series. This is not 48 independently deployed per-SKU models. The cross-series feature (`global_mean_lag_1`) explicitly exploits shared demand patterns across series. System-level accuracy metrics therefore reflect the aggregate behavior of one model applied across all series, not the average of 48 separate forecasts.
+
 ---
 
 ## Feature Engineering (`features.py`)
@@ -146,8 +148,10 @@ Results are written to two PostgreSQL tables:
 
 | Table | Contents |
 |---|---|
-| `dim_forecast_run` | One row per execution: model version, hyperparameters, training window, validation metrics, run status. Upsert on `(forecast_origin_date, model_version)` — re-runs are idempotent. |
+| `dim_forecast_run` | One row per execution: `forecast_origin_date`, `observed_through_week_date` (the last actual demand week used in training — marks the boundary between history and forecast), `horizon_weeks_min/max`, `model_version`, `model_config` (hyperparameters as JSONB), `n_series`, `n_forecast_rows`, `run_status`. Upsert on `(forecast_origin_date, model_version)` — re-runs are idempotent. |
 | `fact_semiconductor_demand_forecast` | One row per `(forecast_run_id, facility_id, semiconductor_id, target_week_date)`: `predicted_demand`, `interval_lower_90`, `interval_upper_90`, `horizon_weeks`. Inserts skip duplicate rows via `ON CONFLICT DO NOTHING`. |
+
+**Downstream consumption:** Rows in `fact_semiconductor_demand_forecast` are the starting point for the full procurement planning pipeline. The BOM explosion layer joins this table to `dim_bom` via `vw_component_requirement_detail` to translate finished-good SKU demand into component-level gross requirements. Those component requirements are then aggregated into `vw_component_requirement_lp`, which the LP optimizer queries — together with the decision-point inventory snapshot and safety stock policy — to compute the horizon-level net procurement requirement per facility and component.
 
 ---
 
@@ -157,20 +161,20 @@ Running `run_pipeline.py` saves all of the following to `artifacts/forecasting/`
 
 | File | Description |
 |---|---|
-| `holdout_predictions.csv` | Week, facility, semiconductor, actual, predicted — for all 480 holdout rows |
-| `per_series_holdout_metrics.csv` | Per-series MAE and RMSE, sorted worst-first |
-| `cv_summary.csv` | Full GridSearchCV results (all 243 configs ranked by mean CV MAE) |
-| `holdout_metrics.json` | Key metrics summary (row-level, weekly aggregate, per-series statistics) |
-| `model_selection_summary.txt` | Human-readable evaluation report |
-| `validation_window_explanation.txt` | Documentation of holdout design and leakage prevention |
-| `cv_fold_mae.png` | Bar chart of MAE per CV fold for the best configuration |
-| `system_full_history_holdout.png` | Full training history + holdout actual vs predicted (system-level SUM) |
-| `system_holdout_actual_vs_predicted.png` | Holdout zoom — weekly SUM and weekly MEAN panels |
-| `residuals_summary.png` | Residual distribution histogram + residuals vs predicted scatter |
-| `worst_5_series_holdout.png` | Small-multiple panels for the 5 highest-MAE series |
-| `permutation_importance.png` | Top 15 features by permutation importance on the holdout set |
-| `baseline_system_comparison.png` | System-level SUM — Actual vs HGB vs Naive vs Rolling mean-4 |
-| `baseline_example_series.png` | Single representative series (closest to median HGB MAE) — all three models |
+| `holdout_predictions.csv` | Row-level predictions for all 480 holdout rows (week × facility × semiconductor): actual and predicted. Audit trail and basis for all reported holdout metrics. |
+| `per_series_holdout_metrics.csv` | Per-series MAE and RMSE sorted worst-first. Surfaces which SKU–facility pairs carry the most forecast uncertainty — input for procurement buffer decisions. |
+| `cv_summary.csv` | Full GridSearchCV results (all 243 configs ranked by mean CV MAE). Validates that the selected hyperparameters were chosen systematically, not cherry-picked. |
+| `holdout_metrics.json` | Machine-readable performance summary (row-level, weekly aggregate, per-series statistics). Read by agent helpers to answer "how accurate is the forecast?" questions. |
+| `model_selection_summary.txt` | Plain-language evaluation report for stakeholders. Primary explainability document — summarizes model performance, validation design, and baseline comparisons in one place. |
+| `validation_window_explanation.txt` | Documents holdout design and leakage prevention strategy. Supports audit and reproducibility claims. |
+| `cv_fold_mae.png` | MAE per CV fold for the best configuration. Confirms model performance is stable across time periods — not just good on the last fold. |
+| `system_full_history_holdout.png` | Full 145-week training history with holdout overlay (system-level SUM). Shows whether the model tracks real demand trends; primary evidence that the model learned meaningful patterns. |
+| `system_holdout_actual_vs_predicted.png` | Holdout zoom: weekly SUM and weekly MEAN panels. Primary validation chart for stakeholder presentations — shows the model tracks actual weekly totals across the 10-week test window. |
+| `residuals_summary.png` | Residual distribution histogram and residuals-vs-predicted scatter. A centered distribution with no trend confirms the model is not systematically over- or under-predicting. |
+| `worst_5_series_holdout.png` | Small-multiple panels for the 5 highest-MAE series. Focuses procurement planners' attention on the highest-uncertainty SKUs where buffer stock or supplier flexibility matters most. |
+| `permutation_importance.png` | Top 15 features by permutation importance on the holdout set. Validates that lag demand and rolling mean dominate as expected and confirms that the cross-series signal (`global_mean_lag_1`) adds value. |
+| `baseline_system_comparison.png` | System-level SUM — Actual vs HGB vs Naive lag-1 vs Rolling mean-4. Quantifies HGB lift over naive baselines; primary justification for using ML over simple heuristics. |
+| `baseline_example_series.png` | Single representative series (closest to median HGB MAE) — all three models. Shows HGB outperforms naive at the individual SKU level, not just in system-level aggregates. |
 
 ---
 
@@ -207,7 +211,7 @@ All commands must be run from the project root.
 
 The forecasting layer now includes business-facing helpers for agent-side retrieval and explainability.
 
-These helpers do **not** retrain the model and do **not** change forecast generation logic. They read from already-stored production forecast outputs and artifacts. This makes them safe for demo use and faster for conversational retrieval. :contentReference[oaicite:4]{index=4}
+These helpers do **not** retrain the model and do **not** change forecast generation logic. They read from already-stored production forecast outputs and artifacts. This makes them safe for demo use and faster for conversational retrieval.
 
 ### Helper categories
 
