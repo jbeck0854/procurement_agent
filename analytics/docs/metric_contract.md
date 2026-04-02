@@ -63,7 +63,7 @@ The contract expects data from the following SQL views:
 The scoring pipeline requires the following fields:
 
 - Supplier identity: `supplier_id`, `country_code`, `product`
-- Logistics & disruption: `lead_time_mean`, `lead_time_variance`, `disruption_probability`, `compliance_eligibility`, `logistics_reliability`
+- Logistics & disruption: `lead_time_mean`, `lead_time_stddev`, `disruption_probability`, `compliance_eligibility`, `logistics_reliability`
 - Cost/value: `baseline_price`, `bulk_discount`, `bulk_units`, `price_volatility`
 - Quality & tariff: `probability_of_defect`, `mfn_text_rate_pct`
 - Optional explainability fields: `hts8`, `tariff_description`, `how_measured`
@@ -71,6 +71,11 @@ The scoring pipeline requires the following fields:
 ### Null Policy
 If any of the following fields are null, the supplier is **dropped from scoring**:
 
+- `lead_time_mean`
+- `lead_time_stddev`
+- `disruption_probability`
+- `compliance_eligibility`
+- `logistics_reliability`
 - `probability_of_defect`
 - `bulk_discount`
 - `bulk_units`
@@ -182,7 +187,7 @@ Explainability is **enabled** and returns:
 
 - Raw input fields (supplier ID, country, product, cost fields, risk fields, tariff fields)
 - Derived metrics (lead time CV, risk metrics, effective price, landed cost, composite scores)
-- Top **2 drivers** of the final score, `risk_adjusted_score`, based on weighted component contributions and, separately, the **top 3 drivers** of the `risk_score`
+- Top **3 drivers** of the final score, `risk_adjusted_cost`, based on weighted component contributions and, separately, the **top 3 drivers** of the `risk_penalty`
 
 This makes the scoring transparent and judge‑friendly.
 
