@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import logging
+import os
 import uuid
 
 import nest_asyncio
@@ -30,6 +31,49 @@ _SUMMARY_TRIGGERS = frozenset({
     "final summary", "session summary", "summarize session",
     "summarize all", "full summary", "what did we decide",
 })
+
+# ── Opening kickoff detection ──────────────────────────────────────────────────
+# Substring signals (lowercase). All four groups must match for kickoff to fire.
+_KICKOFF_DEMAND  = ("demand", "planning horizon", "planning", "horizon", "weeks")
+_KICKOFF_SUBJECT = ("semiconductor", "semionductor", "procurement", "component")
+_KICKOFF_COST    = ("cost", "minim", "efficien", "budget")
+_KICKOFF_RISK    = ("risk", "disruption", "reliab", "supplier")
+
+# Responses that confirm the demand data and advance to the pipeline.
+_PROCEED_TRIGGERS = frozenset({
+    "yes", "yes, proceed", "looks correct", "proceed", "continue", "confirmed", "correct",
+})
+
+# Prompt injected into the orchestrator after kickoff confirmation.
+# The user sees their own "yes, proceed" text; the graph receives this richer query.
+_KICKOFF_FOLLOW_PROMPT = (
+    "Show the demand forecast summary for the full planning horizon "
+    "across all facilities and semiconductor SKUs."
+)
+
+# Path to the historical demand CSV (relative to this file).
+_CSV_PATH = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "cleaned_data", "finished_goods_demand_table.csv")
+)
+
+# Fixed opening response — no variability.
+_KICKOFF_OPENING_RESPONSE = """\
+Understood. We will:
+
+1. Verify your historical demand across all four facilities and semiconductor SKUs
+2. Translate that demand into the exact component requirements needed to support production
+3. Assess inventory coverage and identify where procurement is required
+4. Optimize supplier allocation to minimize cost while controlling supplier risk and disruption
+
+Your objective balances cost efficiency with supply reliability:
+- **Lower emphasis** prioritizes cost minimization
+- **Higher emphasis** prioritizes more stable, lower-risk suppliers even if slightly more expensive
+
+Let's begin by validating the historical demand that drives this entire workflow.
+
+Please review the historical demand file below and confirm it looks correct. Once reviewed, \
+reply with **'Yes, proceed'** to continue.\
+"""
 
 st.set_page_config(page_title="Procurement Agent", layout="wide")
 st.title("Procurement Supply Chain Agent")
@@ -69,6 +113,10 @@ if "saved_plan" not in st.session_state:
 # ── Session-level approved LP runs ─────────────────────────────────────────────
 if "approved_lp_runs" not in st.session_state:
     st.session_state.approved_lp_runs = []
+
+# ── Opening kickoff state ──────────────────────────────────────────────────────
+if "historical_demand_verification_pending" not in st.session_state:
+    st.session_state.historical_demand_verification_pending = False
 
 
 # ── Session-level helpers ──────────────────────────────────────────────────────
@@ -127,6 +175,85 @@ def _merge_final_states(first: dict, second: dict) -> dict:
             merged[key] = second[key]
     merged.pop("__interrupt__", None)
     return merged
+
+
+# ── Opening kickoff helpers ────────────────────────────────────────────────────
+
+def _is_first_user_turn() -> bool:
+    """True when no assistant message has been rendered yet in this session."""
+    return not any(m.get("role") == "assistant" for m in st.session_state.messages)
+
+
+def _is_opening_kickoff(text: str) -> bool:
+    """True when first user message signals a broad planning + cost + risk objective.
+
+    Uses substring matching so minor misspellings (e.g. 'semionductor', 'plannning')
+    are handled without NLP. All four signal groups must be present.
+    """
+    t = text.lower()
+    return (
+        any(s in t for s in _KICKOFF_DEMAND)
+        and any(s in t for s in _KICKOFF_SUBJECT)
+        and any(s in t for s in _KICKOFF_COST)
+        and any(s in t for s in _KICKOFF_RISK)
+    )
+
+
+def _is_proceed_response(text: str) -> bool:
+    """True when user confirms the demand data and wants to advance."""
+    t = text.lower().strip()
+    return any(trigger in t for trigger in _PROCEED_TRIGGERS)
+
+
+def _render_csv_button() -> None:
+    """Compact summary line + download button for historical demand CSV.
+
+    Shows dataset shape and key dimensions without rendering the full table inline.
+    """
+    try:
+        import pandas as pd
+        df = pd.read_csv(_CSV_PATH)
+        n_rows, n_cols = df.shape
+        facilities = df["facility_id"].nunique() if "facility_id" in df.columns else "?"
+        skus       = df["semiconductor_id"].nunique() if "semiconductor_id" in df.columns else "?"
+        weeks      = df["week"].nunique() if "week" in df.columns else "?"
+        st.caption(
+            f"Historical demand file: **{n_rows:,} rows** · **{n_cols} columns** · "
+            f"**{facilities} facilities** · **{skus} SKUs** · **{weeks} weeks**"
+        )
+        st.download_button(
+            label="📥 Download Historical Demand CSV",
+            data=df.to_csv(index=False).encode(),
+            file_name="finished_goods_demand_table.csv",
+            mime="text/csv",
+            key="kickoff_csv_download",
+        )
+    except Exception:
+        st.caption("Historical demand file: `cleaned_data/finished_goods_demand_table.csv`")
+
+
+def _render_kickoff_response() -> None:
+    """Render the deterministic opening assistant message and CSV button (first turn only)."""
+    with st.chat_message("assistant"):
+        st.markdown(_KICKOFF_OPENING_RESPONSE)
+        _render_csv_button()
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": _KICKOFF_OPENING_RESPONSE,
+        "has_trace": False,
+        "summary": "",
+    })
+
+
+def _render_demand_verification_banner() -> None:
+    """Persistent info banner + CSV button shown on every rerender while verification is pending."""
+    st.info(
+        "Waiting for your confirmation on the historical demand data. "
+        "Reply **'Yes, proceed'** when ready to begin the analysis pipeline.",
+        icon="📋",
+    )
+    _render_csv_button()
+    st.divider()
 
 
 def show_trace(trace):
@@ -489,6 +616,11 @@ def render_lp_approval():
 
 # ── Main rendering logic ───────────────────────────────────────────────────────
 
+# Show demand verification banner while awaiting first-turn confirmation.
+# Only fires after the kickoff response has been rendered — not before.
+if st.session_state.historical_demand_verification_pending:
+    _render_demand_verification_banner()
+
 if st.session_state.waiting_for_lp_approval and st.session_state.pending_lp_result:
     render_lp_approval()
 
@@ -514,6 +646,46 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 "summary": "",
             })
             st.rerun()
+
+        # ── Opening kickoff: first-turn planning + cost + risk objective ───
+        elif _is_first_user_turn() and _is_opening_kickoff(prompt):
+            st.session_state.historical_demand_verification_pending = True
+            _render_kickoff_response()
+            st.rerun()
+
+        # ── Proceed after demand verification ──────────────────────────────
+        elif st.session_state.historical_demand_verification_pending and _is_proceed_response(prompt):
+            st.session_state.historical_demand_verification_pending = False
+            # Step 1: Run the orchestrator with a meaningful kickoff prompt.
+            # The orchestrator will interrupt internally for plan approval — we let
+            # ainvoke capture that interrupted state, then retrieve the plan via aget_state.
+            # We do NOT route to render_pending_plan(); the task cards and Approve Plan
+            # button are never shown for this kickoff step.
+            with st.spinner("Starting analysis pipeline..."):
+                thread_id = str(uuid.uuid4())
+                st.session_state.thread_id = thread_id
+                config = {"configurable": {"thread_id": thread_id}}
+                asyncio.run(
+                    graph.ainvoke({"messages": [("user", _KICKOFF_FOLLOW_PROMPT)]}, config=config)
+                )
+                state = asyncio.run(graph.aget_state(config=config))
+            plan = extract_plan(state)
+            # Step 2: Silently auto-approve the orchestrator plan and run the pipeline.
+            # Command(resume="ok") resumes the paused orchestrator node — identical to
+            # what the Approve Plan button does in render_pending_plan(), but with no
+            # visible pending-plan UI at all.
+            if state.next and plan:
+                final_state = stream_graph(Command(resume="ok"), config)
+                lp_interrupt = final_state.get("__interrupt__")
+                if lp_interrupt and lp_interrupt.get("type") == "lp_approval":
+                    st.session_state.waiting_for_lp_approval = True
+                    st.session_state.pending_lp_result = lp_interrupt
+                    st.session_state.lp_partial_state = final_state
+                    st.session_state.saved_plan = plan
+                    st.rerun()
+                else:
+                    finalize_execution(final_state, fallback_plan=plan)
+                    st.rerun()
 
         else:
             # ── Normal graph invocation ────────────────────────────────────
