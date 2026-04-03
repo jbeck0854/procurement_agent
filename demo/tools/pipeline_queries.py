@@ -72,31 +72,87 @@ def query_forecast_drilldown(**kwargs) -> dict:
     return {"content": result, "name": "forecast_drilldown"}
 
 
+# Compact, business-facing markdown summaries for each assessment direction.
+# Rendered with st.markdown() in the app — wraps properly, no horizontal overflow.
+# Artifact paths are relative to the project root (one level above demo/).
+_ASSESSMENT_COMPACT = {
+    "validation": (
+        "artifacts/forecasting/system_full_history_holdout.png",
+        """\
+**Model:** HistGradientBoosting Regressor (HGB), trained jointly on all 48 facility–SKU \
+series (4 facilities × 12 semiconductor SKUs, weeks 1–145).
+
+**Validation design:**
+- 5-fold time-series cross-validation, 243 hyperparameter configurations tested
+- 10-week holdout (weeks 136–145) held out before any model fitting
+
+**Holdout performance (unseen data):**
+- Row-level MAE: **205.93** units/series/week
+- RMSE: 289.37 &nbsp;|&nbsp; MAPE: 23.75% &nbsp;|&nbsp; R²: **0.778**
+- System-level weekly MAE: ~4,012 units — less than 8% of typical weekly demand
+
+The model explains **~78% of demand variance** on held-out data. \
+The production model retrains on the full 145-week history before generating the planning horizon.\
+""",
+    ),
+    "features": (
+        "artifacts/forecasting/permutation_importance.png",
+        """\
+**Method:** Permutation importance measured on the 10-week held-out validation set. \
+Each feature is shuffled independently; the accuracy drop indicates its contribution.
+
+**Top drivers:**
+- **lag_1** (prior-week demand for same series) — single strongest predictor
+- **roll_mean_4 / roll_mean_8** (near-term demand momentum) — also rank highly
+- **Price & promotional signals** (realized_selling_price, emailer, homepage) — meaningful, secondary to demand history
+- **Cyclical time encodings** (week_sin_52 / week_cos_52) — capture seasonal patterns
+- **global_mean_lag_1** — cross-series shared demand signal
+
+*Correlated features can mutually suppress each other's measured importance.*\
+""",
+    ),
+    "baseline": (
+        "artifacts/forecasting/baseline_system_comparison.png",
+        """\
+**Baselines evaluated on the same 10-week holdout (weeks 136–145):**
+- **Lag-1:** repeat last week's observed demand
+- **Rolling Mean-4:** 4-week trailing average
+
+| Model | Row-Level MAE |
+|---|---|
+| HGB (production) | 205.93 |
+| Lag-1 baseline | 223.06 |
+| Rolling Mean-4 baseline | 266.42 |
+
+The production model achieves **7.7% lower error than lag-1** and **22.7% lower than rolling mean-4**. \
+Gains are consistent across most of the 48 series. \
+Better demand accuracy translates directly into tighter inventory targets, \
+fewer unnecessary safety stock buffers, and more reliable supplier allocation decisions.\
+""",
+    ),
+}
+
+
 def query_forecast_model_assessment(**kwargs) -> dict:
-    """Model explainability: validation, feature importance, or baseline comparison."""
+    """Model explainability: validation, feature importance, or baseline comparison.
+
+    Returns a compact markdown summary and the artifact PNG path — no path/why-it-matters clutter.
+    Calls get_forecast_model_assessment() to validate the direction and confirm the artifact exists.
+    """
     direction = kwargs.get("direction", "validation")
     try:
-        assessment = get_forecast_model_assessment(direction)
-        lines = [
-            assessment["title"],
-            "=" * len(assessment["title"]),
-            "",
-            assessment["executive_summary"],
-            "",
-            f"Artifact: {assessment['artifact'].get('label', '')}",
-            f"  Path: {assessment['artifact'].get('path', '')}",
-            f"  Why it matters: {assessment['artifact'].get('why_it_matters', '')}",
-            "",
-            f"Suggested next step: {assessment['next_step_prompt']}",
-        ]
-        if "improvement_recommendations" in assessment:
-            lines.append("")
-            lines.append("Improvement recommendations:")
-            for rec in assessment["improvement_recommendations"]:
-                lines.append(f"  - {rec}")
-        return {"content": "\n".join(lines), "name": "forecast_model_assessment"}
+        # Validates direction is recognised and artifact file exists; raises on failure.
+        get_forecast_model_assessment(direction)
+        artifact_path, compact_text = _ASSESSMENT_COMPACT.get(
+            direction, ("", f"Assessment direction '{direction}' not found in compact registry.")
+        )
+        return {
+            "content": compact_text,
+            "artifact_path": artifact_path,
+            "name": "forecast_model_assessment",
+        }
     except (ValueError, FileNotFoundError) as e:
-        return {"content": f"Error: {e}", "name": "forecast_model_assessment"}
+        return {"content": f"Error: {e}", "artifact_path": "", "name": "forecast_model_assessment"}
 
 
 def query_component_requirements(**kwargs) -> dict:

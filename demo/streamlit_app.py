@@ -51,6 +51,53 @@ _KICKOFF_TRANSITION_SENTENCE = (
     "(20-week period), based on your historical demand data."
 )
 
+# ── Fast forecast-layer direct paths ──────────────────────────────────────────
+# Context guard — at least one of these must appear for forecast routes to fire.
+_FORECAST_CONTEXT = ("forecast", "model", "predict", "planning window", "forecastin")
+
+# Model assessment direction signals (mirrors keywords in forecast_summary.py).
+_FORECAST_BASELINE_SIGNALS = (
+    "baseline", "benchmark", "compar", "naive", "better than", "versus",
+    " vs ", "stack up", "improve",
+)
+_FORECAST_FEATURES_SIGNALS = (
+    "feature", "features", "drove", "importance", "influential", "driver",
+    "drivers", "what drives", "signal", "signals", "inputs",
+)
+_FORECAST_VALIDATE_SIGNALS = (
+    "reliable", "how was", "trained", "validated", "validation", "training",
+    "performance", "accuracy", "holdout", "trust", "can we trust",
+)
+
+# Drill-down signals — detail by facility / SKU / week.
+_FORECAST_DRILLDOWN_SIGNALS = (
+    "drill", "detail", "by facility", "by sku", "which sku",
+    "per facility", "per sku", "breakdown", "where is demand",
+    "concentration", "week by week", "week-by-week",
+)
+
+# Transition sentences and section headings for each assessment direction.
+_FORECAST_ASSESS_META = {
+    "validation": (
+        "Yes — I can explain how the forecast model was trained and validated. "
+        "Here is the model assessment summary.",
+        "📐 Forecast Model — Validation & Training Performance",
+    ),
+    "features": (
+        "Here is a breakdown of which features drove the forecast model most, "
+        "based on permutation importance measured on the held-out validation set.",
+        "📐 Forecast Model — Feature Importance",
+    ),
+    "baseline": (
+        "Here is how the production forecast compares with the baseline approaches "
+        "used for validation.",
+        "📐 Forecast Model — Baseline Comparison",
+    ),
+}
+
+# Project root — one level up from demo/. Used to resolve artifact PNG paths.
+_ARTIFACTS_BASE = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+
 # Path to the historical demand CSV (relative to this file).
 _CSV_PATH = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "cleaned_data", "finished_goods_demand_table.csv")
@@ -203,6 +250,34 @@ def _is_proceed_response(text: str) -> bool:
     """True when user confirms the demand data and wants to advance."""
     t = text.lower().strip()
     return any(trigger in t for trigger in _PROCEED_TRIGGERS)
+
+
+def _forecast_assessment_direction(text: str) -> str | None:
+    """Return the assessment direction ('validation', 'features', 'baseline') or None.
+
+    Requires at least one _FORECAST_CONTEXT signal. Among the three directions,
+    baseline is checked first (most specific phrase), then features, then validation.
+    Returns None if no forecast-context + direction signal is found.
+    """
+    t = text.lower()
+    if not any(s in t for s in _FORECAST_CONTEXT):
+        return None
+    if any(s in t for s in _FORECAST_BASELINE_SIGNALS):
+        return "baseline"
+    if any(s in t for s in _FORECAST_FEATURES_SIGNALS):
+        return "features"
+    if any(s in t for s in _FORECAST_VALIDATE_SIGNALS):
+        return "validation"
+    return None
+
+
+def _is_forecast_drilldown_request(text: str) -> bool:
+    """True when the user asks for forecast detail by facility/SKU/week."""
+    t = text.lower()
+    return (
+        any(s in t for s in _FORECAST_CONTEXT)
+        and any(s in t for s in _FORECAST_DRILLDOWN_SIGNALS)
+    )
 
 
 def _render_csv_button() -> None:
@@ -674,6 +749,64 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 st.divider()
                 st.subheader("📊 Production Demand Forecast")
                 st.code(forecast_text)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": combined,
+                "has_trace": False,
+                "summary": "",
+            })
+            st.rerun()
+
+        # ── Fast forecast model assessment ────────────────────────────────
+        elif _forecast_assessment_direction(prompt) is not None:
+            direction = _forecast_assessment_direction(prompt)
+            transition, label = _FORECAST_ASSESS_META[direction]
+            with st.spinner("Retrieving forecast model assessment..."):
+                from tools.pipeline_queries import query_forecast_model_assessment
+                result = query_forecast_model_assessment(direction=direction)
+                result_text = result.get("content", "")
+                artifact_path = result.get("artifact_path", "")
+            with st.chat_message("assistant"):
+                st.markdown(transition)
+                st.divider()
+                st.subheader(label)
+                # Render PNG artifact directly if available — plot comes first.
+                if artifact_path:
+                    abs_path = os.path.join(_ARTIFACTS_BASE, artifact_path)
+                    if os.path.exists(abs_path):
+                        st.image(abs_path)
+                # Compact markdown text — wraps properly, no horizontal overflow.
+                st.markdown(result_text)
+            # Store for replay — images are not persisted across reruns,
+            # but the markdown text is always readable.
+            combined = f"{transition}\n\n---\n\n**{label}**\n\n{result_text}"
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": combined,
+                "has_trace": False,
+                "summary": "",
+            })
+            st.rerun()
+
+        # ── Fast forecast drill-down ───────────────────────────────────────
+        elif _is_forecast_drilldown_request(prompt):
+            transition = (
+                "Here is the detailed production forecast by week, "
+                "facility, and semiconductor SKU."
+            )
+            with st.spinner("Retrieving forecast drill-down..."):
+                from tools.pipeline_queries import query_forecast_drilldown
+                result = query_forecast_drilldown()
+                result_text = result.get("content", "")
+            combined = (
+                f"{transition}\n\n---\n\n"
+                f"**📊 Forecast Drill-Down**\n\n```\n{result_text}\n```"
+            )
+            with st.chat_message("assistant"):
+                st.markdown(transition)
+                st.divider()
+                st.subheader("📊 Forecast Drill-Down")
+                st.code(result_text)
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": combined,
