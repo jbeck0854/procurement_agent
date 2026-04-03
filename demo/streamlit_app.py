@@ -76,6 +76,21 @@ _FORECAST_DRILLDOWN_SIGNALS = (
     "concentration", "week by week", "week-by-week",
 )
 
+# Case B — specific facility chart (e.g. "Show forecast for Facility 2").
+_FORECAST_FACILITY_SIGNALS = (
+    "facility 1", "facility 2", "facility 3", "facility 4",
+    "facility_1", "facility_2", "facility_3", "facility_4",
+    "facility1", "facility2", "facility3", "facility4",
+    "for facility", "for fac",
+)
+
+# Case C — all-facilities comparison chart.
+_FORECAST_ALL_FACILITIES_SIGNALS = (
+    "all facilit", "four facilit", "each facilit",
+    "compare facilit", "across facilit", "facility-level",
+    "facility level", "each of the four",
+)
+
 # Transition sentences and section headings for each assessment direction.
 _FORECAST_ASSESS_META = {
     "validation": (
@@ -146,6 +161,12 @@ if "pending_plan" not in st.session_state:
     st.session_state.pending_plan = None
 if "plan_feedback" not in st.session_state:
     st.session_state.plan_feedback = ""
+
+# ── Fast-path visual persistence ──────────────────────────────────────────────
+# DataFrames for Case-A drilldown. Stored by index so replay loop can re-render
+# them after st.rerun(). Charts are stored as base64 PNG in the message dict.
+if "fast_path_dfs" not in st.session_state:
+    st.session_state.fast_path_dfs = []
 
 # ── LP approval session state ──────────────────────────────────────────────────
 if "waiting_for_lp_approval" not in st.session_state:
@@ -280,6 +301,20 @@ def _is_forecast_drilldown_request(text: str) -> bool:
     )
 
 
+def _extract_facility_id(text: str) -> str | None:
+    """Extract FACILITY_N from free text (e.g. 'Facility 2' → 'FACILITY_2')."""
+    import re
+    m = re.search(r'facilit(?:y|_)?[\s_]?(\d)', text.lower())
+    return f"FACILITY_{m.group(1)}" if m else None
+
+
+def _format_facility_label(facility_id: str) -> str:
+    """Convert DB-format 'FACILITY_1' to business-facing 'Facility 1'."""
+    import re
+    m = re.match(r'FACILITY_(\d+)', facility_id, re.IGNORECASE)
+    return f"Facility {m.group(1)}" if m else facility_id
+
+
 def _render_csv_button() -> None:
     """Compact summary line + download button for historical demand CSV.
 
@@ -329,6 +364,137 @@ def _render_demand_verification_banner() -> None:
     )
     _render_csv_button()
     st.divider()
+
+
+def _fig_to_b64(fig) -> str:
+    """Serialize a matplotlib Figure to base64-encoded PNG string.
+
+    Used by fast-path drill-down handlers to persist charts across st.rerun().
+    The b64 string is stored in the message dict under 'chart_b64' and decoded
+    by the replay loop with st.image(base64.b64decode(msg['chart_b64'])).
+    """
+    import io
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=120)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode()
+
+
+def _plot_facility_faceted(df, facility_id: str):
+    """6×2 faceted figure — one subplot per semiconductor SKU for a single facility.
+
+    Each panel shows the 20-week predicted demand line with a lightly shaded 90% CI.
+    SKUs are sorted alphabetically so the layout is deterministic across facilities.
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.cm as cm
+    import pandas as pd
+
+    fac_df = df[df["facility_id"] == facility_id].copy()
+    # Coerce numeric columns — psycopg2 returns Decimal, pandas stores as object.
+    for col in ("predicted_demand", "interval_lower_90", "interval_upper_90"):
+        fac_df[col] = pd.to_numeric(fac_df[col], errors="coerce").fillna(0.0)
+    fac_df["target_week_date"] = fac_df["target_week_date"].astype(str)
+    skus = sorted(fac_df["semiconductor_id"].unique())
+    n_skus = len(skus)
+    ncols = 2
+    nrows = (n_skus + 1) // 2  # ceil division — handles odd counts cleanly
+    palette = [cm.tab10(i / 10) for i in range(min(n_skus, 10))]
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(12, nrows * 3), sharey=False)
+    axes = axes.flatten()
+
+    for i, sku in enumerate(skus):
+        ax = axes[i]
+        s = fac_df[fac_df["semiconductor_id"] == sku].sort_values("target_week_date")
+        color = palette[i % len(palette)]
+        ax.plot(s["target_week_date"], s["predicted_demand"],
+                color=color, linewidth=1.8)
+        ax.fill_between(
+            s["target_week_date"],
+            s["interval_lower_90"], s["interval_upper_90"],
+            alpha=0.12, color=color,
+        )
+        ax.set_title(sku, fontsize=9, pad=4)
+        ax.tick_params(axis="x", rotation=45, labelsize=6)
+        ax.tick_params(axis="y", labelsize=7)
+        ax.yaxis.set_major_formatter(
+            plt.FuncFormatter(lambda x, _: f"{x:,.0f}")
+        )
+
+    # Hide any unused subplot panels (if SKU count is odd)
+    for j in range(n_skus, len(axes)):
+        axes[j].set_visible(False)
+
+    label = _format_facility_label(facility_id)
+    fig.suptitle(
+        f"Production Demand Forecast — {label} by SKU",
+        fontsize=12, y=1.005,
+    )
+    fig.tight_layout()
+    return fig
+
+
+def _narrative_facility_bullets(df, facility_id: str) -> str:
+    """Markdown bullet summary for a single-facility faceted forecast view.
+
+    Covers: total/avg demand, peak + lowest week, SKU concentration, and a
+    cross-SKU comparative insight (highest-volume SKUs + most/least volatile).
+    Returned string is passed directly to st.markdown().
+    """
+    import pandas as pd
+    fac_df = df[df["facility_id"] == facility_id].copy()
+    # Coerce to numeric — psycopg2 returns Decimal, which groupby().sum() keeps as
+    # object dtype, causing nlargest() / arithmetic to fail.
+    fac_df["predicted_demand"] = pd.to_numeric(fac_df["predicted_demand"], errors="coerce").fillna(0.0)
+    weekly = fac_df.groupby("target_week_date")["predicted_demand"].sum()
+    total     = weekly.sum()
+    avg       = weekly.mean()
+    n_weeks   = weekly.nunique()
+    peak_week = str(weekly.idxmax())
+    peak_val  = weekly.max()
+    low_week  = str(weekly.idxmin())
+    low_val   = weekly.min()
+
+    by_sku = fac_df.groupby("semiconductor_id")["predicted_demand"].sum()
+    top_sku   = by_sku.idxmax()
+    top_share = by_sku.max() / by_sku.sum() * 100
+    n_skus    = by_sku.nunique()
+
+    if top_share > 40:
+        concentration = (
+            f"Demand is concentrated — **{top_sku}** accounts for "
+            f"**{top_share:.0f}%** of facility volume"
+        )
+    else:
+        concentration = (
+            f"Demand is broadly distributed across {n_skus} SKUs "
+            f"(top SKU: **{top_sku}** at **{top_share:.0f}%**)"
+        )
+
+    # Top 3 by total volume and SKU-level coefficient of variation (volatility proxy)
+    top3 = by_sku.nlargest(3).index.tolist()
+    top3_str = ", ".join(f"**{s}**" for s in top3)
+    sku_cv = (
+        fac_df.groupby("semiconductor_id")["predicted_demand"]
+        .apply(lambda x: x.std() / x.mean() if x.mean() > 0 else 0.0)
+    )
+    most_volatile  = sku_cv.idxmax()
+    least_volatile = sku_cv.idxmin()
+    cross_sku = (
+        f"{top3_str} lead in total volume; "
+        f"**{most_volatile}** shows the highest week-to-week variability "
+        f"while **{least_volatile}** is the most stable"
+    )
+
+    return "\n".join([
+        f"- **Total horizon demand:** {total:,.0f} units across {n_weeks} weeks",
+        f"- **Average weekly demand:** {avg:,.0f} units/week",
+        f"- **Peak week:** {peak_week} → {peak_val:,.0f} units",
+        f"- **Lowest week:** {low_week} → {low_val:,.0f} units",
+        f"- **SKU concentration:** {concentration}",
+        f"- **Cross-SKU insight:** {cross_sku}",
+    ])
 
 
 def show_trace(trace):
@@ -407,6 +573,34 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         if msg.get("content"):
             st.markdown(msg["content"])
+        # ── Fast-path chart replay (Case B / Case C drilldown) ────────────
+        if msg.get("chart_b64"):
+            _b64 = msg["chart_b64"]
+            if msg.get("chart_scroll"):
+                # Case B: render inside a scrollable HTML div so the chart
+                # area scrolls independently and the summary stays fixed above.
+                st.markdown(
+                    f'<div style="height:640px;overflow-y:auto;'
+                    f'border:1px solid #e6e9ef;border-radius:6px;padding:4px;">'
+                    f'<img src="data:image/png;base64,{_b64}"'
+                    f' style="width:100%;display:block;" /></div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.image(base64.b64decode(_b64))
+        # ── Fast-path dataframe replay (Case A drilldown) ─────────────────
+        df_idx = msg.get("df_index")
+        if df_idx is not None and df_idx < len(st.session_state.fast_path_dfs):
+            _replay_df = st.session_state.fast_path_dfs[df_idx]
+            st.dataframe(
+                _replay_df.style.format({
+                    "Forecast":   "{:,.0f}",
+                    "Lower 90%":  "{:,.0f}",
+                    "Upper 90%":  "{:,.0f}",
+                }),
+                use_container_width=True,
+            )
+        # ── Trace-backed chart replay (graph execution path) ──────────────
         if msg.get("has_trace") and assistant_index < len(st.session_state.traces):
             chart_results = st.session_state.traces[assistant_index].get("chart_results") or {}
             for chart_name, b64_img in chart_results.items():
@@ -788,31 +982,129 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
             })
             st.rerun()
 
-        # ── Fast forecast drill-down ───────────────────────────────────────
+        # ── Fast forecast drill-down (Cases A / B / C) ────────────────────
         elif _is_forecast_drilldown_request(prompt):
-            transition = (
-                "Here is the detailed production forecast by week, "
-                "facility, and semiconductor SKU."
-            )
-            with st.spinner("Retrieving forecast drill-down..."):
-                from tools.pipeline_queries import query_forecast_drilldown
-                result = query_forecast_drilldown()
-                result_text = result.get("content", "")
-            combined = (
-                f"{transition}\n\n---\n\n"
-                f"**📊 Forecast Drill-Down**\n\n```\n{result_text}\n```"
-            )
-            with st.chat_message("assistant"):
-                st.markdown(transition)
-                st.divider()
-                st.subheader("📊 Forecast Drill-Down")
-                st.code(result_text)
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": combined,
-                "has_trace": False,
-                "summary": "",
-            })
+            import matplotlib.pyplot as plt
+            t_low = prompt.lower()
+            is_all = any(s in t_low for s in _FORECAST_ALL_FACILITIES_SIGNALS)
+            facility_id = _extract_facility_id(prompt)
+
+            with st.spinner("Retrieving forecast data..."):
+                from tools.pipeline_queries import (
+                    get_forecast_drilldown_df,
+                    _plot_all_facilities_forecast,
+                    _narrative_all_facilities,
+                )
+                df = get_forecast_drilldown_df()
+
+            if is_all:
+                # ── Case C: all-facilities trend chart ─────────────────────
+                # Render fig → base64 before rerun so replay loop can redisplay it.
+                transition = (
+                    "Here is the forecasted demand trend across all four "
+                    "facilities over the planning horizon."
+                )
+                narrative = _narrative_all_facilities(df)
+                fig = _plot_all_facilities_forecast(df)
+                chart_b64 = _fig_to_b64(fig)
+                plt.close(fig)
+                with st.chat_message("assistant"):
+                    st.markdown(transition)
+                    st.divider()
+                    st.subheader("📊 Forecast — All Facilities")
+                    st.image(base64.b64decode(chart_b64))
+                    st.markdown(narrative)
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": f"{transition}\n\n{narrative}",
+                    "has_trace": False,
+                    "summary": "",
+                    "chart_b64": chart_b64,
+                })
+
+            elif facility_id:
+                # ── Case B: single-facility faceted SKU chart (6×2) ─────────
+                # Uses business-facing label ("Facility 1" not "FACILITY_1").
+                # Bullets above the chart; chart rendered in a scrollable
+                # container so the summary stays pinned at the top.
+                # Figure → base64 before rerun so replay loop can redisplay it.
+                fac_label  = _format_facility_label(facility_id)
+                transition = (
+                    f"Here is the production demand forecast for **{fac_label}** "
+                    f"across each semiconductor SKU over the planning horizon."
+                )
+                bullets    = _narrative_facility_bullets(df, facility_id)
+                fig        = _plot_facility_faceted(df, facility_id)
+                chart_b64  = _fig_to_b64(fig)
+                plt.close(fig)
+                # Scrollable chart HTML — browser-native overflow so only the
+                # chart area scrolls; intro + bullets stay fixed above it.
+                _scroll_html = (
+                    f'<div style="height:640px;overflow-y:auto;'
+                    f'border:1px solid #e6e9ef;border-radius:6px;padding:4px;">'
+                    f'<img src="data:image/png;base64,{chart_b64}"'
+                    f' style="width:100%;display:block;" /></div>'
+                )
+                with st.chat_message("assistant"):
+                    st.markdown(transition)       # fixed above scroll region
+                    st.markdown(bullets)          # fixed above scroll region
+                    st.divider()
+                    st.subheader(f"📊 Forecast — {fac_label} by SKU")
+                    st.markdown(_scroll_html, unsafe_allow_html=True)
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": f"{transition}\n\n{bullets}",
+                    "has_trace": False,
+                    "summary": "",
+                    "chart_b64": chart_b64,
+                    "chart_scroll": True,  # tells replay loop to use scrollable div
+                })
+
+            else:
+                # ── Case A: full tabular drill-down ─────────────────────────
+                # Store display_df in fast_path_dfs so replay loop can re-render
+                # the dataframe widget after st.rerun() clears the current render.
+                transition = (
+                    "Here is the detailed production forecast by week, "
+                    "facility, and semiconductor SKU."
+                )
+                display_df = df[[
+                    "target_week_date", "facility_id", "semiconductor_id",
+                    "predicted_demand", "interval_lower_90", "interval_upper_90",
+                    "horizon_weeks",
+                ]].rename(columns={
+                    "target_week_date": "Week",
+                    "facility_id": "Facility",
+                    "semiconductor_id": "SKU",
+                    "predicted_demand": "Forecast",
+                    "interval_lower_90": "Lower 90%",
+                    "interval_upper_90": "Upper 90%",
+                    "horizon_weeks": "Horizon Wk",
+                })
+                df_idx = len(st.session_state.fast_path_dfs)
+                st.session_state.fast_path_dfs.append(display_df)
+                _fmt = {"Forecast": "{:,.0f}", "Lower 90%": "{:,.0f}", "Upper 90%": "{:,.0f}"}
+                with st.chat_message("assistant"):
+                    st.markdown(transition)
+                    st.divider()
+                    st.subheader("📊 Forecast Drill-Down")
+                    st.dataframe(
+                        display_df.style.format(_fmt),
+                        use_container_width=True,
+                    )
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": (
+                        f"{transition}\n\n"
+                        f"*(Showing {len(display_df):,} rows — "
+                        f"{df['facility_id'].nunique()} facilities × "
+                        f"{df['semiconductor_id'].nunique()} SKUs × "
+                        f"{df['target_week_date'].nunique()} weeks)*"
+                    ),
+                    "has_trace": False,
+                    "summary": "",
+                    "df_index": df_idx,
+                })
             st.rerun()
 
         else:

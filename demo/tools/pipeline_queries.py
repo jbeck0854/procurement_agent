@@ -72,6 +72,119 @@ def query_forecast_drilldown(**kwargs) -> dict:
     return {"content": result, "name": "forecast_drilldown"}
 
 
+def get_forecast_drilldown_df(forecast_run_id=None):
+    """Return the full forecast drill-down as a DataFrame for custom rendering."""
+    from forecasting.forecast_summary import get_production_forecast_drilldown
+    conn = _get_conn()
+    try:
+        return get_production_forecast_drilldown(conn, forecast_run_id=forecast_run_id)
+    finally:
+        conn.close()
+
+
+def _plot_facility_forecast(df, facility_id: str):
+    """Single-facility line chart — one line per SKU with shaded 90% CI. Returns fig."""
+    import matplotlib.pyplot as plt
+    import matplotlib.cm as cm
+
+    fac_df = df[df["facility_id"] == facility_id].copy()
+    fac_df["target_week_date"] = fac_df["target_week_date"].astype(str)
+    skus = sorted(fac_df["semiconductor_id"].unique())
+    palette = [cm.tab10(i / 10) for i in range(min(len(skus), 10))]
+
+    fig, ax = plt.subplots(figsize=(11, 5))
+    for i, sku in enumerate(skus):
+        s = fac_df[fac_df["semiconductor_id"] == sku].sort_values("target_week_date")
+        c = palette[i % len(palette)]
+        ax.plot(s["target_week_date"], s["predicted_demand"],
+                label=sku, color=c, linewidth=1.8)
+        ax.fill_between(s["target_week_date"],
+                        s["interval_lower_90"], s["interval_upper_90"],
+                        alpha=0.07, color=c)
+
+    ax.set_title(f"Production Demand Forecast — {facility_id}", fontsize=13, pad=10)
+    ax.set_xlabel("Week")
+    ax.set_ylabel("Forecasted Demand (units)")
+    ax.legend(fontsize=7, ncol=max(1, len(skus) // 4), loc="upper right")
+    ax.tick_params(axis="x", rotation=45, labelsize=7)
+    fig.tight_layout()
+    return fig
+
+
+def _narrative_facility(df, facility_id: str) -> str:
+    """Four-sentence business narrative for a single-facility forecast chart."""
+    fac_df = df[df["facility_id"] == facility_id]
+    weekly = fac_df.groupby("target_week_date")["predicted_demand"].sum()
+    total = weekly.sum()
+    avg = weekly.mean()
+    peak_week = str(weekly.idxmax())
+    peak_val = weekly.max()
+    low_week = str(weekly.idxmin())
+    low_val = weekly.min()
+    by_sku = fac_df.groupby("semiconductor_id")["predicted_demand"].sum()
+    top_sku = by_sku.idxmax()
+    top_share = by_sku.max() / by_sku.sum() * 100
+    n_skus = by_sku.nunique()
+    dist_note = (
+        f"Demand is concentrated: **{top_sku}** accounts for {top_share:.0f}% of total facility volume."
+        if top_share > 40
+        else f"Demand is broadly distributed across {n_skus} SKUs; "
+             f"no single SKU dominates (top share: {top_share:.0f}%)."
+    )
+    return (
+        f"{facility_id} has a total forecasted demand of **{total:,.0f} units** "
+        f"across the planning horizon, averaging **{avg:,.0f} units/week**. "
+        f"Peak demand occurs in week **{peak_week}** at **{peak_val:,.0f} units**. "
+        f"The lowest demand week is **{low_week}** at **{low_val:,.0f} units**. "
+        f"{dist_note}"
+    )
+
+
+def _plot_all_facilities_forecast(df):
+    """All-facilities line chart — one aggregated line per facility. Returns fig."""
+    import matplotlib.pyplot as plt
+    import matplotlib.cm as cm
+
+    weekly = (
+        df.groupby(["facility_id", "target_week_date"])["predicted_demand"]
+        .sum()
+        .reset_index()
+    )
+    weekly["target_week_date"] = weekly["target_week_date"].astype(str)
+    facilities = sorted(weekly["facility_id"].unique())
+    palette = [cm.tab10(i / 10) for i in range(min(len(facilities), 10))]
+
+    fig, ax = plt.subplots(figsize=(11, 5))
+    for i, fac in enumerate(facilities):
+        s = weekly[weekly["facility_id"] == fac].sort_values("target_week_date")
+        ax.plot(s["target_week_date"], s["predicted_demand"],
+                label=fac, color=palette[i], linewidth=2)
+
+    ax.set_title("Production Demand Forecast — All Facilities", fontsize=13, pad=10)
+    ax.set_xlabel("Week")
+    ax.set_ylabel("Total Forecasted Demand (units)")
+    ax.legend(fontsize=9)
+    ax.tick_params(axis="x", rotation=45, labelsize=7)
+    fig.tight_layout()
+    return fig
+
+
+def _narrative_all_facilities(df) -> str:
+    """Concise business summary for the all-facilities forecast chart."""
+    by_fac_week = df.groupby(["facility_id", "target_week_date"])["predicted_demand"].sum()
+    by_fac = by_fac_week.groupby("facility_id").sum()
+    total = by_fac.sum()
+    top_fac = by_fac.idxmax()
+    top_val = by_fac.max()
+    weeks = df["target_week_date"].nunique()
+    return (
+        f"Forecast covers **{len(by_fac)} facilities** over **{weeks} weeks**, "
+        f"with a combined total of **{total:,.0f} units**. "
+        f"**{top_fac}** is the highest-demand facility at **{top_val:,.0f} units** "
+        f"({top_val / total * 100:.0f}% of system-level demand)."
+    )
+
+
 # Compact, business-facing markdown summaries for each assessment direction.
 # Rendered with st.markdown() in the app — wraps properly, no horizontal overflow.
 # Artifact paths are relative to the project root (one level above demo/).
