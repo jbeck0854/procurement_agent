@@ -49,6 +49,26 @@ And show one additional capability that differentiates the system:
 
 ## End-to-End Walkthrough
 
+**IMPORTANT:**
+
+Before kickstarting demo and initializing streamlit, in terminal (after all database schemas loaded), must run in order:
+
+```bash
+# 0. activate venv
+source demo/venv/bin/activate
+
+# 1. generate forecasts (from project root)
+python -m forecasting.run_production
+
+# 2. build inventory / procurement layer (from project root)
+python -m inventory.run_inventory
+
+# 3. THEN start demo
+cd demo
+streamlit run streamlit_app.py
+```
+
+
 ---
 
 ### 0:00–1:00 — Opening and objective framing
@@ -56,22 +76,27 @@ And show one additional capability that differentiates the system:
 **User says:**
 > "I need to make sure we can meet the next 12–16 weeks of demand for our semiconductor components. Minimize cost, but keep supplier risk at a moderate level."
 
-**Agent responds:**
-> "Understood. I'll walk you through five steps: forecast demand, translate that into component requirements, check inventory coverage, identify what needs to be procured, and recommend an optimized supplier allocation, based on your risk aversion. Let's start."
+**Other acceptable user variations:**
+> "Help me plan procurement for the upcoming 20 week planning horizon with a balance between cost and reliability."
 
-> (optional addition) Please provide/upload your historical demand csv begin demand forecast.
+**Agent responds:**
+> "Understood. We will:
+> 1. Verify your historical demand across all four facilities and semiconductor SKUs
+> 2. Translate that demand into the exact component requirements needed to support production
+> 3. Assess inventory coverage and identify where procurement is required
+> 4. Optimize supplier allocation to minimize cost while controlling supplier risk and disruption
+
+> Your objective balances cost efficiency with supply reliability:
+> - lower emphasis prioritizes cost minimization
+> - higher emphasis prioritizes more stable, lower-risk suppliers even if slightly more expensive
+
+> Let's begin by validating the historical demand that drives this workflow.
+
+> Please review the historical demand file below and confirm it looks correct. Once reviewed, reply with 'Yes, proceed' to continue."
 
 NOTE: Above is simply so that it is clear to audience that the system has/is working with actual demand
-> (if optional route added) AGENT: Demand successfully stored. Here is your input: (shows on screen a few lines of first few weeks x facility x sku and last few week lines)
 
-**On screen:**
-A four-step workflow indicator:
-1. Forecast demand
-2. Translate to components
-3. Check inventory
-4. Recommend procurement plan
-
-**Business explanation:**
+**Business explanation (subject to change):**
 > "The system doesn't just rank suppliers. It starts from assessing historical demand and works forward — so every procurement recommendation is grounded in what we actually need."
 
 **What runs behind the scenes:** Nothing yet. Orientation only.
@@ -80,9 +105,13 @@ A four-step workflow indicator:
 
 ### 1:00–2:30 — Demand forecast
 
-**User action:** "Please provide me a forecast for the upcoming planning horizon."
+**User action:** "Yes, proceed."
+
+**Agent Response:** "I will now generate forecasts over the upcoming planning horizon (20-week period), based on your historical demand data."
 
 **Agent action:** Queries the forecast layer ( **forecast summary**). No rerun needed — forecasts are precomputed and stored.
+
+**NOTE:** Here is where I am considering implementing a returned table that shows average forecasted demand for each facility over the 20-week period.
 
 **Behind the scenes:**
 - `dim_forecast_run` — identifies latest run

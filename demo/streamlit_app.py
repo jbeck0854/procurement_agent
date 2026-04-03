@@ -44,11 +44,11 @@ _PROCEED_TRIGGERS = frozenset({
     "yes", "yes, proceed", "looks correct", "proceed", "continue", "confirmed", "correct",
 })
 
-# Prompt injected into the orchestrator after kickoff confirmation.
-# The user sees their own "yes, proceed" text; the graph receives this richer query.
-_KICKOFF_FOLLOW_PROMPT = (
-    "Show the demand forecast summary for the full planning horizon "
-    "across all facilities and semiconductor SKUs."
+# Deterministic transition sentence shown immediately after kickoff confirmation.
+# Appears before the forecast result so the user sees instant acknowledgement.
+_KICKOFF_TRANSITION_SENTENCE = (
+    "I will now generate forecasts over the upcoming planning horizon "
+    "(20-week period), based on your historical demand data."
 )
 
 # Path to the historical demand CSV (relative to this file).
@@ -656,36 +656,31 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
         # ── Proceed after demand verification ──────────────────────────────
         elif st.session_state.historical_demand_verification_pending and _is_proceed_response(prompt):
             st.session_state.historical_demand_verification_pending = False
-            # Step 1: Run the orchestrator with a meaningful kickoff prompt.
-            # The orchestrator will interrupt internally for plan approval — we let
-            # ainvoke capture that interrupted state, then retrieve the plan via aget_state.
-            # We do NOT route to render_pending_plan(); the task cards and Approve Plan
-            # button are never shown for this kickoff step.
-            with st.spinner("Starting analysis pipeline..."):
-                thread_id = str(uuid.uuid4())
-                st.session_state.thread_id = thread_id
-                config = {"configurable": {"thread_id": thread_id}}
-                asyncio.run(
-                    graph.ainvoke({"messages": [("user", _KICKOFF_FOLLOW_PROMPT)]}, config=config)
-                )
-                state = asyncio.run(graph.aget_state(config=config))
-            plan = extract_plan(state)
-            # Step 2: Silently auto-approve the orchestrator plan and run the pipeline.
-            # Command(resume="ok") resumes the paused orchestrator node — identical to
-            # what the Approve Plan button does in render_pending_plan(), but with no
-            # visible pending-plan UI at all.
-            if state.next and plan:
-                final_state = stream_graph(Command(resume="ok"), config)
-                lp_interrupt = final_state.get("__interrupt__")
-                if lp_interrupt and lp_interrupt.get("type") == "lp_approval":
-                    st.session_state.waiting_for_lp_approval = True
-                    st.session_state.pending_lp_result = lp_interrupt
-                    st.session_state.lp_partial_state = final_state
-                    st.session_state.saved_plan = plan
-                    st.rerun()
-                else:
-                    finalize_execution(final_state, fallback_plan=plan)
-                    st.rerun()
+            # Direct fast path — bypasses orchestrator AND synthesizer entirely.
+            # query_forecast_summary() reads pre-computed DB tables; no LLM involved.
+            # Saves ~12–15s of orchestrator + synthesizer round-trip latency.
+            with st.spinner("Retrieving forecast summary..."):
+                from tools.pipeline_queries import query_forecast_summary
+                forecast_result = query_forecast_summary()
+                forecast_text = forecast_result.get("content", "")
+            combined = (
+                f"{_KICKOFF_TRANSITION_SENTENCE}\n\n"
+                f"---\n\n"
+                f"**📊 Production Demand Forecast**\n\n"
+                f"```\n{forecast_text}\n```"
+            )
+            with st.chat_message("assistant"):
+                st.markdown(_KICKOFF_TRANSITION_SENTENCE)
+                st.divider()
+                st.subheader("📊 Production Demand Forecast")
+                st.code(forecast_text)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": combined,
+                "has_trace": False,
+                "summary": "",
+            })
+            st.rerun()
 
         else:
             # ── Normal graph invocation ────────────────────────────────────
