@@ -244,25 +244,32 @@ interpretability for demo delivery and agent integration.
 
 ### Summary helpers
 
-**`format_component_requirements(conn, forecast_run_id=None) -> str`**
-Full-horizon gross BOM demand. Shows the total component volume required to
-fulfill the finished-goods forecast, before any inventory or safety stock
-adjustment. Use this to understand the raw scale of procurement need.
+#### Primary
 
-**`format_procurement_status(conn, forecast_run_id=None) -> str`**
-Week-by-week inventory trigger signal. Applies current on-hand inventory and
-safety stock policy to BOM demand on a per-week basis. Shows *where* and *when*
-procurement is activated across the planning horizon. This is NOT the LP demand
-floor — the LP applies the inventory offset once at the horizon level, not per
-week. Use this to understand which weeks and facilities are driving procurement
-need.
+**`format_procurement_recommendation(conn, forecast_run_id=None) -> str`**
+One-screen answer to "do we need to buy anything?" Shows LP net requirement per
+component with 🔴/🟢 action status and triggered-week count. **Start here.**
+
+#### Secondary — explainability
 
 **`format_aggregated_procurement_need(conn, forecast_run_id=None, product=None, facility_id=None) -> str`**
 Horizon-level LP demand floor. Applies the inventory offset (on-hand, safety
 stock, scheduled receipts) once against the total horizon gross demand per
 facility — the same formulation the LP uses internally. This is the quantity the
-optimizer allocates across suppliers. Use this to understand what the LP is
-actually optimizing, and to verify LP allocation totals against planning need.
+optimizer allocates across suppliers.
+
+**`get_triggered_procurement_rows(conn, forecast_run_id=None, product=None, facility_id=None) -> str`**
+Only weeks and facilities where `net_requirement > 0` — the specific gaps where
+existing inventory is insufficient. Use this to explain WHERE and WHEN
+procurement is triggered.
+
+#### Diagnostic / deep-dive
+
+**`format_component_requirements(conn, forecast_run_id=None) -> str`**
+Full-horizon gross BOM demand before any inventory offset.
+
+**`format_procurement_status(conn, forecast_run_id=None) -> str`**
+Full week-by-week inventory trigger signal across all components and facilities.
 
 ---
 
@@ -271,12 +278,14 @@ actually optimizing, and to verify LP allocation totals against planning need.
 Each wrapper opens and closes its own DB connection. `forecast_run_id=0`
 retrieves the most recent run.
 
-| Wrapper | Returns |
-|---|---|
-| `get_component_requirements_summary_tool(forecast_run_id=0)` | Full-horizon gross BOM demand |
-| `get_procurement_status_summary_tool(forecast_run_id=0)` | Week-by-week procurement trigger signal (NOT LP input) |
-| `get_procurement_planning_summary_tool(forecast_run_id=0)` | Both gross demand and weekly trigger signal in sequence |
-| `get_aggregated_procurement_need_tool(forecast_run_id=0, product='', facility_id='')` | Horizon-level LP demand floor — the quantity the LP optimizes |
+| Tier | Wrapper | Returns |
+|---|---|---|
+| **Primary** | `get_procurement_recommendation_tool(forecast_run_id=0)` | One-screen buy/no-buy status per component |
+| **Secondary** | `get_aggregated_procurement_need_tool(forecast_run_id=0, product='', facility_id='')` | Horizon-level LP demand floor — the quantity the LP optimizes |
+| **Secondary** | `get_triggered_procurement_rows_tool(forecast_run_id=0, product='', facility_id='')` | Triggered weeks only — WHERE and WHEN procurement activates |
+| Diagnostic | `get_procurement_status_summary_tool(forecast_run_id=0)` | Full week-by-week procurement trigger signal |
+| Diagnostic | `get_procurement_planning_summary_tool(forecast_run_id=0)` | Gross demand + weekly trigger in sequence |
+| Diagnostic | `get_component_requirements_summary_tool(forecast_run_id=0)` | Full-horizon gross BOM demand |
 
 ---
 
@@ -288,9 +297,8 @@ Accepts optional filters by product name and facility. Use this to trace the
 complete planning math for any component across all forecast weeks.
 
 **`get_triggered_procurement_rows(conn, forecast_run_id=None, product=None, facility_id=None) -> str`**
-Only weeks and facilities where net requirement > 0 — the specific gaps where
-existing inventory is insufficient. Accepts the same optional filters. Use this
-to isolate where and when procurement is triggered.
+Only weeks and facilities where net requirement > 0. Also available as
+`get_triggered_procurement_rows_tool()` LangChain wrapper.
 
 ---
 
@@ -298,16 +306,18 @@ to isolate where and when procurement is triggered.
 
 | Output | What it represents | LP input? |
 |---|---|---|
+| **Procurement Recommendation** | One-screen buy/no-buy per component | No — summary |
 | **Component Requirements** | Full-horizon gross BOM demand — all weeks, before any inventory offset | No — gross only |
 | **Procurement Status** | Week-by-week trigger signal — shows WHERE and WHEN procurement activates | No — weekly signal |
 | **Triggered rows** | Subset of weekly rows where net requirement > 0 | No — weekly subset |
 | **Aggregated Procurement Need** | Horizon-level net requirement, inventory offset applied once per facility | **Yes — LP demand floor** |
 
-Most weeks have gross demand but zero net requirement. The weekly view uses
-stateful rolling depletion: gross demand depletes the usable inventory above
-the SS floor week by week; procurement triggers only once that usable pool is
-exhausted. When `on_hand ≥ SS` at the decision point (which is always true by
-design), `SUM(weekly net_req) = LP demand floor`. The two outputs reconcile.
+Most weeks have gross demand but zero net requirement. Weekly depletion uses
+stateful rolling logic: gross demand consumes the usable inventory pool (above
+the SS floor) week by week; procurement triggers only once that pool is
+exhausted. When `on_hand ≥ SS` (always true by design), `SUM(weekly net_req) =
+LP demand floor`. The Recommendation and Aggregated Procurement Need helpers
+both reflect this correctly.
 
 ---
 
@@ -315,26 +325,39 @@ design), `SUM(weekly net_req) = LP demand floor`. The two outputs reconcile.
 
 ```python
 from inventory.procurement_summary import (
+    get_procurement_recommendation_tool,
     get_aggregated_procurement_need_tool,
+    get_triggered_procurement_rows_tool,
+    get_procurement_status_summary_tool,
     get_procurement_planning_summary_tool,
-    get_triggered_procurement_rows,
-    get_procurement_requirement_drilldown,
+    get_component_requirements_summary_tool,
 )
 
-# LP demand floor — what the optimizer actually allocates against
+# ── PRIMARY — start here ──────────────────────────────────────────────────────
+
+# "Do we need to buy anything?" — one-screen buy/no-buy per component
+print(get_procurement_recommendation_tool())
+
+# ── SECONDARY — explainability ────────────────────────────────────────────────
+
+# Horizon-level LP demand floor — the quantity the LP actually optimizes
 print(get_aggregated_procurement_need_tool())
 
 # Filtered to one component (matches LP run scope)
 print(get_aggregated_procurement_need_tool(product='transistors'))
 
-# Gross demand + weekly trigger signal (planning context, not LP input)
+# Which specific weeks and facilities trigger procurement?
+print(get_triggered_procurement_rows_tool())
+print(get_triggered_procurement_rows_tool(product='transistors', facility_id='FACILITY_3'))
+
+# ── DIAGNOSTIC / DEEP-DIVE ────────────────────────────────────────────────────
+
+# Gross demand + weekly trigger signal in one output
 print(get_procurement_planning_summary_tool())
 
-# All triggered rows across all components and facilities
-conn = psycopg2.connect(DATABASE_URL)
-print(get_triggered_procurement_rows(conn))
-
 # Drill down: one component, one facility, all forecast weeks
+conn = psycopg2.connect(DATABASE_URL)
+from inventory.procurement_summary import get_procurement_requirement_drilldown
 print(get_procurement_requirement_drilldown(conn, product='transistors', facility_id='FACILITY_3'))
 conn.close()
 ```

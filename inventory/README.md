@@ -114,16 +114,15 @@ interpretability for demo delivery and agent integration.
 
 ### Summary helpers
 
-**`format_component_requirements(conn, forecast_run_id=None) -> str`**
-Full-horizon BOM-exploded demand. Shows the gross component volume required to
-fulfill the finished-goods forecast, before any inventory or safety stock
-adjustment. Use this to understand the raw scale of procurement need.
+#### Primary
 
-**`format_procurement_status(conn, forecast_run_id=None) -> str`**
-Week-by-week inventory trigger signal. Applies current on-hand inventory and
-safety stock policy to BOM demand on a per-week basis. Shows WHERE and WHEN
-procurement is activated across the planning horizon. This is NOT the LP demand
-floor — see `format_aggregated_procurement_need()` for that.
+**`format_procurement_recommendation(conn, forecast_run_id=None) -> str`**
+One-screen answer to "do we need to buy anything?" Queries LP net requirement
+per component and triggered-week count. Returns a compact table with
+Component | LP Net Req | Triggered Wks | Action columns and 🔴/🟢 status.
+**Start here in any agent conversation about procurement.**
+
+#### Secondary — explainability
 
 **`format_aggregated_procurement_need(conn, forecast_run_id=None, product=None, facility_id=None) -> str`**
 Horizon-level procurement need used by the LP optimizer. Applies the inventory
@@ -133,6 +132,23 @@ This is the quantity the optimizer allocates across suppliers. Use this to
 understand what the LP is actually optimizing, and to verify LP allocation
 totals against planning need.
 
+**`get_triggered_procurement_rows(conn, forecast_run_id=None, product=None, facility_id=None) -> str`**
+Only rows where `net_requirement > 0` — the specific weeks and facilities where
+procurement is actually required. Accepts optional filters by product and
+facility. Use this to explain WHERE and WHEN the buy signal is active.
+
+#### Diagnostic / deep-dive
+
+**`format_component_requirements(conn, forecast_run_id=None) -> str`**
+Full-horizon BOM-exploded demand. Shows gross component volume required to
+fulfill the finished-goods forecast, before any inventory or safety stock
+adjustment. Use this to understand the raw scale of procurement need.
+
+**`format_procurement_status(conn, forecast_run_id=None) -> str`**
+Week-by-week inventory trigger signal across all components and facilities.
+Shows the full depletion math for every forecast week. This is NOT the LP demand
+floor — see `format_aggregated_procurement_need()` for that.
+
 ---
 
 ### LangChain wrappers
@@ -140,13 +156,15 @@ totals against planning need.
 Each wrapper opens and closes its own DB connection. `forecast_run_id=0`
 retrieves the most recent run.
 
-| Wrapper | Returns |
-|---|---|
-| `get_component_requirements_summary_tool(forecast_run_id=0)` | Full-horizon gross BOM demand |
-| `get_procurement_status_summary_tool(forecast_run_id=0)` | Week-by-week procurement trigger signal |
-| `get_procurement_planning_summary_tool(forecast_run_id=0)` | Both gross demand and weekly trigger signal in sequence |
-| `get_aggregated_procurement_need_tool(forecast_run_id=0, product='', facility_id='')` | Horizon-level LP demand floor (the quantity the LP optimizes) |
-| `get_bom_translation_tool(semiconductor_id, forecast_run_id=0, facility_id='', target_week_date='')` | BOM translation explainability output |
+| Tier | Wrapper | Returns |
+|---|---|---|
+| **Primary** | `get_procurement_recommendation_tool(forecast_run_id=0)` | One-screen buy/no-buy status per component |
+| **Secondary** | `get_aggregated_procurement_need_tool(forecast_run_id=0, product='', facility_id='')` | Horizon-level LP demand floor (the quantity the LP optimizes) |
+| **Secondary** | `get_triggered_procurement_rows_tool(forecast_run_id=0, product='', facility_id='')` | Triggered weeks only — WHERE and WHEN procurement activates |
+| Diagnostic | `get_procurement_status_summary_tool(forecast_run_id=0)` | Full week-by-week procurement trigger signal |
+| Diagnostic | `get_procurement_planning_summary_tool(forecast_run_id=0)` | Gross demand + weekly trigger signal in sequence |
+| Diagnostic | `get_component_requirements_summary_tool(forecast_run_id=0)` | Full-horizon gross BOM demand |
+| Diagnostic | `get_bom_translation_tool(semiconductor_id, forecast_run_id=0, facility_id='', target_week_date='')` | BOM translation explainability output |
 
 ---
 
@@ -206,16 +224,15 @@ SKU, not the aggregated planning totals.
 | **BOM Translation (Mode B)** | One forecast row exploded through the BOM — gross component demand for a specific SKU × facility × week | No |
 
 **Why the distinction matters:**
-The Procurement Status and Triggered Rows views apply `max(0, gross_T + K)`
-per forecast week, where K is the (fixed) inventory offset. Summing these
-per-week values produces a much smaller number than the correct horizon need
-because most weeks show 0 net requirement (inventory is sufficient that week).
-The LP must instead apply the inventory offset once against the full horizon
-gross demand — which is what the Aggregated Procurement Need helper shows.
-
-Most weeks have gross demand but net requirement = 0. Procurement is triggered
-only in the weeks and facilities where on-hand inventory plus safety stock
-coverage is insufficient to meet that week's component need.
+`vw_procurement_requirement` uses stateful rolling depletion — inventory is
+consumed week by week until exhausted, then procurement is triggered. Most
+weeks show `net_requirement = 0` because inventory covers demand; only the
+weeks where the usable pool (above the SS floor) runs out produce a non-zero
+signal. Summing weekly net requirements does equal the LP demand floor when
+`on_hand ≥ SS`, but the LP computes this directly by applying the inventory
+offset once against total horizon gross demand — not by summing per-week rows.
+The Aggregated Procurement Need helper shows the LP-equivalent single-step
+computation; the Triggered Rows helper shows which specific weeks drive it.
 
 ---
 
@@ -223,48 +240,52 @@ coverage is insufficient to meet that week's component need.
 
 ```python
 from inventory.procurement_summary import (
-    get_component_requirements_summary_tool,
-    get_procurement_status_summary_tool,
+    get_procurement_recommendation_tool,
     get_aggregated_procurement_need_tool,
+    get_triggered_procurement_rows_tool,
+    get_procurement_status_summary_tool,
     get_procurement_planning_summary_tool,
-    get_triggered_procurement_rows,
-    get_procurement_requirement_drilldown,
+    get_component_requirements_summary_tool,
+    get_bom_translation_tool,
 )
 
-# --- LP-facing outputs ---
+# ── PRIMARY — start here ──────────────────────────────────────────────────────
 
-# Horizon-level LP demand floor — what the LP actually optimizes
+# "Do we need to buy anything?" — one-screen buy/no-buy per component
+print(get_procurement_recommendation_tool())
+
+# ── SECONDARY — explainability ────────────────────────────────────────────────
+
+# Horizon-level LP demand floor — the quantity the LP actually optimizes
 # "What is the total procurement need the LP is solving for?"
 print(get_aggregated_procurement_need_tool())
 
-# Filtered to one component (matches LP run for transistors)
+# Filtered to one component
 print(get_aggregated_procurement_need_tool(product='transistors'))
 
-# --- Weekly planning / drill-down outputs ---
+# Which specific weeks and facilities are triggering procurement?
+print(get_triggered_procurement_rows_tool())
 
-# Gross BOM demand (before any inventory offset)
-print(get_component_requirements_summary_tool())
+# Filtered to one component at one facility
+print(get_triggered_procurement_rows_tool(product='transistors', facility_id='FACILITY_3'))
 
-# Week-by-week procurement trigger signal (NOT the LP demand floor)
+# ── DIAGNOSTIC / DEEP-DIVE ────────────────────────────────────────────────────
+
+# Full week-by-week trigger signal for all components
 print(get_procurement_status_summary_tool())
 
-# Combined gross + weekly trigger in one output
+# Gross BOM demand + weekly trigger in one output
 print(get_procurement_planning_summary_tool())
 
-# All triggered rows across all components and facilities
-conn = psycopg2.connect(DATABASE_URL)
-print(get_triggered_procurement_rows(conn))
-
-# Drill down: one component, one facility, all forecast weeks
-print(get_procurement_requirement_drilldown(conn, product='transistors', facility_id='FACILITY_3'))
-conn.close()
+# Raw gross BOM demand (before any inventory offset)
+print(get_component_requirements_summary_tool())
 ```
 
-**NOTE:** What is now being fed into LP:
- - For each product x facility, the LP demand is:
-  - `D = max[0, TOTAL_GROSS_DEMAND + BACKORDERS (0) + SAFETY_STOCK − ON_HAND − SCHEDULED_RECEIPTS (0)]`
-
-This is applied ONCE over the entire (20 week) planning horizon.
+**LP demand floor formula** (applied ONCE over the 20-week planning horizon, per facility × product):
+```
+D = max(0, total_horizon_gross_demand − available_above_ss)
+available_above_ss = max(0, on_hand + scheduled_receipts − backorders − safety_stock)
+```
 
 ```python
 from inventory.procurement_summary import (

@@ -1,7 +1,43 @@
 """
 procurement_summary.py — Business-facing BOM / inventory planning layer summaries.
 
+Tool hierarchy for agent use
+─────────────────────────────────────────────────────────────────────────────────
+
+PRIMARY — start here
+    get_procurement_recommendation_tool(forecast_run_id=0)
+        One-screen answer to "do we need to buy anything?"
+        Shows LP net requirement per component with 🔴/🟢 action status.
+
+SECONDARY — explainability
+    get_aggregated_procurement_need_tool(forecast_run_id=0,
+                                         product='', facility_id='')
+        Horizon-level LP demand floor per facility × component.
+        This is the quantity the LP optimizer actually allocates across suppliers.
+
+    get_triggered_procurement_rows_tool(forecast_run_id=0,
+                                        product='', facility_id='')
+        The specific weeks and facilities where procurement is triggered
+        (net_requirement > 0). Use to explain WHERE and WHEN buying happens.
+
+DIAGNOSTIC / DEEP-DIVE — use only when deeper detail is needed
+    get_procurement_status_summary_tool(forecast_run_id=0)
+        Full week-by-week inventory trigger signal for all components.
+
+    get_procurement_planning_summary_tool(forecast_run_id=0)
+        Gross BOM demand + weekly trigger signal in one combined output.
+
+    get_component_requirements_summary_tool(forecast_run_id=0)
+        Full-horizon gross BOM demand before any inventory offset.
+
+    get_bom_translation_tool(semiconductor_id, forecast_run_id=0,
+                             facility_id='', target_week_date='')
+        BOM recipe (Mode A) or forecast-row explosion (Mode B).
+
+─────────────────────────────────────────────────────────────────────────────────
+
 Entry points (independently callable):
+    format_procurement_recommendation(conn, forecast_run_id=None)     -> str
     format_component_requirements(conn, forecast_run_id=None)         -> str
     format_procurement_status(conn, forecast_run_id=None)             -> str
     format_aggregated_procurement_need(conn, forecast_run_id=None,    -> str
@@ -10,17 +46,6 @@ Entry points (independently callable):
                            forecast_run_id=None,
                            facility_id=None,
                            target_week_date=None)
-
-LangChain @tool wrappers (manage their own DB connection):
-    get_component_requirements_summary_tool(forecast_run_id=0)           -> str
-    get_procurement_status_summary_tool(forecast_run_id=0)               -> str
-    get_procurement_planning_summary_tool(forecast_run_id=0)             -> str
-    get_aggregated_procurement_need_tool(forecast_run_id=0,              -> str
-                                         product='', facility_id='')
-    get_bom_translation_tool(semiconductor_id,                           -> str
-                             forecast_run_id=0,
-                             facility_id='',
-                             target_week_date='')
 
 Reads from:
     vw_component_requirement_lp          (BOM-exploded full-horizon demand)
@@ -38,12 +63,18 @@ All values are read from pre-computed tables and views.
 Usage:
     import psycopg2
     from inventory.procurement_summary import (
-        format_component_requirements,
-        format_procurement_status,
+        get_procurement_recommendation_tool,
+        get_aggregated_procurement_need_tool,
     )
 
+    # Primary entry point — "do we need to buy anything?"
+    print(get_procurement_recommendation_tool())
+
+    # Horizon-level LP demand floor with facility detail
+    print(get_aggregated_procurement_need_tool())
+
     conn = psycopg2.connect(DATABASE_URL)
-    print(format_component_requirements(conn))
+    from inventory.procurement_summary import format_procurement_status
     print(format_procurement_status(conn))
     conn.close()
 """
@@ -1212,6 +1243,152 @@ def format_aggregated_procurement_need(
     return "\n".join(lines)
 
 
+# ── Procurement Recommendation (concise agent-facing summary) ────────────────
+
+def format_procurement_recommendation(conn, forecast_run_id=None) -> str:
+    """
+    Return a concise, actionable procurement recommendation for the current
+    planning cycle.
+
+    Combines aggregated procurement need (LP demand floor) with a triggered-week
+    count to produce a one-screen answer suitable for a conversational agent
+    response to questions like "Do we need to procure anything?" or
+    "What do we need to buy this cycle?"
+
+    This does NOT replace get_aggregated_procurement_need_tool() for detailed
+    LP demand or get_triggered_procurement_rows_tool() for week-by-week
+    explainability. It is the concise entry point.
+    """
+    run_id = _resolve_run_id(conn, forecast_run_id)
+
+    with conn.cursor() as cur:
+        # Planning window
+        cur.execute(
+            """
+            SELECT MIN(target_week_date), MAX(target_week_date),
+                   COUNT(DISTINCT target_week_date)
+            FROM vw_component_requirement_lp
+            WHERE forecast_run_id = %s
+            """,
+            (run_id,),
+        )
+        horizon_start, horizon_end, n_horizon_weeks = cur.fetchone()
+
+        # Decision date
+        cur.execute("SELECT MAX(week_date) FROM fact_component_inventory_history")
+        decision_date = cur.fetchone()[0]
+
+        # Aggregated net requirement per product (LP demand floor)
+        cur.execute(
+            """
+            SELECT
+                dp.product,
+                GREATEST(0,
+                    SUM(lp.total_component_requirement)
+                    + MAX(dp_snap.backorder_qty)
+                    + MAX(pol.safety_stock_qty)
+                    - MAX(dp_snap.on_hand_qty)
+                    - MAX(dp_snap.scheduled_receipts_qty)
+                ) AS horizon_net_req
+            FROM vw_component_requirement_lp lp
+            JOIN dim_product dp ON dp.product_key = lp.product_key
+            JOIN (
+                SELECT facility_id, product_key,
+                       on_hand_qty, scheduled_receipts_qty, backorder_qty
+                FROM fact_component_inventory_history
+                WHERE week_date = (
+                    SELECT MAX(week_date) FROM fact_component_inventory_history
+                )
+            ) dp_snap
+                ON  dp_snap.facility_id = lp.facility_id
+                AND dp_snap.product_key = lp.product_key
+            JOIN fact_inventory_policy pol
+                ON  pol.forecast_run_id = lp.forecast_run_id
+                AND pol.facility_id     = lp.facility_id
+                AND pol.product_key     = lp.product_key
+            WHERE lp.forecast_run_id = %s
+            GROUP BY dp.product
+            ORDER BY horizon_net_req DESC
+            """,
+            (run_id,),
+        )
+        need_rows = cur.fetchall()
+
+        # Count distinct triggered weeks per product (net_requirement > 0)
+        cur.execute(
+            """
+            SELECT dp.product,
+                   COUNT(DISTINCT r.target_week_date) AS triggered_weeks
+            FROM vw_procurement_requirement r
+            JOIN dim_product dp ON dp.product_key = r.product_key
+            WHERE r.forecast_run_id = %s
+              AND r.net_requirement  > 0
+            GROUP BY dp.product
+            """,
+            (run_id,),
+        )
+        trig_map = {row[0]: int(row[1]) for row in cur.fetchall()}
+
+    if not need_rows:
+        return f"No procurement data found for forecast_run_id={run_id}."
+
+    need_by_product = {r[0]: float(r[1]) for r in need_rows}
+    action_required = [p for p, n in need_by_product.items() if n > 0]
+    total_net = sum(need_by_product.values())
+
+    status_line = (
+        f"  {len(action_required)} of {len(need_by_product)} component"
+        f"{'s' if len(need_by_product) != 1 else ''} require procurement this cycle."
+        if action_required
+        else "  All components are covered by existing inventory. No procurement needed."
+    )
+
+    lines = [
+        "═" * _W,
+        "  PROCUREMENT RECOMMENDATION",
+        f"  As of {decision_date}  ·  Horizon: {horizon_start} → {horizon_end}"
+        f"  ({n_horizon_weeks} wks)",
+        "═" * _W,
+        "",
+        status_line,
+        "",
+        (
+            f"  {'Component':<36}"
+            f" {'LP Net Req':>12}"
+            f" {'Triggered Wks':>14}"
+            f" {'Action':>8}"
+        ),
+        _rule(),
+    ]
+
+    for prod, net_req in sorted(need_by_product.items(), key=lambda x: -x[1]):
+        trig_wks = trig_map.get(prod, 0)
+        action   = "🔴 Buy" if net_req > 0 else "🟢 Covered"
+        lines.append(
+            f"  {prod:<36}"
+            f" {net_req:>12,.0f}"
+            f" {trig_wks:>6} / {n_horizon_weeks:<6}"
+            f" {action:>8}"
+        )
+
+    lines += [
+        _rule(),
+        f"  {'TOTAL':<36} {total_net:>12,.0f}",
+        "",
+        "  Next steps:",
+        "    · get_aggregated_procurement_need_tool()          — full LP demand detail",
+        "    · get_triggered_procurement_rows_tool(product=…)  — when/why per component",
+        "    · run LP optimizer to allocate across suppliers",
+        "",
+        "  Note: LP Net Req = horizon gross demand − inventory offset (applied once).",
+        "  Triggered Wks = distinct forecast weeks where demand exceeds remaining stock.",
+        "",
+        "═" * _W,
+    ]
+
+    return "\n".join(lines)
+
+
 # ── LangChain @tool wrappers (Option B — no demo/* modified) ─────────────────
 
 @tool
@@ -1239,16 +1416,16 @@ def get_component_requirements_summary_tool(forecast_run_id: int = 0) -> str:
 
 @tool
 def get_procurement_status_summary_tool(forecast_run_id: int = 0) -> str:
-    """Return the week-by-week inventory-adjusted procurement trigger signal.
+    """[DIAGNOSTIC / DEEP-DIVE] Return the full week-by-week procurement status block.
 
-    Shows where and when procurement is triggered across the planning horizon,
-    after applying inventory position and safety stock policy to BOM-exploded
-    component demand on a per-week basis. Use this to understand WHICH weeks
-    and facilities drive procurement need.
+    Produces a detailed multi-section output covering the stateful rolling
+    depletion formula, all metric definitions, and a per-component trigger
+    summary. Use this for thorough planning diagnostics or audit purposes —
+    not as the default answer to "Do we need to buy anything?"
 
-    This is NOT the LP demand floor. The LP applies the inventory offset once
-    at the horizon level. Use get_aggregated_procurement_need_tool() to see
-    the quantity the optimizer actually allocates across suppliers.
+    For a concise procurement answer use get_procurement_recommendation_tool().
+    For triggered-week detail use get_triggered_procurement_rows_tool().
+    For the LP demand quantity use get_aggregated_procurement_need_tool().
 
     Args:
         forecast_run_id: Specific forecast run to retrieve. Pass 0 (default)
@@ -1267,15 +1444,14 @@ def get_procurement_status_summary_tool(forecast_run_id: int = 0) -> str:
 
 @tool
 def get_procurement_planning_summary_tool(forecast_run_id: int = 0) -> str:
-    """Return both the component requirements and procurement trigger signal in sequence.
+    """[DIAGNOSTIC / DEEP-DIVE] Return gross component requirements and weekly trigger in sequence.
 
-    Combines format_component_requirements (gross BOM-exploded demand) and
-    format_procurement_status (week-by-week inventory trigger signal) into a
-    single output. Use this to understand the full planning picture: raw
-    component demand and where/when procurement is triggered week by week.
+    Combines the full BOM-exploded gross demand and the week-by-week
+    inventory trigger signal into a single extended output. Use for thorough
+    planning audit — output is intentionally long.
 
-    For the quantity the LP actually optimizes (horizon-level, inventory offset
-    applied once), use get_aggregated_procurement_need_tool() instead.
+    For a concise procurement answer use get_procurement_recommendation_tool().
+    For the LP demand quantity use get_aggregated_procurement_need_tool().
 
     Args:
         forecast_run_id: Specific forecast run to retrieve. Pass 0 (default)
@@ -1333,6 +1509,89 @@ def get_aggregated_procurement_need_tool(
     except Exception as e:
         logger.error("[AGGREGATED_NEED] Tool call failed: %s", e, exc_info=True)
         return f"Error retrieving aggregated procurement need: {e}"
+    finally:
+        conn.close()
+
+
+@tool
+def get_procurement_recommendation_tool(forecast_run_id: int = 0) -> str:
+    """Return a concise procurement recommendation for the current planning cycle.
+
+    Answers questions like:
+      - "Do we need to procure anything?"
+      - "What do we need to buy?"
+      - "What is the procurement status?"
+
+    Returns a one-screen summary showing:
+      - which components require procurement action
+      - the LP-level net requirement (horizon total) per component
+      - how many forecast weeks triggered procurement per component
+      - next-step tool suggestions for detail
+
+    This is the DEFAULT starting point for procurement questions.
+    For full LP demand detail: get_aggregated_procurement_need_tool()
+    For triggered-week explainability: get_triggered_procurement_rows_tool()
+
+    Args:
+        forecast_run_id: Specific forecast run to retrieve. Pass 0 (default)
+                         to retrieve the most recent production forecast run.
+    """
+    conn = _get_conn()
+    try:
+        run_id = forecast_run_id if forecast_run_id > 0 else None
+        return format_procurement_recommendation(conn, forecast_run_id=run_id)
+    except Exception as e:
+        logger.error("[PROCUREMENT_REC] Tool call failed: %s", e, exc_info=True)
+        return f"Error retrieving procurement recommendation: {e}"
+    finally:
+        conn.close()
+
+
+@tool
+def get_triggered_procurement_rows_tool(
+    forecast_run_id: int = 0,
+    product: str = "",
+    facility_id: str = "",
+) -> str:
+    """Return the weeks and facilities where procurement is triggered (net_requirement > 0).
+
+    Answers questions like:
+      - "Why do we need to buy transistors?"
+      - "Which weeks trigger procurement for power_devices?"
+      - "When does inventory run out?"
+
+    Shows only rows where gross demand exceeds the remaining usable inventory
+    (above the safety stock floor), after stateful week-by-week depletion.
+    Each row includes: horizon week number, date, facility, gross demand,
+    starting on-hand, SS floor, remaining inventory, and net requirement.
+
+    Modes:
+      no filter         → all triggered rows, all components, all facilities
+      product=…         → triggered rows for that component, all facilities
+      product + facility → triggered rows for that component, that facility
+
+    Facility filtering is optional drill-down. The agent should NOT require
+    facility by default — only use it when the user explicitly asks for a
+    specific facility.
+
+    Args:
+        forecast_run_id: Specific forecast run. Pass 0 (default) for latest.
+        product:         Component to filter (e.g. 'transistors'). Leave blank
+                         for all components.
+        facility_id:     Facility to filter (e.g. 'FAC_001'). Only applied
+                         when product is also specified. Leave blank for all.
+    """
+    conn = _get_conn()
+    try:
+        run_id = forecast_run_id if forecast_run_id > 0 else None
+        prod   = product.strip() or None
+        fac    = facility_id.strip() or None
+        return get_triggered_procurement_rows(
+            conn, forecast_run_id=run_id, product=prod, facility_id=fac
+        )
+    except Exception as e:
+        logger.error("[TRIGGERED_ROWS] Tool call failed: %s", e, exc_info=True)
+        return f"Error retrieving triggered procurement rows: {e}"
     finally:
         conn.close()
 
