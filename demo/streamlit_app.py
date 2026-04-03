@@ -18,6 +18,13 @@ nest_asyncio.apply()
 
 from graph.builder import build_graph
 
+# Keys that belong to other agents (not pipeline results).
+# Used to filter agent_results → pipeline-only items by exclusion.
+_NON_PIPELINE_KEYS = frozenset({
+    "data_agent", "risk_agent", "pipeline_agent", "pipeline_errors",
+    "lp_agent", "lp_agent_errors", "chart_agent",
+})
+
 st.set_page_config(page_title="Procurement Agent", layout="wide")
 st.title("Procurement Supply Chain Agent")
 
@@ -81,7 +88,7 @@ def show_trace(trace):
 
         # Pipeline agent results (keyed by tool name: forecast_summary, component_requirements, etc.)
         pipeline_results = {k: v for k, v in trace["agent_results"].items()
-                           if k in ("forecast_summary", "component_requirements", "procurement_status")}
+                           if k not in _NON_PIPELINE_KEYS and not k.startswith("lp_")}
         if pipeline_results:
             st.subheader("Pipeline Agent")
             for key, content in pipeline_results.items():
@@ -193,36 +200,33 @@ def stream_graph(command, config):
                     final_state.setdefault("agent_results", {}).update(node_output["agent_results"] or {})
                 if node_name == "pipeline_agent" and node_output.get("agent_results"):
                     pipeline_items = {k: v for k, v in node_output["agent_results"].items()
-                                     if k in ("forecast_summary", "component_requirements", "procurement_status")}
+                                     if k not in _NON_PIPELINE_KEYS and not k.startswith("lp_")}
                     if pipeline_items:
                         final_state.setdefault("pipeline_results", {}).update(pipeline_items)
-                        _render_streaming(placeholder)
                 if node_name == "data_agent" and node_output.get("agent_results"):
                     data_text = node_output["agent_results"].get("data_agent")
                     if data_text:
                         final_state["latest_data_agent"] = data_text
-                        _render_streaming(placeholder)
                 if node_name == "risk_agent" and node_output.get("agent_results"):
                     risk_text = node_output["agent_results"].get("risk_agent")
                     if risk_text:
                         final_state["latest_risk_agent"] = risk_text
-                        _render_streaming(placeholder)
                 if node_name == "lp_agent" and node_output.get("agent_results"):
                     lp_items = {k: v for k, v in node_output["agent_results"].items() if k.startswith("lp_")}
                     if lp_items:
                         final_state.setdefault("lp_results", {}).update(lp_items)
-                        _render_streaming(placeholder)
                 if node_name == "chart_agent" and node_output.get("chart_results"):
                     final_state.setdefault("chart_results", {}).update(node_output["chart_results"])
-                    _render_streaming(placeholder)
                 if node_name == "synthesizer" and "final_response" in node_output:
                     final_state["final_response"] = node_output["final_response"]
                     final_state["timings"] = node_output.get("timings", {})
-                    _render_streaming(placeholder)
                 final_state[node_name] = node_output
         return final_state
 
-    return asyncio.run(stream_results())
+    result = asyncio.run(stream_results())
+    # Render once after all results are collected (avoids async generator crash)
+    _render_streaming(placeholder)
+    return result
 
 
 def finalize_execution(final_state, fallback_plan=None):
@@ -239,7 +243,7 @@ def finalize_execution(final_state, fallback_plan=None):
     # Combine text agent results + synthesizer summary
     parts = []
     pipeline_items = {k: v for k, v in trace["agent_results"].items()
-                     if k in ("forecast_summary", "component_requirements", "procurement_status")}
+                     if k not in _NON_PIPELINE_KEYS and not k.startswith("lp_")}
     if pipeline_items:
         pip_parts = []
         for key, content in pipeline_items.items():
