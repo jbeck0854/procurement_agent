@@ -57,13 +57,17 @@ Before kickstarting demo and initializing streamlit, in terminal (after all data
 # 0. activate venv
 source demo/venv/bin/activate
 
-# 1. generate forecasts (from project root)
+# 1 for model-trust and explainability routes (from project root)
+python -m forecasting.run_pipeline
+python -m forecasting.run_baseline
+
+# 2. generate forecasts (from project root)
 python -m forecasting.run_production
 
-# 2. build inventory / procurement layer (from project root)
+# 3. build inventory / procurement layer (from project root)
 python -m inventory.run_inventory
 
-# 3. THEN start demo
+# 4. THEN start demo
 cd demo
 streamlit run streamlit_app.py
 ```
@@ -127,7 +131,20 @@ Returns a clean planning-window summary of the latest production forecast, inclu
 - weekly totals
 - forecast metadata
 
-Additional routes that can be taken here (user choice) **SEE THE HELPER FUNCTIONS (within /forecast) FOR IDEAS ON STRUCTURING PROFESSIONAL QUERIES FOR THESE**:
+Additional routes that can be taken here (user choice) 
+
+**(Optional) CALLS FOR MODEL ASSESSMENT AND VALIDATION OF FORECASTS**:
+> **User:** "Show me the forecast detail by facility and SKU."
+
+> **User:** "Show me the forecast detail for Facility 1"
+
+> **User:** "Compare forecast demand across all facilities"
+
+> **User:** "Are these forecasts reliable? How was the model trained and validated?"
+
+> **User:** "How does this model stack up against a baseline model?" 
+
+**SEE THE HELPER FUNCTIONS (within /forecast) FOR IDEAS ON STRUCTURING PROFESSIONAL QUERIES FOR THESE**:
 #### 2) Forecast drill-down
 Returns week × facility × semiconductor detail for the production forecast, including:
 - predicted demand

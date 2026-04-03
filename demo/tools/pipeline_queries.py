@@ -170,19 +170,35 @@ def _plot_all_facilities_forecast(df):
 
 
 def _narrative_all_facilities(df) -> str:
-    """Concise business summary for the all-facilities forecast chart."""
+    """Concise bullet summary for the all-facilities forecast chart."""
+    import re
+    import pandas as pd
+
+    def _fac_label(fid: str) -> str:
+        """'FACILITY_1' → 'Facility 1'."""
+        m = re.match(r'FACILITY_(\d+)', str(fid), re.IGNORECASE)
+        return f"Facility {m.group(1)}" if m else str(fid)
+
     by_fac_week = df.groupby(["facility_id", "target_week_date"])["predicted_demand"].sum()
-    by_fac = by_fac_week.groupby("facility_id").sum()
-    total = by_fac.sum()
-    top_fac = by_fac.idxmax()
+    by_fac = pd.to_numeric(
+        by_fac_week.groupby("facility_id").sum(), errors="coerce"
+    ).fillna(0.0)
+    total   = by_fac.sum()
+    weeks   = df["target_week_date"].nunique()
+    top_fid = by_fac.idxmax()
     top_val = by_fac.max()
-    weeks = df["target_week_date"].nunique()
-    return (
-        f"Forecast covers **{len(by_fac)} facilities** over **{weeks} weeks**, "
-        f"with a combined total of **{total:,.0f} units**. "
-        f"**{top_fac}** is the highest-demand facility at **{top_val:,.0f} units** "
-        f"({top_val / total * 100:.0f}% of system-level demand)."
-    )
+    bot_fid = by_fac.idxmin()
+    bot_val = by_fac.min()
+
+    lines = [
+        f"- Forecast covers **{len(by_fac)} facilities over {weeks} weeks**, "
+        f"with a combined total of **{total:,.0f} units**",
+        f"- **Highest-demand facility:** {_fac_label(top_fid)} with "
+        f"**{top_val:,.0f} units** (~{top_val / total * 100:.0f}% of total demand)",
+        f"- **Lowest-demand facility:** {_fac_label(bot_fid)} with "
+        f"**{bot_val:,.0f} units** (~{bot_val / total * 100:.0f}% of total demand)",
+    ]
+    return "\n".join(lines)
 
 
 # Compact, business-facing markdown summaries for each assessment direction.

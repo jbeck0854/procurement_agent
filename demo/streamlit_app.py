@@ -301,6 +301,21 @@ def _is_forecast_drilldown_request(text: str) -> bool:
     )
 
 
+def _is_all_facilities_forecast(text: str) -> bool:
+    """True when the user asks for a cross-facility forecast comparison.
+
+    Checked BEFORE _forecast_assessment_direction so that queries containing
+    'compare' (e.g. 'Compare forecast demand across all facilities') are not
+    misrouted to the model-baseline assessment route, which also matches 'compar'.
+    Requires at least one _FORECAST_CONTEXT signal plus one all-facilities signal.
+    """
+    t = text.lower()
+    return (
+        any(s in t for s in _FORECAST_CONTEXT)
+        and any(s in t for s in _FORECAST_ALL_FACILITIES_SIGNALS)
+    )
+
+
 def _extract_facility_id(text: str) -> str | None:
     """Extract FACILITY_N from free text (e.g. 'Facility 2' → 'FACILITY_2')."""
     import re
@@ -571,11 +586,17 @@ def show_trace(trace):
 assistant_index = 0
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
+        # ── Fast-path chart replay (Case B / Case C drilldown) ────────────
+        # Assessment routes set chart_first=True so the plot renders before
+        # the text summary (transition + result_text are stored together in
+        # content, so the only way to get image-first is to render the chart
+        # before calling st.markdown on content).
+        _b64 = msg.get("chart_b64", "")
+        if _b64 and msg.get("chart_first"):
+            st.image(base64.b64decode(_b64))
         if msg.get("content"):
             st.markdown(msg["content"])
-        # ── Fast-path chart replay (Case B / Case C drilldown) ────────────
-        if msg.get("chart_b64"):
-            _b64 = msg["chart_b64"]
+        if _b64 and not msg.get("chart_first"):
             if msg.get("chart_scroll"):
                 # Case B: render inside a scrollable HTML div so the chart
                 # area scrolls independently and the summary stays fixed above.
@@ -951,6 +972,43 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
             })
             st.rerun()
 
+        # ── Fast all-facilities forecast comparison ────────────────────────
+        # Must precede _forecast_assessment_direction: queries like
+        # "Compare forecast demand across all facilities" contain 'compar' which
+        # matches _FORECAST_BASELINE_SIGNALS. Checking all-facilities signals first
+        # prevents misrouting to the model-baseline assessment route.
+        elif _is_all_facilities_forecast(prompt):
+            import matplotlib.pyplot as plt
+            with st.spinner("Retrieving forecast data..."):
+                from tools.pipeline_queries import (
+                    get_forecast_drilldown_df,
+                    _plot_all_facilities_forecast,
+                    _narrative_all_facilities,
+                )
+                df = get_forecast_drilldown_df()
+            transition = (
+                "Here is the forecasted demand trend across all four "
+                "facilities over the planning horizon."
+            )
+            narrative = _narrative_all_facilities(df)
+            fig = _plot_all_facilities_forecast(df)
+            chart_b64 = _fig_to_b64(fig)
+            plt.close(fig)
+            with st.chat_message("assistant"):
+                st.markdown(transition)
+                st.divider()
+                st.subheader("📊 Forecast — All Facilities")
+                st.image(base64.b64decode(chart_b64))
+                st.markdown(narrative)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": f"{transition}\n\n{narrative}",
+                "has_trace": False,
+                "summary": "",
+                "chart_b64": chart_b64,
+            })
+            st.rerun()
+
         # ── Fast forecast model assessment ────────────────────────────────
         elif _forecast_assessment_direction(prompt) is not None:
             direction = _forecast_assessment_direction(prompt)
@@ -960,25 +1018,27 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 result = query_forecast_model_assessment(direction=direction)
                 result_text = result.get("content", "")
                 artifact_path = result.get("artifact_path", "")
+            # Read artifact PNG → base64 so the replay loop can redisplay it
+            # after st.rerun() clears the current render (same pattern as drill-down).
+            chart_b64 = ""
+            if artifact_path:
+                abs_path = os.path.join(_ARTIFACTS_BASE, artifact_path)
+                if os.path.exists(abs_path):
+                    with open(abs_path, "rb") as _f:
+                        chart_b64 = base64.b64encode(_f.read()).decode()
             with st.chat_message("assistant"):
-                st.markdown(transition)
-                st.divider()
                 st.subheader(label)
-                # Render PNG artifact directly if available — plot comes first.
-                if artifact_path:
-                    abs_path = os.path.join(_ARTIFACTS_BASE, artifact_path)
-                    if os.path.exists(abs_path):
-                        st.image(abs_path)
-                # Compact markdown text — wraps properly, no horizontal overflow.
+                if chart_b64:
+                    st.image(base64.b64decode(chart_b64))
                 st.markdown(result_text)
-            # Store for replay — images are not persisted across reruns,
-            # but the markdown text is always readable.
-            combined = f"{transition}\n\n---\n\n**{label}**\n\n{result_text}"
+            combined = f"**{label}**\n\n{result_text}"
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": combined,
                 "has_trace": False,
                 "summary": "",
+                "chart_b64": chart_b64,
+                "chart_first": True,  # replay loop renders image before text content
             })
             st.rerun()
 
