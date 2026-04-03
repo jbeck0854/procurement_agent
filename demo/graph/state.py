@@ -31,3 +31,6 @@ class AgentState(TypedDict):
     raw_data: Annotated[dict, merge_dicts]  # structured data from data_agent
     final_response: str
     timings: Annotated[dict, merge_dicts]
+    # Session-level approved LP runs. Populated by Streamlit on user approval;
+    # not written by any graph node. Declared here for type completeness only.
+    approved_lp_runs: list

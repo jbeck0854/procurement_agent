@@ -8,6 +8,8 @@ import json
 import logging
 import time
 
+from langgraph.types import interrupt
+
 from graph.state import AgentState
 from tools.optimization import DIRECT_LP_TOOLS
 
@@ -228,11 +230,31 @@ async def lp_agent_node(state: AgentState) -> dict:
             agent_results[result_key] = f"LP optimization failed for {product}: {e}"
             logger.error(f"[LP_AGENT] Failed {product}: {e}", exc_info=True)
 
+    # ── LP approval interrupt ──────────────────────────────────────────────────
+    # Pause for user approval BEFORE the synthesizer finalises the turn.
+    # Only fires when at least one LP product actually completed and has a
+    # corresponding entry in raw_data (guards against error-only runs).
+    lp_keys = [k for k in agent_results if k in raw_data]
+    if lp_keys:
+        approval_payload = {
+            "type":      "lp_approval",
+            "formatted": {k: agent_results[k] for k in lp_keys},
+            "raw":       {k: raw_data[k] for k in lp_keys},
+        }
+        feedback = interrupt(approval_payload)
+        if str(feedback).strip().lower() == "discard":
+            for k in lp_keys:
+                agent_results.pop(k, None)
+                raw_data.pop(k, None)
+            logger.info("[LP_AGENT] LP results discarded by user.")
+        else:
+            logger.info("[LP_AGENT] LP results approved by user.")
+
     total = round(time.perf_counter() - start, 3)
     timings["lp_agent"] = total
 
-    n_ok = sum(1 for k in agent_results if "failed" not in agent_results[k].lower())
-    logger.info(f"[TIMING] lp_agent total: {total:.3f}s — {n_ok} product(s) optimized")
+    n_ok = sum(1 for k in agent_results if k in raw_data)
+    logger.info(f"[TIMING] lp_agent total: {total:.3f}s — {n_ok} product(s) retained")
 
     if errors:
         agent_results["lp_agent_errors"] = "; ".join(errors)

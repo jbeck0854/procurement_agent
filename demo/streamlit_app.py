@@ -25,6 +25,12 @@ _NON_PIPELINE_KEYS = frozenset({
     "lp_agent", "lp_agent_errors", "chart_agent",
 })
 
+# User inputs that trigger a session-level summary (bypass graph entirely).
+_SUMMARY_TRIGGERS = frozenset({
+    "final summary", "session summary", "summarize session",
+    "summarize all", "full summary", "what did we decide",
+})
+
 st.set_page_config(page_title="Procurement Agent", layout="wide")
 st.title("Procurement Supply Chain Agent")
 
@@ -36,6 +42,7 @@ def get_graph():
 
 graph = get_graph()
 
+# ── Core session state ─────────────────────────────────────────────────────────
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "traces" not in st.session_state:
@@ -48,6 +55,78 @@ if "pending_plan" not in st.session_state:
     st.session_state.pending_plan = None
 if "plan_feedback" not in st.session_state:
     st.session_state.plan_feedback = ""
+
+# ── LP approval session state ──────────────────────────────────────────────────
+if "waiting_for_lp_approval" not in st.session_state:
+    st.session_state.waiting_for_lp_approval = False
+if "pending_lp_result" not in st.session_state:
+    st.session_state.pending_lp_result = None
+if "lp_partial_state" not in st.session_state:
+    st.session_state.lp_partial_state = {}
+if "saved_plan" not in st.session_state:
+    st.session_state.saved_plan = {}
+
+# ── Session-level approved LP runs ─────────────────────────────────────────────
+if "approved_lp_runs" not in st.session_state:
+    st.session_state.approved_lp_runs = []
+
+
+# ── Session-level helpers ──────────────────────────────────────────────────────
+
+def _store_approved_run(result: dict) -> None:
+    """Append one approved LP result dict to the session-level store."""
+    entry = {
+        "product":           (result.get("params_recap") or {}).get("product", "unknown"),
+        "allocated_qty":     (result.get("constraint_diagnostics") or {}).get("total_allocated", 0),
+        "total_cost":        (result.get("cost_summary") or {}).get("total_cost_usd", 0.0),
+        "n_suppliers":       (result.get("supplier_pool") or {}).get("n_selected_by_lp", 0),
+        "executive_summary": result.get("executive_summary", ""),
+        "allocation":        result.get("allocation", []),
+    }
+    st.session_state.approved_lp_runs.append(entry)
+
+
+def _format_session_summary(approved_runs: list) -> str:
+    """Format a session-level procurement summary from all approved LP runs."""
+    if not approved_runs:
+        return (
+            "No approved LP runs in this session yet. "
+            "Complete and approve at least one LP optimization to generate a session summary."
+        )
+    lines = ["**Session Procurement Plan — Approved Runs**\n"]
+    total_spend = 0.0
+    for run in approved_runs:
+        product = (run.get("product") or "unknown").replace("_", " ").title()
+        qty     = run.get("allocated_qty") or 0
+        cost    = run.get("total_cost") or 0.0
+        n_sup   = run.get("n_suppliers") or 0
+        exec_s  = (run.get("executive_summary") or "").strip()
+        total_spend += cost
+        lines.append(f"- **{product}**: {qty:,} units · {n_sup} supplier(s) · ${cost:,.2f}")
+        if exec_s:
+            lines.append(f"  ↳ {exec_s}")
+    lines.append(f"\n**Total Committed Spend: ${total_spend:,.2f}**")
+    lines.append("\n*Review approved recommendations, confirm lead times, and place orders.*")
+    return "\n".join(lines)
+
+
+def _merge_final_states(first: dict, second: dict) -> dict:
+    """Merge two partial graph stream states into one for finalize_execution.
+
+    `first`  — state collected before the LP interrupt (pipeline, charts).
+    `second` — state collected after approve/discard resume (LP result, synthesizer).
+    """
+    merged = dict(first)
+    for key in ("agent_results", "chart_results", "timings", "pipeline_results", "lp_results"):
+        merged[key] = {
+            **(first.get(key) or {}),
+            **(second.get(key) or {}),
+        }
+    for key in ("final_response", "intent", "tasks"):
+        if second.get(key):
+            merged[key] = second[key]
+    merged.pop("__interrupt__", None)
+    return merged
 
 
 def show_trace(trace):
@@ -65,7 +144,6 @@ def show_trace(trace):
             total = sum(timings.get(k, 0) for k in top_level)
             st.caption(f"Total pipeline time: **{total:.2f}s**")
 
-            # Show sub-step details
             sub_steps = {k: v for k, v in timings.items() if "." in k}
             if sub_steps:
                 detail_lines = [f"- {k}: {v:.3f}s" for k, v in sub_steps.items()]
@@ -86,7 +164,6 @@ def show_trace(trace):
             routed_agents = list({task["agent"] for task in trace["tasks"]})
             st.write(f"Routed to: **{', '.join(routed_agents)}**")
 
-        # Pipeline agent results (keyed by tool name: forecast_summary, component_requirements, etc.)
         pipeline_results = {k: v for k, v in trace["agent_results"].items()
                            if k not in _NON_PIPELINE_KEYS and not k.startswith("lp_")}
         if pipeline_results:
@@ -102,7 +179,6 @@ def show_trace(trace):
                 display = raw[:500] + "..." if len(raw) > 500 else raw
                 st.code(display)
 
-        # LP agent results (keyed as lp_{product})
         lp_results = {k: v for k, v in trace["agent_results"].items() if k.startswith("lp_")}
         if lp_results:
             st.subheader("LP Optimization Agent")
@@ -122,12 +198,13 @@ def show_trace(trace):
         st.write("Final response generated")
 
 
+# ── Message history replay ─────────────────────────────────────────────────────
+
 assistant_index = 0
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         if msg.get("content"):
             st.markdown(msg["content"])
-        # Only render charts, summary, and trace for result messages (not plan approval)
         if msg.get("has_trace") and assistant_index < len(st.session_state.traces):
             chart_results = st.session_state.traces[assistant_index].get("chart_results") or {}
             for chart_name, b64_img in chart_results.items():
@@ -139,6 +216,8 @@ for msg in st.session_state.messages:
         show_trace(st.session_state.traces[assistant_index])
         assistant_index += 1
 
+
+# ── Graph execution helpers ────────────────────────────────────────────────────
 
 def extract_plan(state):
     interrupts = []
@@ -152,7 +231,6 @@ def stream_graph(command, config):
     final_state = {"agent_results": {}}
 
     def _render_streaming(placeholder):
-        """Re-render the placeholder with all agent results collected so far."""
         with placeholder.container():
             pipeline_results = final_state.get("pipeline_results") or {}
             if pipeline_results:
@@ -190,6 +268,19 @@ def stream_graph(command, config):
     async def stream_results():
         async for event in graph.astream(command, config=config):
             for node_name, node_output in event.items():
+                # ── LP approval interrupt detection ──────────────────────────
+                # Must precede the isinstance(dict) check: node_output is a
+                # tuple of Interrupt objects here, not a dict.
+                if node_name == "__interrupt__":
+                    interrupts = node_output
+                    if interrupts:
+                        intr = interrupts[0]
+                        intr_val = intr.value if hasattr(intr, "value") else {}
+                        if isinstance(intr_val, dict) and intr_val.get("type") == "lp_approval":
+                            final_state["__interrupt__"] = intr_val
+                    return final_state  # graph is paused — stop streaming
+
+                # ── Normal event handling ────────────────────────────────────
                 if not isinstance(node_output, dict):
                     continue
                 if "intent" in node_output:
@@ -224,8 +315,9 @@ def stream_graph(command, config):
         return final_state
 
     result = asyncio.run(stream_results())
-    # Render once after all results are collected (avoids async generator crash)
-    _render_streaming(placeholder)
+    # Skip rendering if LP interrupt fired — render_lp_approval() handles display.
+    if not result.get("__interrupt__"):
+        _render_streaming(placeholder)
     return result
 
 
@@ -240,7 +332,6 @@ def finalize_execution(final_state, fallback_plan=None):
     }
     st.session_state.traces.append(trace)
 
-    # Combine text agent results + synthesizer summary
     parts = []
     pipeline_items = {k: v for k, v in trace["agent_results"].items()
                      if k not in _NON_PIPELINE_KEYS and not k.startswith("lp_")}
@@ -263,7 +354,6 @@ def finalize_execution(final_state, fallback_plan=None):
             product = key.replace("lp_", "").replace("_", " ").title()
             lp_parts.append(f"**{product}**\n\n```\n{content}\n```")
         parts.append("---\n\n**⚙️ LP Optimization Results**\n\n" + "\n\n".join(lp_parts))
-    # Note: charts are rendered as images between LP and Summary (see below)
     final_response = final_state.get("final_response", "")
     summary_text = ""
     if final_response:
@@ -271,7 +361,6 @@ def finalize_execution(final_state, fallback_plan=None):
     combined = "\n\n".join(parts)
 
     with st.chat_message("assistant"):
-        # Order: LP results (in combined) → Charts → Summary
         if combined:
             st.markdown(combined)
         for chart_name, b64_img in trace["chart_results"].items():
@@ -280,12 +369,11 @@ def finalize_execution(final_state, fallback_plan=None):
         if summary_text:
             st.markdown(summary_text)
 
-    # Store pre-chart and post-chart text separately for correct replay ordering
     st.session_state.messages.append({
         "role": "assistant",
-        "content": combined,           # LP + data/risk (before charts)
-        "summary": summary_text,       # Summary (after charts)
-        "has_trace": True,             # Marks this as a result message with trace/charts
+        "content": combined,
+        "summary": summary_text,
+        "has_trace": True,
     })
     show_trace(trace)
     return combined
@@ -309,39 +397,136 @@ def render_pending_plan():
             feedback = st.session_state.plan_feedback.strip() or "ok"
             config = {"configurable": {"thread_id": st.session_state.thread_id}}
             final_state = stream_graph(Command(resume=feedback), config=config)
-        state = asyncio.run(graph.aget_state(config=config))
-        next_plan = extract_plan(state)
-        if state.next and next_plan:
-            st.session_state.pending_plan = next_plan
-            st.session_state.messages.append(
-                {"role": "assistant", "content": "Plan updated. Review the new work orders below."}
-            )
-            st.rerun()
-        else:
-            finalize_execution(final_state, fallback_plan=plan)
+        # ── Check whether the LP agent raised an approval interrupt ────────
+        lp_interrupt = final_state.get("__interrupt__")
+        if lp_interrupt and lp_interrupt.get("type") == "lp_approval":
+            st.session_state.waiting_for_lp_approval = True
+            st.session_state.pending_lp_result = lp_interrupt
+            st.session_state.lp_partial_state = final_state
+            st.session_state.saved_plan = plan
             st.session_state.waiting_for_approval = False
             st.session_state.pending_plan = None
             st.rerun()
+        else:
+            state = asyncio.run(graph.aget_state(config=config))
+            next_plan = extract_plan(state)
+            if state.next and next_plan:
+                st.session_state.pending_plan = next_plan
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": "Plan updated. Review the new work orders below."}
+                )
+                st.rerun()
+            else:
+                finalize_execution(final_state, fallback_plan=plan)
+                st.session_state.waiting_for_approval = False
+                st.session_state.pending_plan = None
+                st.rerun()
 
 
-if st.session_state.waiting_for_approval and st.session_state.pending_plan:
+def render_lp_approval():
+    """Show LP results and present an approve / discard decision to the user."""
+    lp_interrupt = st.session_state.pending_lp_result or {}
+    formatted    = lp_interrupt.get("formatted", {})
+    raw          = lp_interrupt.get("raw", {})
+    partial      = st.session_state.get("lp_partial_state") or {}
+
+    # Re-display pipeline and chart results that arrived before the interrupt.
+    pipeline_results = partial.get("pipeline_results") or {}
+    if pipeline_results:
+        st.subheader("📊 Pipeline Results")
+        for key, content in pipeline_results.items():
+            st.caption(key.replace("_", " ").title())
+            st.code(content)
+    charts = partial.get("chart_results") or {}
+    if charts:
+        st.subheader("📈 Visualizations")
+        for chart_name, b64_img in charts.items():
+            st.caption(chart_name.replace("_", " ").title())
+            st.image(base64.b64decode(b64_img))
+
+    st.divider()
+    st.subheader("⚙️ LP Optimization Results — Pending Your Approval")
+    st.info(
+        "Review the optimization results below. "
+        "**Approve** to include in the session plan, or **Discard** to exclude."
+    )
+
+    for product_key, content in formatted.items():
+        product = product_key.replace("lp_", "").replace("_", " ").title()
+        st.caption(f"**{product}**")
+        st.code(content)
+
+    col1, col2 = st.columns(2)
+    config = {"configurable": {"thread_id": st.session_state.thread_id}}
+
+    with col1:
+        if st.button("✅ Approve Recommendation", key="approve_lp_btn"):
+            # Persist each approved LP run in Streamlit session state.
+            for result_dict in raw.values():
+                _store_approved_run(result_dict)
+            with st.spinner("Finalizing recommendation..."):
+                second_state = stream_graph(Command(resume="approve"), config=config)
+            merged = _merge_final_states(partial, second_state)
+            finalize_execution(merged, fallback_plan=st.session_state.get("saved_plan", {}))
+            st.session_state.waiting_for_lp_approval = False
+            st.session_state.pending_lp_result = None
+            st.session_state.lp_partial_state = {}
+            st.session_state.saved_plan = {}
+            st.rerun()
+
+    with col2:
+        if st.button("❌ Discard", key="discard_lp_btn"):
+            with st.spinner("Discarding..."):
+                second_state = stream_graph(Command(resume="discard"), config=config)
+            merged = _merge_final_states(partial, second_state)
+            finalize_execution(merged, fallback_plan=st.session_state.get("saved_plan", {}))
+            st.session_state.waiting_for_lp_approval = False
+            st.session_state.pending_lp_result = None
+            st.session_state.lp_partial_state = {}
+            st.session_state.saved_plan = {}
+            st.rerun()
+
+
+# ── Main rendering logic ───────────────────────────────────────────────────────
+
+if st.session_state.waiting_for_lp_approval and st.session_state.pending_lp_result:
+    render_lp_approval()
+
+elif st.session_state.waiting_for_approval and st.session_state.pending_plan:
     render_pending_plan()
-elif not st.session_state.waiting_for_approval:
+
+elif not st.session_state.waiting_for_approval and not st.session_state.waiting_for_lp_approval:
     prompt = st.chat_input("Ask about suppliers...")
     if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.write(prompt)
-        with st.spinner("Thinking..."):
-            thread_id = str(uuid.uuid4())
-            st.session_state.thread_id = thread_id
-            config = {"configurable": {"thread_id": thread_id}}
-            result = asyncio.run(graph.ainvoke({"messages": [("user", prompt)]}, config=config))
-            state = asyncio.run(graph.aget_state(config=config))
-        plan = extract_plan(state)
-        if state.next and plan:
-            st.session_state.waiting_for_approval = True
-            st.session_state.pending_plan = plan
-            assistant_text = "I have a plan ready. Review the work orders below and approve when ready."
-            st.session_state.messages.append({"role": "assistant", "content": assistant_text})
+
+        # ── Session summary shortcut — bypass graph entirely ───────────────
+        if any(t in prompt.lower() for t in _SUMMARY_TRIGGERS):
+            summary = _format_session_summary(st.session_state.get("approved_lp_runs", []))
+            with st.chat_message("assistant"):
+                st.markdown(summary)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": summary,
+                "has_trace": False,
+                "summary": "",
+            })
             st.rerun()
+
+        else:
+            # ── Normal graph invocation ────────────────────────────────────
+            with st.spinner("Thinking..."):
+                thread_id = str(uuid.uuid4())
+                st.session_state.thread_id = thread_id
+                config = {"configurable": {"thread_id": thread_id}}
+                result = asyncio.run(graph.ainvoke({"messages": [("user", prompt)]}, config=config))
+                state = asyncio.run(graph.aget_state(config=config))
+            plan = extract_plan(state)
+            if state.next and plan:
+                st.session_state.waiting_for_approval = True
+                st.session_state.pending_plan = plan
+                assistant_text = "I have a plan ready. Review the work orders below and approve when ready."
+                st.session_state.messages.append({"role": "assistant", "content": assistant_text})
+                st.rerun()
