@@ -304,6 +304,100 @@ def _load_scored_suppliers(conn, params: LPParams) -> tuple[pd.DataFrame, list]:
     return eligible, excluded
 
 
+# ── Lead-time feasibility note ────────────────────────────────────────────────
+
+def _build_lead_time_feasibility_note(
+    conn,
+    params:         LPParams,
+    resolved_run_id: int,
+    eligible_df:    pd.DataFrame,
+    allocation_rows: list,
+) -> str:
+    """
+    Return a 0–2 sentence execution-risk note for the executive summary, or ''.
+
+    Fires only when the earliest triggered procurement week occurs before the
+    selected suppliers can realistically deliver, based on lead_time_mean (days).
+    Lead time is converted to weeks using round(lead_time_mean / 7.0), consistent
+    with the simulation convention in run_inventory.py.
+
+    Case A: faster alternatives exist in the eligible pool → list top 3.
+    Case B: no eligible supplier can cover in time → spot-sourcing note.
+    Suppressed: LP infeasible, no allocation rows, no triggered weeks, no gap.
+    """
+    if not allocation_rows:
+        return ""
+
+    # Step 1: Earliest triggered procurement week for this product / run.
+    facility_filter = "AND r.facility_id = %(facility_id)s" if params.facility_id else ""
+    sql = f"""
+        SELECT MIN(r.horizon_week)
+        FROM   vw_procurement_requirement r
+        JOIN   dim_product dp ON dp.product_key = r.product_key
+        WHERE  r.forecast_run_id = %(run_id)s
+          AND  dp.product        = %(product)s
+          AND  r.net_requirement > 0
+          {facility_filter}
+    """
+    qparams = {'run_id': resolved_run_id, 'product': params.product}
+    if params.facility_id:
+        qparams['facility_id'] = params.facility_id
+
+    with conn.cursor() as cur:
+        cur.execute(sql, qparams)
+        row = cur.fetchone()
+
+    if row is None or row[0] is None:
+        return ""  # no triggered weeks → no note
+
+    earliest_week = int(row[0])
+
+    # Step 2: Minimum lead time (weeks) across selected suppliers.
+    selected_ids = {r['supplier_id'] for r in allocation_rows}
+    selected_df  = eligible_df[eligible_df['supplier_id'].isin(selected_ids)]
+
+    if selected_df.empty or 'lead_time_mean' not in selected_df.columns:
+        return ""
+
+    min_selected_lead_weeks = int(round(float(selected_df['lead_time_mean'].min()) / 7.0))
+    min_selected_lead_weeks = max(1, min_selected_lead_weeks)
+
+    # Step 3: Gap check — if selected suppliers can already cover in time, no note.
+    if earliest_week >= min_selected_lead_weeks:
+        return ""
+
+    # Step 4: Search eligible pool for faster alternatives.
+    eligible_df = eligible_df.copy()
+    eligible_df['_lead_weeks'] = eligible_df['lead_time_mean'].apply(
+        lambda x: max(1, int(round(float(x) / 7.0)))
+    )
+    can_cover = (
+        eligible_df[eligible_df['_lead_weeks'] <= earliest_week]
+        .sort_values('lead_time_mean')
+        .head(3)
+    )
+
+    if not can_cover.empty:
+        # Case A: faster alternatives exist in the eligible pool.
+        names = [
+            f"{i + 1}) {r['supplier_id']} ({int(round(float(r['lead_time_mean'])))} d)"
+            for i, (_, r) in enumerate(can_cover.iterrows())
+        ]
+        return (
+            f" Early shortfall begins Week {earliest_week}, before selected supplier"
+            f" lead times can cover it."
+            f" Faster alternative(s) in pool: {', '.join(names)}."
+        )
+    else:
+        # Case B: no eligible supplier can cover in time.
+        return (
+            f" Early shortfall begins Week {earliest_week}, before current supplier"
+            f" lead times can cover it."
+            f" Recommend emergency domestic / spot sourcing for immediate coverage;"
+            f" planned orders will support later weeks."
+        )
+
+
 # ── LP core ────────────────────────────────────────────────────────────────────
 
 def _build_and_solve(
@@ -977,6 +1071,10 @@ def run(params: LPParams) -> dict:
                     f" {n_excl_comp} supplier(s) excluded by compliance "
                     f"threshold ({params.compliance_threshold:.0%})."
                 )
+            # ── Lead-time feasibility note (appended last; does not alter LP result) ──
+            exec_summary += _build_lead_time_feasibility_note(
+                conn, params, resolved_run_id, eligible_df, allocation_rows
+            )
         else:
             exec_summary = (
                 f"No feasible procurement plan for "
