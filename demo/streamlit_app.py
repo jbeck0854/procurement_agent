@@ -91,6 +91,38 @@ _FORECAST_ALL_FACILITIES_SIGNALS = (
     "facility level", "each of the four",
 )
 
+# Component requirements route — gross BOM demand before inventory netting.
+# Specific enough that no context guard is needed.
+_COMPONENT_REQ_SIGNALS = (
+    "component requirement", "component demand",
+    "gross component", "total component",
+    "bom demand", "gross bom",
+)
+# Combined-match signals: "component(s)" + one of these fires the same route.
+_COMPONENT_REQ_HORIZON_SIGNALS = (
+    "planning window", "planning horizon", "demand window", "upcoming horizon",
+)
+
+# BOM translation explainability route — "how does/is SKU demand translated into component demand?"
+# Canonical anchor phrase: "How exactly is forecasted SKU demand translated into component demand?"
+# Direct signals must NOT overlap with _COMPONENT_REQ_SIGNALS; checked first in the elif chain.
+_BOM_TRANSLATION_SIGNALS = (
+    "translated into component",   # canonical anchor phrase (new primary)
+    "translate into component",
+    "translates into component",
+    "bom convert",
+    "bom translation",
+    "demand becomes component",
+    "sku demand translate",
+    "explain how finished",
+    "finished-goods demand becomes",
+    "finished goods demand becomes",
+)
+# Combined guard: "bom" + any explanation-intent word fires the same route.
+_BOM_TRANSLATION_EXPLAIN_SIGNALS = (
+    "explain", "how does", "how is", "how do", "convert", "converts",
+)
+
 # Transition sentences and section headings for each assessment direction.
 _FORECAST_ASSESS_META = {
     "validation": (
@@ -316,6 +348,40 @@ def _is_all_facilities_forecast(text: str) -> bool:
     )
 
 
+def _is_component_requirements_request(text: str) -> bool:
+    """True when the user asks for full-horizon gross component demand (pre-inventory).
+
+    Fires on direct signals (e.g. 'component requirement', 'gross bom') or on the
+    combined pattern: 'component(s)' + a horizon/window context term.
+    Does NOT touch procurement-status or LP routes.
+    """
+    t = text.lower()
+    if any(s in t for s in _COMPONENT_REQ_SIGNALS):
+        return True
+    # Combined: 'component' + planning horizon / window context
+    if "component" in t and any(s in t for s in _COMPONENT_REQ_HORIZON_SIGNALS):
+        return True
+    return False
+
+
+def _is_bom_translation_request(text: str) -> bool:
+    """True when the user asks how finished-good SKU demand converts to component demand.
+
+    Fires on direct phrasing (e.g. 'translated into component', 'bom translation')
+    or on the combined pattern: 'bom' + an explanation-intent word.
+    Must be checked BEFORE _is_component_requirements_request() in the elif chain
+    so that queries containing 'component demand' in a translation context route here
+    and not to the component totals summary.
+    """
+    t = text.lower()
+    if any(s in t for s in _BOM_TRANSLATION_SIGNALS):
+        return True
+    # Combined: BOM mentioned + explanation intent (excludes pure demand-total queries)
+    if "bom" in t and any(s in t for s in _BOM_TRANSLATION_EXPLAIN_SIGNALS):
+        return True
+    return False
+
+
 def _extract_facility_id(text: str) -> str | None:
     """Extract FACILITY_N from free text (e.g. 'Facility 2' → 'FACILITY_2')."""
     import re
@@ -328,6 +394,71 @@ def _format_facility_label(facility_id: str) -> str:
     import re
     m = re.match(r'FACILITY_(\d+)', facility_id, re.IGNORECASE)
     return f"Facility {m.group(1)}" if m else facility_id
+
+
+def _fetch_component_req_data() -> dict:
+    """Fetch structured component requirement data for DataFrame rendering.
+
+    Queries the same source as format_component_requirements() but returns
+    structured dicts/lists instead of formatted text — used by the demo render
+    block to build proper DataFrames. No computation is changed.
+    """
+    import psycopg2
+    import sys as _sys
+    import os as _os
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))
+    from config import DATABASE_URL
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            # Resolve latest forecast run (matches _resolve_run_id contract)
+            cur.execute(
+                "SELECT forecast_run_id FROM dim_forecast_run "
+                "ORDER BY forecast_run_id DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+            run_id = int(row[0]) if row else 0
+
+            # Planning window metadata
+            cur.execute(
+                """
+                SELECT MIN(target_week_date), MAX(target_week_date),
+                       COUNT(DISTINCT target_week_date),
+                       COUNT(DISTINCT facility_id),
+                       COUNT(DISTINCT product_key)
+                FROM vw_component_requirement_lp
+                WHERE forecast_run_id = %s
+                """,
+                (run_id,),
+            )
+            start_date, end_date, n_weeks, n_fac, n_comp = cur.fetchone()
+
+            # Per-component totals, ordered by descending volume
+            cur.execute(
+                """
+                SELECT p.product, SUM(lp.total_component_requirement) AS total_gross
+                FROM vw_component_requirement_lp lp
+                JOIN dim_product p ON p.product_key = lp.product_key
+                WHERE lp.forecast_run_id = %s
+                GROUP BY p.product
+                ORDER BY total_gross DESC
+                """,
+                (run_id,),
+            )
+            comp_rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return {
+        "run_id":       run_id,
+        "start_date":   str(start_date),
+        "end_date":     str(end_date),
+        "n_weeks":      int(n_weeks),
+        "n_facilities": int(n_fac),
+        "n_components": int(n_comp),
+        "rows":         [(r[0], float(r[1])) for r in comp_rows],
+    }
 
 
 def _render_csv_button() -> None:
@@ -620,6 +751,36 @@ for msg in st.session_state.messages:
                     "Upper 90%":  "{:,.0f}",
                 }),
                 use_container_width=True,
+            )
+        # ── Fast-path component-requirements replay ────────────────────────
+        _comp_req_dfs = msg.get("comp_req_dfs")
+        if _comp_req_dfs:
+            import pandas as _pd
+            for _spec in _comp_req_dfs:
+                st.caption(_spec["caption"])
+                _cdf = _pd.DataFrame(_spec["records"])
+                if "Units Required" in _cdf.columns:
+                    st.dataframe(
+                        _cdf.style.format({"Units Required": "{:,.0f}"}),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.dataframe(_cdf, use_container_width=True, hide_index=True)
+        # ── Fast-path BOM translation replay ──────────────────────────────
+        _bom_xlate = msg.get("bom_xlate_df")
+        if _bom_xlate:
+            import pandas as _pd
+            _bdf = _pd.DataFrame(_bom_xlate)
+            st.dataframe(
+                _bdf.style.format({
+                    "Units / SKU":            "{:,.2f}",
+                    "Forecast (units)":       "{:,.0f}",
+                    "Gross Component Demand": "{:,.0f}",
+                }),
+                height=420,
+                use_container_width=True,
+                hide_index=True,
             )
         # ── Trace-backed chart replay (graph execution path) ──────────────
         if msg.get("has_trace") and assistant_index < len(st.session_state.traces):
@@ -1165,6 +1326,123 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                     "summary": "",
                     "df_index": df_idx,
                 })
+            st.rerun()
+
+        # ── BOM translation explainability — SKU demand → component demand ──
+        # Checked BEFORE component requirements: queries like "...translated into
+        # component demand" contain "component demand" which would otherwise match
+        # the component-requirements route first and shadow this route entirely.
+        elif _is_bom_translation_request(prompt):
+            with st.spinner("Building BOM translation view..."):
+                from tools.pipeline_queries import query_bom_translation_explainer
+                result = query_bom_translation_explainer()
+
+            import pandas as pd
+            _rows = result.get("rows", [])
+            df_bom = pd.DataFrame(_rows)
+
+            _BOM_EXEC_NOTE = (
+                "- This step shows what components are required to build the products "
+                "our customers are expecting.\n"
+                "- Every finished unit requires a specific mix of inputs — the BOM "
+                "defines how many units of each component are needed per SKU.\n"
+                "- Multiplying that recipe by the forecasted demand yields the gross "
+                "component requirements shown below.\n"
+                "- These totals are calculated before any inventory has been considered."
+            )
+            with st.chat_message("assistant"):
+                st.subheader("BOM Translation — How Finished Demand Becomes Component Demand")
+                st.caption(
+                    "How each finished SKU's forecasted demand converts to gross "
+                    "component demand across all facilities and forecast weeks"
+                )
+                if not df_bom.empty:
+                    st.dataframe(
+                        df_bom.style.format({
+                            "Units / SKU":            "{:,.2f}",
+                            "Forecast (units)":       "{:,.0f}",
+                            "Gross Component Demand": "{:,.0f}",
+                        }),
+                        height=420,
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                st.markdown(_BOM_EXEC_NOTE)
+            st.session_state.messages.append({
+                "role":        "assistant",
+                "content":     (
+                    "**BOM Translation — How Finished Demand Becomes Component Demand**\n\n"
+                    + _BOM_EXEC_NOTE
+                ),
+                "has_trace":   False,
+                "summary":     "",
+                "bom_xlate_df": _rows,
+            })
+            st.rerun()
+
+        # ── Component requirements — gross BOM demand (no inventory netting) ─
+        elif _is_component_requirements_request(prompt):
+            with st.spinner("Retrieving component requirements..."):
+                data = _fetch_component_req_data()
+
+            import pandas as pd
+            df_window = pd.DataFrame([{
+                "Forecast Start":  data["start_date"],
+                "Forecast End":    data["end_date"],
+                "Horizon Weeks":   data["n_weeks"],
+                "Forecast Run ID": data["run_id"],
+            }])
+            df_scope = pd.DataFrame([{
+                "Facilities":      data["n_facilities"],
+                "Component Types": data["n_components"],
+                "Aggregation":     (
+                    f"All {data['n_facilities']} facilities "
+                    f"\u00d7 {data['n_weeks']} forecast weeks"
+                ),
+            }])
+            _comp_data = list(data["rows"])
+            _total = sum(v for _, v in _comp_data)
+            _comp_data.append(("TOTAL", _total))
+            df_components = pd.DataFrame(_comp_data, columns=["Component", "Units Required"])
+
+            _EXEC_NOTE = (
+                "These totals represent BOM-implied component demand required to "
+                "fulfill the finished-goods forecast across the planning horizon. "
+                "Each finished unit consumes a defined mix of components, aggregated "
+                "here across all facilities and forecast weeks. "
+                "Inventory has not yet been netted out."
+            )
+            _dfs_payload = [
+                {"caption": "Planning Window",
+                 "records": df_window.to_dict("records")},
+                {"caption": "Aggregation Scope",
+                 "records": df_scope.to_dict("records")},
+                {"caption": "Full-Horizon Gross Requirement by Component",
+                 "records": df_components.to_dict("records")},
+            ]
+            with st.chat_message("assistant"):
+                st.subheader("Component Requirements — Full Horizon Gross Demand")
+                st.caption("Planning Window")
+                st.dataframe(df_window, use_container_width=True, hide_index=True)
+                st.caption("Aggregation Scope")
+                st.dataframe(df_scope, use_container_width=True, hide_index=True)
+                st.caption("Full-Horizon Gross Requirement by Component")
+                st.dataframe(
+                    df_components.style.format({"Units Required": "{:,.0f}"}),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.markdown(_EXEC_NOTE)
+            st.session_state.messages.append({
+                "role":         "assistant",
+                "content":      (
+                    "**Component Requirements — Full Horizon Gross Demand**\n\n"
+                    + _EXEC_NOTE
+                ),
+                "has_trace":    False,
+                "summary":      "",
+                "comp_req_dfs": _dfs_payload,
+            })
             st.rerun()
 
         else:

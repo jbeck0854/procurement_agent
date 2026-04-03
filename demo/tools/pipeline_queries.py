@@ -375,6 +375,70 @@ def query_bom_translation(**kwargs) -> dict:
     return {"content": result, "name": "bom_translation"}
 
 
+def query_bom_translation_explainer(**kwargs) -> dict:
+    """Horizon-level BOM explosion summary: SKU × component × forecast totals.
+
+    Returns structured rows suitable for DataFrame rendering. Shows how each
+    finished-good SKU's forecasted demand, multiplied by BOM units_per_sku,
+    produces the gross component requirement — aggregated across all facilities
+    and all forecast weeks. No inventory offset applied.
+    """
+    forecast_run_id = kwargs.get("forecast_run_id", None)
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            # Resolve latest run
+            if forecast_run_id:
+                run_id = int(forecast_run_id)
+            else:
+                cur.execute(
+                    "SELECT forecast_run_id FROM dim_forecast_run "
+                    "ORDER BY forecast_run_id DESC LIMIT 1"
+                )
+                row = cur.fetchone()
+                run_id = int(row[0]) if row else 0
+
+            cur.execute(
+                """
+                SELECT
+                    v.semiconductor_id                        AS sku,
+                    p.product                                 AS component,
+                    b.units_per_sku                           AS units_per_sku,
+                    SUM(v.predicted_demand)                   AS total_forecast,
+                    SUM(v.gross_component_requirement)        AS gross_component_demand,
+                    COUNT(DISTINCT v.facility_id)             AS n_facilities
+                FROM vw_component_requirement_detail v
+                JOIN dim_product p ON p.product_key = v.product_key
+                JOIN dim_bom b
+                    ON  b.semiconductor_id = v.semiconductor_id
+                    AND b.product_key      = v.product_key
+                WHERE v.forecast_run_id = %s
+                GROUP BY v.semiconductor_id, p.product, b.units_per_sku
+                ORDER BY v.semiconductor_id, SUM(v.gross_component_requirement) DESC
+                """,
+                (run_id,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return {
+        "run_id": run_id,
+        "rows": [
+            {
+                "Finished SKU":           r[0],
+                "Component":              r[1],
+                "Units / SKU":            float(r[2]),
+                "Forecast (units)":       float(r[3]),
+                "Gross Component Demand": float(r[4]),
+                "Facilities":             int(r[5]),
+            }
+            for r in rows
+        ],
+        "name": "bom_translation_explainer",
+    }
+
+
 # ── Tool registry ───────────────────────────────────────────────────────────
 
 DIRECT_PIPELINE_TOOLS = {

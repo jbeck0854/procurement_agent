@@ -207,7 +207,7 @@ This separation helps the system feel like a real decision-support workflow rath
 - `vw_component_requirement_detail` — exploded per-SKU component view
 - `vw_component_requirement_lp` — aggregated full-horizon component demand
 
-**Suggested user query #1 (summary):** "Show total component requirements for the next planning window."
+**Suggested user query #1 (summary):** "Show total component requirements for the upcoming demand window."
 
 **Agent returns:**
 Full-horizon gross BOM demand — the raw component volume implied by the finished-goods forecast, before any inventory offset is applied.
@@ -221,7 +221,7 @@ Full-horizon gross BOM demand — the raw component volume implied by the finish
 
 *Exact figures shown on screen from the helper output. These are gross demand totals — no inventory has been netted out yet.*
 
-**Suggested query #2 (translation explainability):** "How does forecasted SKU demand translate into component demand?"
+**Suggested query #2 (translation explainability):** "How exactly is forecasted SKU demand translated into component demand?"
 
 **Agent returns:**
 BOM translation explainer — shows which components make up each finished SKU and the arithmetic that converts forecasted SKU volume into raw component need.
