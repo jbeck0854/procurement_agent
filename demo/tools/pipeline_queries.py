@@ -375,6 +375,116 @@ def query_bom_translation(**kwargs) -> dict:
     return {"content": result, "name": "bom_translation"}
 
 
+def query_procurement_summary_data(**kwargs) -> dict:
+    """Horizon-level inventory-adjusted procurement requirement per component.
+
+    Applies the LP demand-floor formula per facility (same as
+    format_aggregated_procurement_need), then sums across all facilities
+    to give a component-level breakdown suitable for the opening inventory
+    question: 'Do we need to buy anything?' / 'What is our net procurement need?'
+
+    Returns structured rows for DataFrame rendering — no ASCII formatting.
+    """
+    forecast_run_id = kwargs.get("forecast_run_id", None)
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            # Resolve latest run
+            if forecast_run_id:
+                run_id = int(forecast_run_id)
+            else:
+                cur.execute(
+                    "SELECT forecast_run_id FROM dim_forecast_run "
+                    "ORDER BY forecast_run_id DESC LIMIT 1"
+                )
+                row = cur.fetchone()
+                run_id = int(row[0]) if row else 0
+
+            # Planning window
+            cur.execute(
+                """
+                SELECT MIN(target_week_date), MAX(target_week_date),
+                       COUNT(DISTINCT target_week_date)
+                FROM vw_component_requirement_lp
+                WHERE forecast_run_id = %s
+                """,
+                (run_id,),
+            )
+            horizon_start, horizon_end, n_weeks = cur.fetchone()
+
+            # Per-component horizon summary:
+            # LP formula applied per facility, then summed across facilities.
+            # Breakdown columns (on_hand, sr, bo, ss) summed across facilities
+            # for transparent display; net_req is the LP-correct sum of
+            # per-facility GREATEST(0, ...) values.
+            cur.execute(
+                """
+                SELECT
+                    dp.product                                       AS component,
+                    SUM(dp_snap.on_hand_qty)                         AS on_hand_total,
+                    SUM(dp_snap.scheduled_receipts_qty)              AS sr_total,
+                    SUM(dp_snap.backorder_qty)                       AS bo_total,
+                    SUM(pol.safety_stock_qty)                        AS ss_total,
+                    SUM(lp_agg.gross_demand)                         AS gross_demand_total,
+                    SUM(GREATEST(0,
+                        lp_agg.gross_demand
+                        + dp_snap.backorder_qty
+                        + pol.safety_stock_qty
+                        - dp_snap.on_hand_qty
+                        - dp_snap.scheduled_receipts_qty
+                    ))                                               AS net_req_total
+                FROM (
+                    SELECT facility_id, product_key,
+                           SUM(total_component_requirement) AS gross_demand
+                    FROM vw_component_requirement_lp
+                    WHERE forecast_run_id = %s
+                    GROUP BY facility_id, product_key
+                ) lp_agg
+                JOIN dim_product dp ON dp.product_key = lp_agg.product_key
+                JOIN (
+                    SELECT facility_id, product_key,
+                           on_hand_qty, scheduled_receipts_qty, backorder_qty
+                    FROM fact_component_inventory_history
+                    WHERE week_date = (
+                        SELECT MAX(week_date) FROM fact_component_inventory_history
+                    )
+                ) dp_snap
+                    ON  dp_snap.facility_id = lp_agg.facility_id
+                    AND dp_snap.product_key  = lp_agg.product_key
+                JOIN fact_inventory_policy pol
+                    ON  pol.forecast_run_id = %s
+                    AND pol.facility_id     = lp_agg.facility_id
+                    AND pol.product_key     = lp_agg.product_key
+                GROUP BY dp.product
+                ORDER BY net_req_total DESC, gross_demand_total DESC
+                """,
+                (run_id, run_id),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return {
+        "run_id":        run_id,
+        "horizon_start": str(horizon_start),
+        "horizon_end":   str(horizon_end),
+        "n_weeks":       int(n_weeks),
+        "rows": [
+            {
+                "Component":                   r[0],
+                "Starting On-Hand":            float(r[1]),
+                "Scheduled Receipts (+)":      float(r[2]),
+                "Backorders (\u2212)":         float(r[3]),
+                "Safety Stock Reserve (\u2212)": float(r[4]),
+                "Gross Component Demand":      float(r[5]),
+                "Net Procurement Requirement": float(r[6]),
+            }
+            for r in rows
+        ],
+        "name": "procurement_summary",
+    }
+
+
 def query_bom_translation_explainer(**kwargs) -> dict:
     """Horizon-level BOM explosion summary: SKU × component × forecast totals.
 

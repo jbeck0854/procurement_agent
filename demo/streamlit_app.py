@@ -103,6 +103,26 @@ _COMPONENT_REQ_HORIZON_SIGNALS = (
     "planning window", "planning horizon", "demand window", "upcoming horizon",
 )
 
+# Inventory / procurement summary route — horizon-level net procurement requirement.
+# Canonical queries: "Do we need to buy anything?" and inventory-adjusted variants.
+# Checked AFTER BOM/component-requirements (those signals are more specific).
+_PROC_SUMMARY_SIGNALS = (
+    "do we need to buy",
+    "need to order",
+    "needs to be ordered",
+    "inventory is factored",
+    "inventory is accounted",
+    "still need to buy",
+    "inventory-adjusted procurement",
+    "net procurement requirement",
+    "what do we need to order",
+    "what do we need to procure",
+    "how much of each component",
+    "what components do we need to buy",
+)
+# Combined guard: "inventory" + buy/order/procure intent fires the same route.
+_PROC_SUMMARY_BUY_SIGNALS = ("order", "buy", "procure", "purchase")
+
 # BOM translation explainability route — "how does/is SKU demand translated into component demand?"
 # Canonical anchor phrase: "How exactly is forecasted SKU demand translated into component demand?"
 # Direct signals must NOT overlap with _COMPONENT_REQ_SIGNALS; checked first in the elif chain.
@@ -378,6 +398,25 @@ def _is_bom_translation_request(text: str) -> bool:
         return True
     # Combined: BOM mentioned + explanation intent (excludes pure demand-total queries)
     if "bom" in t and any(s in t for s in _BOM_TRANSLATION_EXPLAIN_SIGNALS):
+        return True
+    return False
+
+
+def _is_procurement_summary_request(text: str) -> bool:
+    """True for horizon-level inventory-adjusted procurement need queries.
+
+    Catches 'Do we need to buy anything?', 'What is our net procurement
+    requirement?', and similar. Fires AFTER BOM/component-requirements routes
+    so those more specific signals are not shadowed.
+    """
+    t = text.lower()
+    if any(s in t for s in _PROC_SUMMARY_SIGNALS):
+        return True
+    # "procurement" + requirement/need intent
+    if "procurement" in t and any(s in t for s in ("requirement", "need", "needed")):
+        return True
+    # "inventory" + buy/order/procure intent
+    if "inventory" in t and any(s in t for s in _PROC_SUMMARY_BUY_SIGNALS):
         return True
     return False
 
@@ -779,6 +818,19 @@ for msg in st.session_state.messages:
                     "Gross Component Demand": "{:,.0f}",
                 }),
                 height=420,
+                use_container_width=True,
+                hide_index=True,
+            )
+        # ── Fast-path procurement summary replay ──────────────────────────
+        _proc_rows = msg.get("proc_summary_df")
+        if _proc_rows:
+            import pandas as _pd
+            _proc_df = _pd.DataFrame(_proc_rows)
+            _proc_fmt = {
+                c: "{:,.0f}" for c in _proc_df.columns if c != "Component"
+            }
+            st.dataframe(
+                _proc_df.style.format(_proc_fmt),
                 use_container_width=True,
                 hide_index=True,
             )
@@ -1442,6 +1494,115 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 "has_trace":    False,
                 "summary":      "",
                 "comp_req_dfs": _dfs_payload,
+            })
+            st.rerun()
+
+        # ── Inventory-adjusted procurement requirement summary ─────────────
+        # Direct fast-path — no orchestrator. Aligned to README "start here"
+        # entry point (format_procurement_recommendation / aggregated need).
+        elif _is_procurement_summary_request(prompt):
+            with st.spinner("Computing inventory-adjusted procurement requirement..."):
+                from tools.pipeline_queries import query_procurement_summary_data
+                data = query_procurement_summary_data()
+
+            import pandas as pd
+            _proc_rows = data.get("rows", [])
+            df_proc = pd.DataFrame(_proc_rows)
+
+            # Rename columns for calculation-flow clarity (sign convention in label)
+            df_proc = df_proc.rename(columns={
+                "Starting On-Hand":              "Starting On-Hand (\u2212)",
+                "Safety Stock Reserve (\u2212)": "Safety Stock Reserve (+)",
+            })
+            # Reorder left → right as a calculation: Gross − OnHand + SR − BO + SS = Net
+            df_proc = df_proc[[
+                "Component",
+                "Gross Component Demand",
+                "Starting On-Hand (\u2212)",
+                "Scheduled Receipts (+)",
+                "Backorders (\u2212)",
+                "Safety Stock Reserve (+)",
+                "Net Procurement Requirement",
+            ]]
+            _PROC_FMT = {c: "{:,.0f}" for c in df_proc.columns if c != "Component"}
+            # Store renamed records so replay renders identical columns
+            _proc_display_rows = df_proc.to_dict("records")
+
+            _PROC_BULLETS = (
+                "- **This table starts from the current inventory position — "
+                "Starting On-Hand — at the beginning of the planning horizon.**\n"
+                "- **Gross Component Demand** represents total required component "
+                "volume based on forecasted production.\n"
+                "- **Starting On-Hand**, **Scheduled Receipts**, and **Backorders** "
+                "adjust available inventory over the planning horizon.\n"
+                "- **Safety Stock Reserve** represents required buffer inventory to "
+                "maintain the target service level and must be procured if not "
+                "already available.\n"
+                "- **Net Procurement Requirement** is the remaining quantity that "
+                "must be ordered after accounting for all inventory and policy "
+                "constraints."
+            )
+            _DATA_DICT = {
+                "Gross Component Demand": (
+                    "Total BOM-implied component volume required to fulfill the "
+                    "finished-goods forecast across all facilities and the full "
+                    "planning horizon."
+                ),
+                "Starting On-Hand (\u2212)": (
+                    "Total component stock physically on hand at the start of the "
+                    "planning horizon, summed across all facilities."
+                ),
+                "Scheduled Receipts (+)": (
+                    "The firm currently assumes no scheduled receipts are due "
+                    "within this planning snapshot."
+                ),
+                "Backorders (\u2212)": (
+                    "Backorders are currently zero in this planning view."
+                ),
+                "Safety Stock Reserve (+)": (
+                    "The minimum inventory buffer required to meet the 95% service "
+                    "level target. This reserve must be available at all times and "
+                    "is added to the procurement requirement if not already covered "
+                    "by on-hand stock."
+                ),
+                "Net Procurement Requirement": (
+                    "The quantity that must be procured. Calculated per facility as: "
+                    "max(0, Gross Demand \u2212 On-Hand + Scheduled Receipts "
+                    "\u2212 Backorders + Safety Stock Reserve), "
+                    "then summed across all facilities."
+                ),
+            }
+
+            with st.chat_message("assistant"):
+                st.subheader("Net Component Procurement Requirement — Planning Horizon")
+                st.caption(
+                    f"Horizon: {data['horizon_start']} \u2192 {data['horizon_end']}"
+                    f"  \u00b7  {data['n_weeks']} weeks"
+                    f"  \u00b7  Forecast run {data['run_id']}"
+                )
+                st.caption("All values are aggregated across the full planning horizon.")
+                if not df_proc.empty:
+                    st.dataframe(
+                        df_proc.style.format(_PROC_FMT),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                st.markdown(_PROC_BULLETS)
+                with st.expander("Click to view data dictionary"):
+                    for col, desc in _DATA_DICT.items():
+                        st.markdown(f"**{col}:** {desc}")
+            st.session_state.messages.append({
+                "role":           "assistant",
+                "content":        (
+                    "**Net Component Procurement Requirement — Planning Horizon**\n\n"
+                    f"Horizon: {data['horizon_start']} \u2192 {data['horizon_end']}"
+                    f" ({data['n_weeks']} weeks)\n\n"
+                    "All values are aggregated across the full planning horizon.\n\n"
+                    + _PROC_BULLETS
+                ),
+                "has_trace":      False,
+                "summary":        "",
+                "proc_summary_df": _proc_display_rows,
             })
             st.rerun()
 
