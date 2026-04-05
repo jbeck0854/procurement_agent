@@ -235,7 +235,15 @@ BOM translation explainer — shows which components make up each finished SKU a
 
 ### 3:45–5:15 — Inventory sufficiency and net procurement requirement
 
-**Agent action:** Checks projected component demand against current inventory, scheduled receipts, and safety stock — then surfaces the quantity the LP will actually optimize.
+**User:** "After our inventory is factored in, what is the total amount that needs to be ordered for each component to meet our upcoming demand?"
+
+**Agent:** Returns a clean horizon-level net procurement summary table.
+
+--
+
+
+
+
 
 **Behind the scenes:**
 - `inventory/run_inventory.py` — inventory simulation (already run; outputs in DB)

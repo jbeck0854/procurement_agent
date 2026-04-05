@@ -143,6 +143,36 @@ _BOM_TRANSLATION_EXPLAIN_SIGNALS = (
     "explain", "how does", "how is", "how do", "convert", "converts",
 )
 
+# Weekly trigger signal route — weekly-grain procurement trigger rows.
+# Canonical query: "In which weeks and where is procurement actually triggered
+# across the planning horizon?"
+# Checked AFTER procurement summary (more specific drill-down).
+_WEEKLY_TRIGGER_SIGNALS = (
+    "triggered across the planning",
+    "when is procurement triggered",
+    "where and when do we actually need to buy",
+    "weekly procurement trigger",
+    "weekly trigger signal",
+    "triggered procurement rows",
+    "triggered rows",
+    "which weeks and facilities trigger",
+    "which weeks is procurement",
+    "in which weeks",
+)
+# Combined guard: "triggered" + procurement/week/facility context fires the same route.
+_WEEKLY_TRIGGER_CONTEXT_SIGNALS = ("procurement", "weeks", "facilities", "orders")
+
+
+def _is_weekly_trigger_request(text: str) -> bool:
+    """True for weekly-grain procurement trigger drill-down queries."""
+    t = text.lower()
+    if any(s in t for s in _WEEKLY_TRIGGER_SIGNALS):
+        return True
+    if "triggered" in t and any(s in t for s in _WEEKLY_TRIGGER_CONTEXT_SIGNALS):
+        return True
+    return False
+
+
 # Transition sentences and section headings for each assessment direction.
 _FORECAST_ASSESS_META = {
     "validation": (
@@ -754,7 +784,7 @@ def show_trace(trace):
 # ── Message history replay ─────────────────────────────────────────────────────
 
 assistant_index = 0
-for msg in st.session_state.messages:
+for _msg_loop_idx, msg in enumerate(st.session_state.messages):
     with st.chat_message(msg["role"]):
         # ── Fast-path chart replay (Case B / Case C drilldown) ────────────
         # Assessment routes set chart_first=True so the plot renders before
@@ -833,6 +863,46 @@ for msg in st.session_state.messages:
                 _proc_df.style.format(_proc_fmt),
                 use_container_width=True,
                 hide_index=True,
+            )
+        # ── Fast-path weekly trigger replay ───────────────────────────────
+        _trig_rows = msg.get("weekly_trigger_df")
+        if _trig_rows:
+            import pandas as _pd
+            _trig_df = _pd.DataFrame(_trig_rows)
+            # Interactive filters — applied in-memory on the stored unfiltered rows
+            _fac_opts  = sorted(_trig_df["Facility"].unique().tolist())  if "Facility"  in _trig_df.columns else []
+            _comp_opts = sorted(_trig_df["Component"].unique().tolist()) if "Component" in _trig_df.columns else []
+            _col_f, _col_c = st.columns(2)
+            with _col_f:
+                _sel_fac = st.multiselect(
+                    "Filter by Facility",
+                    options=_fac_opts,
+                    default=_fac_opts,
+                    key=f"trig_fac_{_msg_loop_idx}",
+                )
+            with _col_c:
+                _sel_comp = st.multiselect(
+                    "Filter by Component",
+                    options=_comp_opts,
+                    default=_comp_opts,
+                    key=f"trig_comp_{_msg_loop_idx}",
+                )
+            if _sel_fac:
+                _trig_df = _trig_df[_trig_df["Facility"].isin(_sel_fac)]
+            if _sel_comp:
+                _trig_df = _trig_df[_trig_df["Component"].isin(_sel_comp)]
+            _trig_fmt = {
+                c: "{:,.0f}"
+                for c in ("Gross Requirement", "Available Inventory Before Demand",
+                          "Procurement Need", "Safety Stock Reserve")
+                if c in _trig_df.columns
+            }
+            st.caption(f"{len(_trig_df):,} rows shown")
+            st.dataframe(
+                _trig_df.style.format(_trig_fmt),
+                use_container_width=True,
+                hide_index=True,
+                height=500,
             )
         # ── Trace-backed chart replay (graph execution path) ──────────────
         if msg.get("has_trace") and assistant_index < len(st.session_state.traces):
@@ -1603,6 +1673,81 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 "has_trace":      False,
                 "summary":        "",
                 "proc_summary_df": _proc_display_rows,
+            })
+            st.rerun()
+
+        # ── Weekly procurement trigger drill-down ──────────────────────────
+        elif _is_weekly_trigger_request(prompt):
+            with st.spinner("Fetching triggered procurement rows..."):
+                from tools.pipeline_queries import query_triggered_rows_structured
+                trig_data = query_triggered_rows_structured()
+
+            import pandas as pd
+            _trig_rows = trig_data.get("rows", [])
+            df_trig = pd.DataFrame(_trig_rows)
+
+            # Apply readable facility labels (raw facility_id → label)
+            if not df_trig.empty and "Facility" in df_trig.columns:
+                df_trig["Facility"] = df_trig["Facility"].apply(_format_facility_label)
+
+            # Enforce column order per spec
+            _TRIG_COL_ORDER = [
+                "Week", "Component", "Facility",
+                "Gross Requirement", "Available Inventory Before Demand",
+                "Procurement Need", "Safety Stock Reserve",
+            ]
+            if not df_trig.empty:
+                df_trig = df_trig[[c for c in _TRIG_COL_ORDER if c in df_trig.columns]]
+
+            _TRIG_FMT = {
+                c: "{:,.0f}"
+                for c in ("Gross Requirement", "Available Inventory Before Demand",
+                          "Procurement Need", "Safety Stock Reserve")
+            }
+            # Store unfiltered rows — replay handler applies filters interactively
+            _trig_display_rows = df_trig.to_dict("records")
+
+            _TRIG_BULLETS = (
+                "- **Each row is a week \u00d7 facility \u00d7 component combination** "
+                "where this week\u2019s demand exceeds the remaining usable inventory \u2014 "
+                "the point at which a procurement order must be placed.\n"
+                "- **Available Inventory Before Demand** is the remaining usable inventory "
+                "at the start of this week \u2014 after the safety stock reserve has already "
+                "been set aside and prior weeks\u2019 demand has been consumed.\n"
+                "- **Procurement Need** is the quantity that must be ordered this week: "
+                "the portion of gross demand not covered by remaining usable inventory.\n"
+                "- **Safety Stock Reserve** is the minimum buffer held for the 95\u0025 "
+                "service level target. It is a fixed floor per facility \u00d7 component \u2014 "
+                "set aside before any demand is counted and shown here as reference context only."
+            )
+
+            with st.chat_message("assistant"):
+                st.subheader("Weekly Procurement Trigger \u2014 Where and When Procurement Is Required")
+                st.caption(
+                    f"Forecast run {trig_data['run_id']}"
+                    f"  \u00b7  {len(_trig_rows)} triggered week\u2013facility\u2013component rows"
+                    "  \u00b7  Use filters in the table view to drill down by facility or component"
+                )
+                st.markdown(_TRIG_BULLETS)
+                if not df_trig.empty:
+                    st.dataframe(
+                        df_trig.style.format(_TRIG_FMT),
+                        use_container_width=True,
+                        hide_index=True,
+                        height=500,
+                    )
+                else:
+                    st.info("No triggered procurement rows found \u2014 all inventory positions appear sufficient.")
+            st.session_state.messages.append({
+                "role":    "assistant",
+                "content": (
+                    "**Weekly Procurement Trigger \u2014 Where and When Procurement Is Required**\n\n"
+                    f"Forecast run {trig_data['run_id']} \u00b7 {len(_trig_rows)} triggered rows\n\n"
+                    + _TRIG_BULLETS
+                ),
+                "has_trace":         False,
+                "summary":           "",
+                "weekly_trigger_df": _trig_display_rows,
             })
             st.rerun()
 

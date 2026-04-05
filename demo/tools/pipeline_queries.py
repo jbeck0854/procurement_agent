@@ -549,6 +549,67 @@ def query_bom_translation_explainer(**kwargs) -> dict:
     }
 
 
+def query_triggered_rows_structured(**kwargs) -> dict:
+    """Weekly-grain procurement trigger rows: weeks/facilities where net_requirement > 0.
+
+    Returns structured rows suitable for DataFrame rendering. Shows the
+    specific week × facility × component combinations where procurement
+    is actually required after inventory netting. Uses vw_procurement_requirement.
+    """
+    forecast_run_id = kwargs.get("forecast_run_id", None)
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            if forecast_run_id:
+                run_id = int(forecast_run_id)
+            else:
+                cur.execute(
+                    "SELECT forecast_run_id FROM dim_forecast_run "
+                    "ORDER BY forecast_run_id DESC LIMIT 1"
+                )
+                row = cur.fetchone()
+                run_id = int(row[0]) if row else 0
+
+            cur.execute(
+                """
+                SELECT
+                    r.target_week_date,
+                    r.facility_id,
+                    p.product                  AS component,
+                    r.gross_requirement,
+                    r.remaining_inventory,
+                    r.net_requirement,
+                    r.safety_stock_qty
+                FROM vw_procurement_requirement r
+                JOIN dim_product p ON p.product_key = r.product_key
+                WHERE r.forecast_run_id = %s
+                  AND r.net_requirement > 0
+                ORDER BY r.target_week_date, r.facility_id, p.product
+                """,
+                (run_id,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return {
+        "run_id": run_id,
+        "rows": [
+            {
+                "Week":                              str(r[0]),
+                "Component":                         r[2],
+                "Facility":                          r[1],
+                "Gross Requirement":                 float(r[3]),
+                "Available Inventory Before Demand": float(r[4]),
+                "Procurement Need":                  float(r[5]),
+                "Safety Stock Reserve":              float(r[6]),
+            }
+            for r in rows
+        ],
+        "name": "triggered_rows_structured",
+    }
+
+
 # ── Tool registry ───────────────────────────────────────────────────────────
 
 DIRECT_PIPELINE_TOOLS = {
