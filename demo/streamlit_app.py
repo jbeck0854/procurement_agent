@@ -1601,6 +1601,68 @@ def _render_lp_result(raw: dict) -> None:
     for ins in insights:
         st.markdown(f"- {ins}")
 
+    # ── 4b. Supply Urgency & Lead Time Assessment ──────────────────────────────
+    exec_summary = raw.get("executive_summary", "")
+    _sf_match = _re.search(r'Early shortfall begins Week (\d+)', exec_summary)
+    if _sf_match:
+        shortfall_week = int(_sf_match.group(1))
+        st.markdown("**Supply Urgency & Lead Time Assessment**")
+
+        if "Faster alternative(s) in pool:" in exec_summary:
+            _alt_m = _re.search(r'Faster alternative\(s\) in pool: (.+)$', exec_summary)
+            alts_str = (_alt_m.group(1).strip().rstrip(".")) if _alt_m else ""
+            st.warning(
+                f"**Shortfall Risk — Week {shortfall_week}:** Selected supplier lead times "
+                f"cannot deliver before first demand peaks. "
+                f"Faster eligible alternatives: {alts_str}."
+            )
+        else:
+            st.error(
+                f"**Critical — Week {shortfall_week}:** No eligible supplier can cover this "
+                f"window. Emergency domestic or spot sourcing required for immediate coverage; "
+                f"planned orders will support later weeks."
+            )
+
+        # Impacted-facilities sub-table (first-shortfall window only)
+        try:
+            from tools.pipeline_queries import query_triggered_rows_structured
+            _trig = query_triggered_rows_structured()
+            _product_key = recap.get("product", "")
+            _window_rows = [
+                r for r in _trig.get("rows", [])
+                if r["Component"] == _product_key
+                and r["Forecast Week"] <= shortfall_week + 3
+            ]
+            if _window_rows:
+                _sf_table = []
+                for _r in _window_rows:
+                    _ss   = _r["Safety Stock Reserve"]
+                    _avail = _r["Available Inventory Before Demand"]
+                    _ss_util = max(0.0, (_ss - _avail) / _ss * 100) if _ss > 0 else 100.0
+                    if _avail <= 0:
+                        _urgency = "Critical"
+                    elif _avail <= 0.25 * _ss:
+                        _urgency = "High"
+                    elif _avail <= 0.5 * _ss:
+                        _urgency = "Moderate"
+                    else:
+                        _urgency = "Low"
+                    _sf_table.append({
+                        "Forecast Week":      _r["Forecast Week"],
+                        "Facility":           _r["Facility"],
+                        "Component":          _r["Component"].replace("_", " ").title(),
+                        "SS Utilization (%)": f"{_ss_util:.0f}%",
+                        "Urgency":            _urgency,
+                    })
+                st.dataframe(
+                    pd.DataFrame(_sf_table),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(150 + 35 * len(_sf_table), 320),
+                )
+        except Exception:
+            pass  # don't crash render if DB unavailable
+
     # ── 5 & 6. Business Rules (Active / Inactive) ─────────────────────────────
     lambda_risk      = recap.get("lambda_risk", 0.5)
     max_share        = recap.get("max_supplier_share", 1.0)
