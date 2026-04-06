@@ -533,6 +533,11 @@ if "approved_lp_runs" not in st.session_state:
 if "last_lp_raw_full" not in st.session_state:
     st.session_state.last_lp_raw_full = {}
 
+# Flag: user clicked "Complete Procurement Plan" — show final executive summary.
+# Only set by explicit user action; never auto-triggered.
+if "show_executive_summary" not in st.session_state:
+    st.session_state.show_executive_summary = False
+
 # ── Opening kickoff state ──────────────────────────────────────────────────────
 if "historical_demand_verification_pending" not in st.session_state:
     st.session_state.historical_demand_verification_pending = False
@@ -2377,6 +2382,389 @@ def _render_lp_result(raw: dict) -> None:
         _render_lp_decision_explanation(raw)
 
 
+def _render_procurement_status_bar(pending_products: list | None = None) -> None:
+    """Render a persistent procurement status panel with the Complete button.
+
+    Shows which products have been approved in this session and (optionally)
+    which are still pending.  The "Complete Procurement Plan" button is shown
+    as soon as at least one product is approved; clicking it is the ONLY way
+    to trigger the final executive summary.
+
+    Args:
+        pending_products: Optional list of human-readable product names that are
+            currently pending approval (passed from render_lp_approval so the
+            panel can distinguish approved vs. in-progress).
+    """
+    approved = st.session_state.get("approved_lp_runs", [])
+    if not approved:
+        return
+
+    approved_names = [
+        r.get("product", "unknown").replace("_", " ").title()
+        for r in approved
+    ]
+
+    with st.container(border=True):
+        st.markdown("### Procurement Status")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown("**Procured**")
+            for name in approved_names:
+                st.markdown(f"- {name}")
+        with col_b:
+            if pending_products:
+                st.markdown("**Pending Approval**")
+                for name in pending_products:
+                    st.markdown(f"- {name}")
+            else:
+                st.markdown("**Pending Approval**")
+                st.markdown("*None queued — run another LP to add a product*")
+
+        st.markdown("")
+        if st.button(
+            "Complete Procurement Plan",
+            type="primary",
+            key="complete_plan_btn",
+            help="Generate the final executive summary for all approved runs",
+        ):
+            st.session_state.show_executive_summary = True
+            st.rerun()
+
+
+def _render_executive_summary() -> None:
+    """Render the final executive summary page (user-triggered only).
+
+    This function is the single source of truth for the session-level summary.
+    It is NEVER called automatically — only when the user clicks
+    "Complete Procurement Plan".
+
+    Sections:
+        A  Procurement Overview
+        B  Product-Level Summary Table
+        C  Baseline Comparison
+        D  Supply Coverage / Shortfall Summary
+        E  Forward-Looking Note
+        F  Final Narrative
+    """
+    import pandas as _pd
+
+    approved = st.session_state.get("approved_lp_runs", [])
+    if not approved:
+        st.warning("No approved LP runs in this session. Approve at least one optimization first.")
+        return
+
+    st.title("Final Executive Summary")
+    st.caption("Session-level procurement plan — approved recommendations only")
+    st.divider()
+
+    # ── Derived session-level metrics ─────────────────────────────────────────
+    total_cost      = sum(r.get("total_cost") or 0.0 for r in approved)
+    total_qty       = sum(r.get("allocated_qty") or 0 for r in approved)
+    total_baseline  = sum(r.get("baseline_cost") or 0.0 for r in approved)
+    avg_lambda      = (
+        sum(r.get("lambda_risk", 0.5) for r in approved) / len(approved)
+        if approved else 0.5
+    )
+    if avg_lambda == 0.0:
+        risk_profile_label = "Cost-only (no risk weighting)"
+    elif avg_lambda <= 0.25:
+        risk_profile_label = f"Cost-focused (avg λ = {avg_lambda:.2f})"
+    elif avg_lambda <= 0.5:
+        risk_profile_label = f"Balanced (avg λ = {avg_lambda:.2f})"
+    elif avg_lambda <= 1.0:
+        risk_profile_label = f"Risk-averse (avg λ = {avg_lambda:.2f})"
+    else:
+        risk_profile_label = f"Risk-priority (avg λ = {avg_lambda:.2f})"
+
+    approved_product_names = [
+        r.get("product", "unknown").replace("_", " ").title() for r in approved
+    ]
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # A. Procurement Overview
+    # ─────────────────────────────────────────────────────────────────────────
+    st.subheader("A  Procurement Overview")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Products Procured", len(approved))
+    col2.metric("Total Units", f"{total_qty:,}")
+    col3.metric("Total Estimated Cost", f"${total_cost:,.2f}")
+    col4.metric("Avg Risk Profile", risk_profile_label)
+
+    st.markdown(
+        f"**Products successfully procured:** {', '.join(approved_product_names)}"
+    )
+    st.divider()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # B. Product-Level Summary Table
+    # ─────────────────────────────────────────────────────────────────────────
+    st.subheader("B  Product-Level Summary")
+    _rows_b = []
+    for r in approved:
+        product_label = r.get("product", "unknown").replace("_", " ").title()
+        alloc = r.get("allocation") or []
+        supplier_names = [
+            a.get("supplier_name") or a.get("supplier_id", "?") for a in alloc
+        ]
+        countries = r.get("countries") or []
+        div_mode  = r.get("diversification_mode", "none")
+        div_label = (
+            "Country-diversified" if div_mode == "country_diversified"
+            else "Share-capped" if div_mode == "supplier_share_only"
+            else "None"
+        )
+        _rows_b.append({
+            "Product":          product_label,
+            "Units":            f"{r.get('allocated_qty') or 0:,}",
+            "Cost (USD)":       f"${r.get('total_cost') or 0.0:,.2f}",
+            "Suppliers":        ", ".join(supplier_names) if supplier_names else "—",
+            "# Suppliers":      r.get("n_suppliers", 0),
+            "Countries":        ", ".join(countries) if countries else "—",
+            "Risk (λ)":         r.get("lambda_risk", 0.5),
+            "Diversification":  div_label,
+        })
+    st.dataframe(
+        _pd.DataFrame(_rows_b),
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.divider()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # C. Baseline Comparison
+    # ─────────────────────────────────────────────────────────────────────────
+    st.subheader("C  Baseline Comparison")
+    st.caption(
+        "Each approved plan is compared to the cheapest feasible unconstrained plan "
+        "(λ = 0, no diversification, max share = 100%) for the same demand level."
+    )
+
+    _rows_c = []
+    for r in approved:
+        product_label = r.get("product", "unknown").replace("_", " ").title()
+        cost      = r.get("total_cost") or 0.0
+        b_cost    = r.get("baseline_cost")
+        b_n_sup   = r.get("baseline_n_suppliers", 0)
+        b_n_ctry  = r.get("baseline_country_count", 0)
+        n_sup     = r.get("n_suppliers", 0)
+        countries = r.get("countries") or []
+
+        if b_cost and b_cost > 0:
+            delta_abs = cost - b_cost
+            delta_pct = (delta_abs / b_cost) * 100
+            if abs(delta_pct) <= 1.0:
+                classification = "Negligible"
+            elif abs(delta_pct) <= 10.0:
+                classification = "Modest"
+            else:
+                classification = "Material"
+            delta_str = f"+${delta_abs:,.2f}" if delta_abs >= 0 else f"-${abs(delta_abs):,.2f}"
+            pct_str   = f"+{delta_pct:.1f}%" if delta_pct >= 0 else f"{delta_pct:.1f}%"
+            sup_delta = n_sup - b_n_sup
+            ctry_delta = len(countries) - b_n_ctry
+        else:
+            delta_str = "N/A"
+            pct_str   = "N/A"
+            classification = "N/A"
+            sup_delta = "N/A"
+            ctry_delta = "N/A"
+
+        _rows_c.append({
+            "Product":           product_label,
+            "Approved Cost":     f"${cost:,.2f}",
+            "Baseline Cost":     f"${b_cost:,.2f}" if b_cost else "N/A",
+            "Cost Delta":        delta_str,
+            "Delta %":           pct_str,
+            "Premium Class":     classification,
+            "Supplier Δ vs Base": f"+{sup_delta}" if isinstance(sup_delta, int) and sup_delta >= 0 else str(sup_delta),
+            "Country Δ vs Base":  f"+{ctry_delta}" if isinstance(ctry_delta, int) and ctry_delta >= 0 else str(ctry_delta),
+        })
+    st.dataframe(
+        _pd.DataFrame(_rows_c),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    if total_baseline > 0:
+        session_delta_abs = total_cost - total_baseline
+        session_delta_pct = (session_delta_abs / total_baseline) * 100
+        if abs(session_delta_pct) <= 1.0:
+            session_class = "negligible"
+        elif abs(session_delta_pct) <= 10.0:
+            session_class = "modest"
+        else:
+            session_class = "material"
+        direction = "above" if session_delta_abs >= 0 else "below"
+        st.info(
+            f"**Session total risk/diversification premium:** "
+            f"${abs(session_delta_abs):,.2f} ({abs(session_delta_pct):.1f}% {direction} "
+            f"the cost-only baseline) — **{session_class}**"
+        )
+    st.divider()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # D. Supply Coverage / Shortfall Summary
+    # ─────────────────────────────────────────────────────────────────────────
+    st.subheader("D  Supply Coverage & Shortfall Summary")
+    try:
+        from tools.pipeline_queries import query_triggered_rows_structured as _qtr
+        _trig_data = _qtr()
+        _trig_rows = _trig_data.get("rows", [])
+
+        approved_products_keys = [r.get("product", "") for r in approved]
+
+        # Filter to approved products only
+        _filtered = [
+            row for row in _trig_rows
+            if row.get("Component", "") in approved_products_keys
+        ]
+
+        if _filtered:
+            _rows_d = []
+            for row in _filtered:
+                _ss   = row.get("Safety Stock Reserve", 0)
+                _avail = row.get("Available Inventory Before Demand", 0)
+                _ss_util = max(0.0, (_ss - _avail) / _ss * 100) if _ss > 0 else 100.0
+                if _avail <= 0:
+                    _urgency = "Critical"
+                elif _avail <= 0.25 * _ss:
+                    _urgency = "High"
+                elif _avail <= 0.5 * _ss:
+                    _urgency = "Moderate"
+                else:
+                    _urgency = "Low"
+                _rows_d.append({
+                    "Component":            row.get("Component", "").replace("_", " ").title(),
+                    "Facility":             row.get("Facility", ""),
+                    "Week":                 row.get("Forecast Week", ""),
+                    "Net Req (units)":      row.get("Net Requirement", 0),
+                    "Avail Inventory":      row.get("Available Inventory Before Demand", 0),
+                    "Safety Stock":         _ss,
+                    "SS Utilization (%)":   f"{_ss_util:.1f}%",
+                    "Urgency":              _urgency,
+                })
+            st.caption("Weeks/facilities with active procurement triggers (net requirement > 0)")
+            st.dataframe(
+                _pd.DataFrame(_rows_d),
+                use_container_width=True,
+                hide_index=True,
+            )
+            # Summary callouts
+            _critical = [r for r in _rows_d if r["Urgency"] == "Critical"]
+            _high     = [r for r in _rows_d if r["Urgency"] == "High"]
+            if _critical:
+                _critical_parts = [
+                    f"Week {r['Week']} — {r['Component']} @ {r['Facility']}"
+                    for r in _critical
+                ]
+                st.error(
+                    f"**Critical shortfall:** {len(_critical)} trigger row(s) with zero or "
+                    f"negative available inventory.\n\n"
+                    + "\n".join(f"- {p}" for p in _critical_parts)
+                    + "\n\nDomestic / spot sourcing may be required for these periods."
+                )
+            elif _high:
+                st.warning(
+                    f"**High urgency:** {len(_high)} trigger row(s) with available inventory "
+                    f"below 25% of safety stock. Monitor lead times closely."
+                )
+            else:
+                st.success(
+                    "All triggered procurement rows are within moderate urgency range. "
+                    "Approved supplier allocations are expected to cover demand."
+                )
+        else:
+            st.success(
+                "No active shortfall triggers found for approved products. "
+                "Current on-hand inventory covers immediate demand windows."
+            )
+    except Exception as _e:
+        st.info(f"Supply coverage data unavailable: {_e}")
+    st.divider()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # E. Forward-Looking Note
+    # ─────────────────────────────────────────────────────────────────────────
+    st.subheader("E  Forward-Looking Note")
+    _fwd_products = ", ".join(approved_product_names)
+    st.markdown(
+        f"The approved procurement plan covers the current planning horizon for "
+        f"**{_fwd_products}**. Supplier lead times embedded in the LP objective "
+        f"ensure that orders placed now arrive within the urgency window. "
+        f"Demand beyond the current planning window should be re-evaluated at the "
+        f"next planning cycle using updated forecasts and refreshed inventory positions. "
+        f"Any approved diversification constraints (country-diversified or share-capped) "
+        f"remain in effect and should be carried forward to subsequent runs."
+    )
+    st.divider()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # F. Final Narrative
+    # ─────────────────────────────────────────────────────────────────────────
+    st.subheader("F  Executive Assessment")
+
+    # Build constraint summary
+    _constraint_parts = []
+    _div_counts = {}
+    for r in approved:
+        dm = r.get("diversification_mode", "none")
+        _div_counts[dm] = _div_counts.get(dm, 0) + 1
+    if _div_counts.get("country_diversified"):
+        _constraint_parts.append(
+            f"country-level diversification enforced on "
+            f"{_div_counts['country_diversified']} product(s)"
+        )
+    if _div_counts.get("supplier_share_only"):
+        _constraint_parts.append(
+            f"supplier share caps applied on "
+            f"{_div_counts['supplier_share_only']} product(s)"
+        )
+    _urgency_runs = [r for r in approved if r.get("urgency")]
+    if _urgency_runs:
+        _constraint_parts.append(f"urgency mode active on {len(_urgency_runs)} product(s)")
+
+    _constraint_sentence = (
+        f" Constraints applied include: {'; '.join(_constraint_parts)}."
+        if _constraint_parts else ""
+    )
+
+    _premium_sentence = ""
+    if total_baseline > 0:
+        _delta_pct = abs((total_cost - total_baseline) / total_baseline * 100)
+        if _delta_pct <= 1.0:
+            _premium_sentence = (
+                " The cost premium over the unconstrained baseline is negligible, "
+                "indicating minimal efficiency loss from the applied constraints."
+            )
+        elif _delta_pct <= 10.0:
+            _premium_sentence = (
+                f" The cost premium over the unconstrained baseline is modest ({_delta_pct:.1f}%), "
+                f"reflecting the expected trade-off between cost efficiency and supply resilience."
+            )
+        else:
+            _premium_sentence = (
+                f" The cost premium over the unconstrained baseline is material ({_delta_pct:.1f}%), "
+                f"driven by diversification and risk constraints. This premium should be justified "
+                f"to stakeholders as insurance against concentration risk."
+            )
+
+    st.markdown(
+        f"This session approved procurement plans for **{len(approved)} product(s)** "
+        f"({', '.join(approved_product_names)}), committing a total of **{total_qty:,} units** "
+        f"at an estimated cost of **${total_cost:,.2f}**. "
+        f"The optimization objective balanced cost minimization with risk-adjusted scoring "
+        f"under the configured constraint set.{_constraint_sentence}{_premium_sentence} "
+        f"Remaining supply risks — including lead-time exposure in high-urgency weeks and "
+        f"potential concentration in specific countries — should be monitored through "
+        f"the next planning cycle."
+    )
+
+    st.divider()
+    if st.button("← Back to Procurement Agent", key="exit_exec_summary_btn"):
+        st.session_state.show_executive_summary = False
+        st.rerun()
+
+
 def render_lp_approval():
     """Show LP results and present an approve / discard decision to the user."""
     lp_interrupt = st.session_state.pending_lp_result or {}
@@ -2435,6 +2823,17 @@ def render_lp_approval():
 
     st.divider()
 
+    # ── Session procurement status — shows previously approved products and
+    # exposes the "Complete Procurement Plan" button.  The current pending
+    # product(s) are listed as "Pending Approval" so the user can see exactly
+    # where they are in the session.
+    _pending_labels = [
+        k.replace("lp_", "").replace("_", " ").title() for k in raw.keys()
+    ]
+    _render_procurement_status_bar(pending_products=_pending_labels)
+
+    st.divider()
+
     # ── LP result content — one block per product ──────────────────────────────
     for product_key, result_dict in raw.items():
         product_label = product_key.replace("lp_", "").replace("_", " ").title()
@@ -2450,13 +2849,21 @@ def render_lp_approval():
 if st.session_state.historical_demand_verification_pending:
     _render_demand_verification_banner()
 
-if st.session_state.waiting_for_lp_approval and st.session_state.pending_lp_result:
+# ── Executive summary page — exclusive view, user-triggered only ───────────────
+if st.session_state.get("show_executive_summary"):
+    _render_executive_summary()
+
+elif st.session_state.waiting_for_lp_approval and st.session_state.pending_lp_result:
     render_lp_approval()
 
 elif st.session_state.waiting_for_approval and st.session_state.pending_plan:
     render_pending_plan()
 
 elif not st.session_state.waiting_for_approval and not st.session_state.waiting_for_lp_approval:
+    # ── Persistent procurement status bar — visible between LP runs ───────────
+    # Shown whenever the user has approved at least one LP run and is back in
+    # the normal chat view.  This is the persistent "Complete" entry point.
+    _render_procurement_status_bar()
     prompt = st.chat_input("Ask about suppliers...")
     if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
