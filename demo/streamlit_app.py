@@ -2808,79 +2808,135 @@ def _render_executive_summary() -> None:
     # ─────────────────────────────────────────────────────────────────────────
     # D. Supply Coverage / Shortfall Summary
     # ─────────────────────────────────────────────────────────────────────────
+    # Classification uses the same logic as the urgency section in _render_lp_result():
+    #   earliest_replenishment_week = max(1, round(min_selected_lead_time_days / 7))
+    # Rows with Forecast Week < earliest → NOT COVERED (true immediate risk)
+    # Rows with Forecast Week >= earliest → COVERED (expected supplier fulfillment)
+    # Source rows: query_triggered_rows_structured() — net_requirement > 0 only.
     st.subheader("D  Supply Coverage & Shortfall Summary")
     try:
-        from tools.pipeline_queries import query_triggered_rows_structured as _qtr
+        from tools.pipeline_queries import (
+            query_triggered_rows_structured as _qtr,
+            query_supplier_lead_times as _qlt,
+        )
         _trig_data = _qtr()
         _trig_rows = _trig_data.get("rows", [])
 
+        # Step 1 — Build coverage map: product → earliest_replenishment_week
+        # Uses selected supplier IDs stored in the approved run's allocation list.
+        _coverage_map: dict[str, int | None] = {}
+        for _apr in approved:
+            _prd = _apr.get("product", "")
+            _sel_ids = [
+                a.get("supplier_id", "")
+                for a in (_apr.get("allocation") or [])
+                if a.get("supplier_id")
+            ]
+            if _sel_ids:
+                try:
+                    _lt_map = _qlt(_prd, _sel_ids)
+                    if _lt_map:
+                        _min_days = min(_lt_map.values())
+                        _coverage_map[_prd] = max(1, round(_min_days / 7.0))
+                    else:
+                        _coverage_map[_prd] = None  # conservative: unknown → all uncovered
+                except Exception:
+                    _coverage_map[_prd] = None
+            else:
+                _coverage_map[_prd] = None
+
         approved_products_keys = [r.get("product", "") for r in approved]
 
-        # Filter to approved products only
-        _filtered = [
-            row for row in _trig_rows
-            if row.get("Component", "") in approved_products_keys
-        ]
+        # Step 2 — Filter to approved products and classify each row
+        _not_covered: list[dict] = []
+        _covered:     list[dict] = []
 
-        if _filtered:
-            _rows_d = []
-            for row in _filtered:
-                _ss   = row.get("Safety Stock Reserve", 0)
-                _avail = row.get("Available Inventory Before Demand", 0)
-                _ss_util = max(0.0, (_ss - _avail) / _ss * 100) if _ss > 0 else 100.0
-                if _avail <= 0:
-                    _urgency = "Critical"
-                elif _avail <= 0.25 * _ss:
-                    _urgency = "High"
-                elif _avail <= 0.5 * _ss:
-                    _urgency = "Moderate"
-                else:
-                    _urgency = "Low"
-                _rows_d.append({
-                    "Component":            row.get("Component", "").replace("_", " ").title(),
-                    "Facility":             row.get("Facility", ""),
-                    "Week":                 row.get("Forecast Week", ""),
-                    "Procurement Need":     row.get("Procurement Need", 0),
-                    "Avail Inventory":      _avail,
-                    "Safety Stock":         _ss,
-                    "SS Utilization (%)":   f"{_ss_util:.1f}%",
-                    "Urgency":              _urgency,
-                })
-            st.caption("Weeks/facilities with active procurement triggers (net requirement > 0)")
+        def _build_section_d_row(row: dict, cum_press: float) -> dict:
+            _ss    = row.get("Safety Stock Reserve", 0)
+            _avail = row.get("Available Inventory Before Demand", 0)
+            _need  = row.get("Procurement Need", 0)
+            _ss_util = ((_ss - _avail) / _ss * 100) if _ss > 0 else 100.0
+            return {
+                "Forecast Week":                   row.get("Forecast Week", ""),
+                "Facility":                        row.get("Facility", ""),
+                "Component":                       row.get("Component", "").replace("_", " ").title(),
+                "Direct Procurement Needed":       f"{_need:,.0f}",
+                "Cumulative Procurement Pressure": f"{cum_press:,.0f}",
+                "Safety Stock":                    f"{_ss:,.0f}",
+                "Safety Stock Utilization (%)":    f"{_ss_util:.1f}%",
+            }
+
+        # Accumulate cumulative procurement pressure per (component, facility) — separate
+        # accumulators for uncovered and covered tracks to reflect their distinct windows.
+        _cum_nc: dict[tuple, float] = {}
+        _cum_cv: dict[tuple, float] = {}
+
+        for row in sorted(
+            (r for r in _trig_rows if r.get("Component", "") in approved_products_keys),
+            key=lambda x: x.get("Forecast Week", 0),
+        ):
+            _prod = row.get("Component", "")
+            _earliest = _coverage_map.get(_prod)
+            _fw = row.get("Forecast Week", 0)
+            _fc = (_prod, row.get("Facility", ""))
+            _need = row.get("Procurement Need", 0)
+
+            if _earliest is None or _fw < _earliest:
+                # NOT COVERED — true immediate risk
+                _cum_nc[_fc] = _cum_nc.get(_fc, 0.0) + _need
+                _not_covered.append(_build_section_d_row(row, _cum_nc[_fc]))
+            else:
+                # COVERED — expected to be fulfilled by selected supplier replenishment
+                _cum_cv[_fc] = _cum_cv.get(_fc, 0.0) + _need
+                _covered.append(_build_section_d_row(row, _cum_cv[_fc]))
+
+        # Step 3 — Render Table A: Uncovered Shortfall
+        st.markdown("##### Uncovered Shortfall — Immediate Procurement Risk")
+        if _not_covered:
+            st.error(
+                f"**{len(_not_covered)} trigger row(s)** fall before selected suppliers are "
+                f"expected to begin replenishing inventory. "
+                f"Emergency or spot sourcing is required for these windows."
+            )
             st.dataframe(
-                _pd.DataFrame(_rows_d),
+                _pd.DataFrame(_not_covered),
                 use_container_width=True,
                 hide_index=True,
             )
-            # Summary callouts
-            _critical = [r for r in _rows_d if r["Urgency"] == "Critical"]
-            _high     = [r for r in _rows_d if r["Urgency"] == "High"]
-            if _critical:
-                _critical_parts = [
-                    f"Week {r['Week']} — {r['Component']} @ {r['Facility']}"
-                    for r in _critical
-                ]
-                st.error(
-                    f"**Critical shortfall:** {len(_critical)} trigger row(s) with zero or "
-                    f"negative available inventory.\n\n"
-                    + "\n".join(f"- {p}" for p in _critical_parts)
-                    + "\n\nDomestic / spot sourcing may be required for these periods."
-                )
-            elif _high:
-                st.warning(
-                    f"**High urgency:** {len(_high)} trigger row(s) with available inventory "
-                    f"below 25% of safety stock. Monitor lead times closely."
-                )
-            else:
-                st.success(
-                    "All triggered procurement rows are within moderate urgency range. "
-                    "Approved supplier allocations are expected to cover demand."
-                )
         else:
             st.success(
-                "No active shortfall triggers found for approved products. "
-                "Current on-hand inventory covers immediate demand windows."
+                "No uncovered shortfall rows identified. All triggered procurement windows "
+                "fall within or after selected-supplier replenishment timing."
             )
+
+        # Step 4 — Render Table B: Covered Demand
+        st.markdown("##### Covered Demand — Expected to be Fulfilled by Selected Suppliers")
+        if _covered:
+            st.info(
+                f"**{len(_covered)} trigger row(s)** fall at or after the expected "
+                f"selected-supplier replenishment window. These weeks are expected to be "
+                f"covered by orders placed in the approved plan."
+            )
+            st.dataframe(
+                _pd.DataFrame(_covered),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.caption("No covered-demand rows found for approved products in the trigger view.")
+
+        # Step 5 — Coverage week summary per product
+        if _coverage_map:
+            _cov_summary = []
+            for _prd, _ew in _coverage_map.items():
+                _ew_label = f"Week {_ew}" if _ew is not None else "Unknown (lead time unavailable)"
+                _cov_summary.append({
+                    "Product": _prd.replace("_", " ").title(),
+                    "Earliest Supplier Replenishment": _ew_label,
+                })
+            st.caption("**Coverage reference — earliest_replenishment_week per product:**")
+            st.dataframe(_pd.DataFrame(_cov_summary), use_container_width=True, hide_index=True)
+
     except Exception as _e:
         st.info(f"Supply coverage data unavailable: {_e}")
     st.divider()
