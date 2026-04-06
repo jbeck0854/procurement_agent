@@ -541,14 +541,53 @@ if "historical_demand_verification_pending" not in st.session_state:
 # ── Session-level helpers ──────────────────────────────────────────────────────
 
 def _store_approved_run(result: dict) -> None:
-    """Append one approved LP result dict to the session-level store."""
+    """Append one approved LP result dict to the session-level store.
+
+    Persists all data needed for session-level synthesis:
+    - run parameters (lambda, share cap, diversification)
+    - cost and allocation totals
+    - baseline comparison record (for cost-premium reporting)
+    - country and supplier selection
+    """
+    recap    = result.get("params_recap") or {}
+    cost_sum = result.get("cost_summary") or {}
+    req      = result.get("requirement") or {}
+    pool     = result.get("supplier_pool") or {}
+    diag     = result.get("constraint_diagnostics") or {}
+    baseline = result.get("baseline") or {}
+
+    # Prefer adjusted_requirement (the actual demand floor used by the LP) over
+    # constraint_diagnostics.total_allocated which may not be present.
+    allocated_qty = (
+        req.get("adjusted_requirement")
+        or diag.get("total_allocated")
+        or 0
+    )
+
     entry = {
-        "product":           (result.get("params_recap") or {}).get("product", "unknown"),
-        "allocated_qty":     (result.get("constraint_diagnostics") or {}).get("total_allocated", 0),
-        "total_cost":        (result.get("cost_summary") or {}).get("total_cost_usd", 0.0),
-        "n_suppliers":       (result.get("supplier_pool") or {}).get("n_selected_by_lp", 0),
-        "executive_summary": result.get("executive_summary", ""),
-        "allocation":        result.get("allocation", []),
+        # Core identification
+        "product":              recap.get("product", "unknown"),
+        # Allocation totals
+        "allocated_qty":        allocated_qty,
+        "total_cost":           cost_sum.get("total_cost_usd", 0.0),
+        "n_suppliers":          pool.get("n_selected_by_lp", 0),
+        # Narrative
+        "executive_summary":    result.get("executive_summary", ""),
+        "allocation":           result.get("allocation", []),
+        # Run parameters — needed to distinguish runs in the session summary
+        "lambda_risk":          recap.get("lambda_risk", 0.5),
+        "max_supplier_share":   recap.get("max_supplier_share", 1.0),
+        "diversification_mode": recap.get("diversification_mode", "none"),
+        "urgency":              recap.get("urgency", False),
+        "budget_cap":           recap.get("budget_cap"),
+        "facility_id":          recap.get("facility_id"),
+        # Geographic context
+        "countries":            diag.get("countries_selected", []),
+        # Baseline comparison — cost-only unconstrained plan for same demand
+        # (see optimization/README.md §Session-Level Summary Behavior)
+        "baseline_cost":        baseline.get("total_cost_usd"),
+        "baseline_n_suppliers": len(baseline.get("baseline_selected_suppliers") or []),
+        "baseline_country_count": baseline.get("baseline_country_count", 0),
     }
     st.session_state.approved_lp_runs.append(entry)
 
@@ -560,19 +599,103 @@ def _format_session_summary(approved_runs: list) -> str:
             "No approved LP runs in this session yet. "
             "Complete and approve at least one LP optimization to generate a session summary."
         )
+
     lines = ["**Session Procurement Plan — Approved Runs**\n"]
-    total_spend = 0.0
-    for run in approved_runs:
-        product = (run.get("product") or "unknown").replace("_", " ").title()
-        qty     = run.get("allocated_qty") or 0
-        cost    = run.get("total_cost") or 0.0
-        n_sup   = run.get("n_suppliers") or 0
-        exec_s  = (run.get("executive_summary") or "").strip()
+    total_spend   = 0.0
+    total_baseline = 0.0
+    has_baseline  = False
+
+    for i, run in enumerate(approved_runs, start=1):
+        product   = (run.get("product") or "unknown").replace("_", " ").title()
+        qty       = run.get("allocated_qty") or 0
+        cost      = run.get("total_cost") or 0.0
+        n_sup     = run.get("n_suppliers") or 0
+        lam       = run.get("lambda_risk", 0.5)
+        share     = run.get("max_supplier_share", 1.0)
+        div_mode  = run.get("diversification_mode", "none")
+        urgency   = run.get("urgency", False)
+        countries = run.get("countries") or []
+        b_cost    = run.get("baseline_cost")
+        b_n_sup   = run.get("baseline_n_suppliers", 0)
+        b_n_ctry  = run.get("baseline_country_count", 0)
+
         total_spend += cost
-        lines.append(f"- **{product}**: {qty:,} units · {n_sup} supplier(s) · ${cost:,.2f}")
-        if exec_s:
-            lines.append(f"  ↳ {exec_s}")
-    lines.append(f"\n**Total Committed Spend: ${total_spend:,.2f}**")
+        if b_cost:
+            total_baseline += b_cost
+            has_baseline = True
+
+        # Header line
+        lines.append(f"**Run {i} — {product}**")
+
+        # Core metrics
+        lines.append(f"- Quantity: {qty:,} units · Suppliers selected: {n_sup}")
+        lines.append(f"- Committed cost: ${cost:,.2f}")
+        if countries:
+            lines.append(f"- Countries: {', '.join(countries)}")
+
+        # Run parameters
+        param_parts = [f"λ = {lam}", f"Max share: {share:.0%}"]
+        if div_mode != "none":
+            param_parts.append(f"Diversification: {div_mode.replace('_', ' ')}")
+        if urgency:
+            param_parts.append("Urgency: on")
+        lines.append(f"- Settings: {' · '.join(param_parts)}")
+
+        # Baseline comparison
+        if b_cost and b_cost > 0:
+            delta_abs = cost - b_cost
+            delta_pct = (delta_abs / b_cost) * 100
+            if abs(delta_pct) <= 1.0:
+                classification = "negligible"
+            elif abs(delta_pct) <= 10.0:
+                classification = "modest"
+            else:
+                classification = "material"
+
+            direction = "premium" if delta_abs >= 0 else "savings"
+            lines.append(
+                f"- vs. cost-only baseline: ${abs(delta_abs):,.2f} {direction} "
+                f"({abs(delta_pct):.1f}% — {classification})"
+            )
+            if n_sup != b_n_sup or len(countries) != b_n_ctry:
+                sup_delta  = n_sup - b_n_sup
+                ctry_delta = len(countries) - b_n_ctry
+                delta_str_parts = []
+                if sup_delta != 0:
+                    delta_str_parts.append(
+                        f"{abs(sup_delta)} more supplier{'s' if abs(sup_delta) != 1 else ''}"
+                        if sup_delta > 0 else
+                        f"{abs(sup_delta)} fewer supplier{'s' if abs(sup_delta) != 1 else ''}"
+                    )
+                if ctry_delta != 0:
+                    delta_str_parts.append(
+                        f"{abs(ctry_delta)} more {'countries' if abs(ctry_delta) != 1 else 'country'}"
+                        if ctry_delta > 0 else
+                        f"{abs(ctry_delta)} fewer {'countries' if abs(ctry_delta) != 1 else 'country'}"
+                    )
+                if delta_str_parts:
+                    lines.append(f"  ↳ {', '.join(delta_str_parts)} vs. unconstrained baseline")
+
+        lines.append("")  # blank line between runs
+
+    # Session totals
+    lines.append(f"**Total Committed Spend: ${total_spend:,.2f}**")
+
+    if has_baseline and total_baseline > 0:
+        session_delta_abs = total_spend - total_baseline
+        session_delta_pct = (session_delta_abs / total_baseline) * 100
+        if abs(session_delta_pct) <= 1.0:
+            session_class = "negligible"
+        elif abs(session_delta_pct) <= 10.0:
+            session_class = "modest"
+        else:
+            session_class = "material"
+        session_dir = "above" if session_delta_abs >= 0 else "below"
+        lines.append(
+            f"Session risk/diversification premium: ${abs(session_delta_abs):,.2f} "
+            f"({abs(session_delta_pct):.1f}% {session_dir} cost-only baseline — {session_class})"
+        )
+
     lines.append("\n*Review approved recommendations, confirm lead times, and place orders.*")
     return "\n".join(lines)
 
