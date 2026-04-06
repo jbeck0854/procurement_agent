@@ -409,6 +409,34 @@ def _parse_lp_intent(prompt: str) -> dict | None:
     return params
 
 
+# ── LP decision explanation route ──────────────────────────────────────────────
+# "How was this decision made?" — user-triggered structured LP explanation.
+_LP_EXPLAIN_SIGNALS = (
+    "how was this decision made",
+    "how was the decision made",
+    "how did you make this decision",
+    "explain this decision",
+    "explain the decision",
+    "explain the recommendation",
+    "explain the lp",
+    "explain the optimization",
+    "how does the optimizer work",
+    "how does the optimization work",
+    "why did you recommend",
+    "why this recommendation",
+    "what drove this recommendation",
+    "what is the objective",
+    "what is the objective function",
+    "how was this optimized",
+)
+
+
+def _is_lp_decision_explanation_request(text: str) -> bool:
+    """True for 'How was this decision made?' and equivalent phrasings."""
+    t = text.lower()
+    return any(s in t for s in _LP_EXPLAIN_SIGNALS)
+
+
 # Transition sentences and section headings for each assessment direction.
 _FORECAST_ASSESS_META = {
     "validation": (
@@ -499,6 +527,11 @@ if "saved_plan" not in st.session_state:
 # ── Session-level approved LP runs ─────────────────────────────────────────────
 if "approved_lp_runs" not in st.session_state:
     st.session_state.approved_lp_runs = []
+
+# Full raw LP result dict from the most recent LP interrupt, keyed by product_key.
+# Used by the "How was this decision made?" explanation route after approval.
+if "last_lp_raw_full" not in st.session_state:
+    st.session_state.last_lp_raw_full = {}
 
 # ── Opening kickoff state ──────────────────────────────────────────────────────
 if "historical_demand_verification_pending" not in st.session_state:
@@ -1403,6 +1436,8 @@ def render_pending_plan():
             st.session_state.waiting_for_lp_approval = True
             st.session_state.pending_lp_result = lp_interrupt
             st.session_state.lp_partial_state = final_state
+            # Cache full raw dict for the "How was this decision made?" explanation.
+            st.session_state.last_lp_raw_full = lp_interrupt.get("raw", {})
             st.session_state.saved_plan = plan
             st.session_state.waiting_for_approval = False
             st.session_state.pending_plan = None
@@ -1421,6 +1456,381 @@ def render_pending_plan():
                 st.session_state.waiting_for_approval = False
                 st.session_state.pending_plan = None
                 st.rerun()
+
+
+def _render_lp_decision_explanation(raw: dict) -> None:
+    """
+    Render 'How was this decision made?' — structured LP decision explanation.
+
+    Sections:
+      A. Overview
+      B. Objective Function
+      C. Current Run Settings
+      D. Active Business Rules
+      E. Inactive Options You Could Change
+      F. How Different Settings Would Change This Recommendation
+
+    Pure rendering from the LP result dict — no DB calls, no new calculations.
+    """
+    import pandas as pd
+
+    recap   = raw.get("params_recap", {})
+    req     = raw.get("requirement", {})
+    diag    = raw.get("constraint_diagnostics", {})
+    alloc   = raw.get("allocation", [])
+    pool    = raw.get("supplier_pool", {})
+
+    product_label  = recap.get("product", "").replace("_", " ").title()
+    lambda_risk    = recap.get("lambda_risk", 0.5)
+    max_share      = recap.get("max_supplier_share", 1.0)
+    div_mode       = recap.get("diversification_mode", "none")
+    svc_tgt        = recap.get("service_level_target", 1.0)
+    urgency        = recap.get("urgency", False)
+    budget_cap     = recap.get("budget_cap")
+    excl_ids       = recap.get("exclude_supplier_ids") or []
+    compliance_thr = recap.get("compliance_threshold", 0.6)
+    facility_id    = recap.get("facility_id")
+    adj_req        = req.get("adjusted_requirement", 0)
+    n_fac          = req.get("n_facilities_included", 0)
+    n_selected     = pool.get("n_selected_by_lp", len(alloc))
+    n_eligible     = pool.get("n_eligible_post_compliance", 0)
+    countries      = diag.get("countries_selected", [])
+    lambda_urgency = 0.25 if urgency else 0.0
+
+    # ── A. Overview ───────────────────────────────────────────────────────────
+    st.markdown("**A. Overview**")
+
+    if facility_id:
+        scope_str = f"Facility {facility_id} only"
+    else:
+        scope_str = f"all {n_fac} facilit{'y' if n_fac == 1 else 'ies'} with positive net requirement"
+
+    if lambda_risk == 0:
+        tradeoff_desc = (
+            "This run used a **cost-only** objective — risk penalties were not applied. "
+            "The optimizer selected the cheapest compliant supplier(s) that satisfy demand."
+        )
+    elif lambda_risk <= 0.25:
+        tradeoff_desc = (
+            "This run **weighted cost heavily**, with a modest adjustment for supplier risk. "
+            "Most volume flows toward the cheapest options; only high-risk suppliers are meaningfully penalized."
+        )
+    elif lambda_risk <= 0.75:
+        tradeoff_desc = (
+            "This run **balanced cost and risk** — both factors influenced the supplier selection. "
+            "Cheaper suppliers are still preferred, but riskier ones carry a noticeable cost markup in the model."
+        )
+    else:
+        tradeoff_desc = (
+            "This run **prioritized risk reduction**. "
+            "The optimizer accepted higher landed cost in exchange for a more stable, lower-risk supplier mix."
+        )
+
+    urgency_note = (
+        " Lead-time delivery speed is also factored in: slower suppliers carry "
+        "an additional cost premium, causing the optimizer to favor faster delivery."
+        if urgency else ""
+    )
+
+    st.markdown(
+        f"The optimizer allocated the **{product_label}** procurement requirement "
+        f"({adj_req:,} units, {scope_str}) across the eligible supplier pool.\n\n"
+        f"It did not forecast demand or recompute inventory — those steps were completed upstream. "
+        f"The optimizer's sole job: given a known requirement, decide **who to buy from** "
+        f"and **in what quantity**.\n\n"
+        f"{tradeoff_desc}{urgency_note}"
+    )
+
+    # ── B. Objective Function ─────────────────────────────────────────────────
+    st.markdown("**B. Objective Function**")
+    st.markdown(
+        "The optimizer minimizes the following expression, evaluated for each candidate supplier `j`:"
+    )
+    st.markdown(
+        "> **minimize:** `c_j × (1 + λ_risk × r_j + λ_urgency × lt_norm_j)`"
+    )
+    term_rows = [
+        {"Term": "c_j",
+         "Definition": "Landed unit cost (USD per unit)"},
+        {"Term": "r_j",
+         "Definition": "Normalized risk penalty for supplier j  —  0 = lowest risk in the eligible pool, 1 = highest"},
+        {"Term": "lt_norm_j",
+         "Definition": "Normalized lead-time mean within the eligible pool  —  0 = fastest, 1 = slowest"},
+        {"Term": f"λ_risk = {lambda_risk}",
+         "Definition": f"Risk preference weight for this run. "
+                       f"A value of 0 means pure cost; higher values shift volume toward safer suppliers."},
+        {"Term": f"λ_urgency = {lambda_urgency}",
+         "Definition": "Urgency premium. Active at 0.25 when urgency mode is on — "
+                       "causes slower suppliers to carry up to a 25% cost markup."
+                       if urgency else
+                       "Urgency premium. Currently 0 — lead time is not penalized in this run."},
+    ]
+    st.dataframe(pd.DataFrame(term_rows), use_container_width=True, hide_index=True)
+
+    if lambda_risk == 0:
+        obj_interp = (
+            "With λ_risk = 0, the risk term drops out entirely. "
+            "The model reduces to pure landed cost minimization."
+        )
+    elif urgency:
+        obj_interp = (
+            f"With λ_risk = {lambda_risk} and urgency on (λ_urgency = 0.25), "
+            "both risk and delivery speed add a cost premium. "
+            "A supplier that is both risky and slow faces the highest effective cost in the model."
+        )
+    else:
+        markup_pct = lambda_risk * 0.5 * 100
+        obj_interp = (
+            f"With λ_risk = {lambda_risk}: a supplier with a normalized risk penalty of 0.5 "
+            f"effectively carries a {markup_pct:.0f}% cost markup relative to an equally-priced zero-risk supplier. "
+            "The optimizer balances this across the full eligible pool to find the minimum total adjusted cost."
+        )
+    st.markdown(obj_interp)
+
+    # ── C. Current Run Settings ───────────────────────────────────────────────
+    st.markdown("**C. Current Run Settings**")
+
+    div_mode_display = {
+        "none":                "None — LP selects lowest adjusted-cost mix",
+        "supplier_share_only": f"Supplier share cap ({max_share:.0%} max per supplier)",
+        "country_diversified": "Country diversification — 3 suppliers, 1 per country, ~33% each",
+    }.get(div_mode, div_mode)
+
+    svc_display = (
+        f"{svc_tgt:.0%} — 1× base requirement (no additional buffer)"
+        if svc_tgt == 1.0
+        else f"{svc_tgt:.0%} — +{(svc_tgt - 1)*100:.0f}% buffer above base requirement"
+    )
+
+    settings_rows = [
+        {"Setting": "Product",              "Value": product_label},
+        {"Setting": "Facility Scope",       "Value": f"Facility {facility_id}" if facility_id else f"All {n_fac} facilities with positive requirement"},
+        {"Setting": "Total Quantity (Q)",   "Value": f"{adj_req:,} units"},
+        {"Setting": "Risk Weight (λ)",      "Value": str(lambda_risk)},
+        {"Setting": "Supplier Share Cap",   "Value": f"{max_share:.0%}" if max_share < 1.0 else "No cap"},
+        {"Setting": "Diversification Mode", "Value": div_mode_display},
+        {"Setting": "Service Level Target", "Value": svc_display},
+        {"Setting": "Urgency Mode",         "Value": "On — lead-time premium applied" if urgency else "Off"},
+        {"Setting": "Budget Cap",           "Value": f"${budget_cap:,.0f}" if budget_cap else "None"},
+        {"Setting": "Compliance Threshold", "Value": f"{compliance_thr:.0%} minimum eligibility"},
+        {"Setting": "Excluded Suppliers",   "Value": ", ".join(excl_ids) if excl_ids else "None"},
+        {"Setting": "Eligible / Selected",  "Value": f"{n_eligible} eligible after compliance filter  ·  {n_selected} selected by LP"},
+    ]
+    st.dataframe(pd.DataFrame(settings_rows), use_container_width=True, hide_index=True)
+
+    # ── D. Active Business Rules ──────────────────────────────────────────────
+    st.markdown("**D. Active Business Rules**")
+    active = []
+
+    active.append(
+        f"**Demand fulfillment** — the plan must procure at least {adj_req:,} units. "
+        "Partial fulfillment is not permitted."
+    )
+    active.append(
+        f"**Compliance filter** — suppliers below {compliance_thr:.0%} eligibility are excluded before "
+        f"the optimizer runs. {n_eligible} of {pool.get('n_total_for_product', n_eligible)} total suppliers "
+        "passed this gate."
+    )
+    if lambda_risk > 0:
+        active.append(
+            f"**Risk-adjusted cost (λ = {lambda_risk})** — supplier risk penalties scale the effective unit cost. "
+            "Riskier suppliers are more expensive in the model; volume shifts toward lower-risk alternatives."
+        )
+    if urgency:
+        active.append(
+            "**Urgency adjustment** — lead-time delivery speed is penalized. "
+            "The slowest eligible supplier carries a 25% cost premium; the fastest carries none. "
+            "No suppliers are excluded — it is a continuous cost dial."
+        )
+    if max_share < 1.0:
+        active.append(
+            f"**Supplier concentration cap ({max_share:.0%})** — no single supplier may receive more than "
+            f"{max_share:.0%} of total volume. This constraint directly shapes how volume is spread."
+        )
+    if div_mode == "country_diversified":
+        active.append(
+            "**Country diversification** — exactly 3 suppliers are selected, each from a different country, "
+            "each allocated 30–35% of total volume. Binary selection variables enforce this constraint."
+        )
+    elif div_mode == "supplier_share_only":
+        active.append(
+            f"**Supplier-share diversification** — the {max_share:.0%} share cap is the active diversification "
+            "constraint. No country-level requirement applies."
+        )
+    if budget_cap:
+        active.append(f"**Budget cap** — total procurement spend must not exceed ${budget_cap:,.0f}.")
+    if svc_tgt != 1.0:
+        active.append(
+            f"**Service-level buffer** — procurement quantity is scaled to {svc_tgt:.0%} of base requirement, "
+            f"adding a {(svc_tgt - 1)*100:.0f}% buffer. This scales the demand floor, not the safety stock."
+        )
+    if facility_id:
+        active.append(
+            f"**Facility restriction** — optimization is scoped to Facility {facility_id} only. "
+            "Other facilities are excluded from this run's demand and allocation."
+        )
+    if excl_ids:
+        active.append(
+            f"**Manual exclusions** — {', '.join(excl_ids)} removed from the supplier pool before the optimizer runs."
+        )
+
+    for rule in active:
+        st.markdown(f"- {rule}")
+
+    # ── E. Inactive Options You Could Change ──────────────────────────────────
+    st.markdown("**E. Inactive Options You Could Change**")
+    inactive = []
+
+    if lambda_risk == 0:
+        inactive.append(
+            "**Risk weighting (λ_risk > 0)** — not applied. "
+            "Enabling this would shift volume away from the cheapest-but-riskier suppliers toward more stable options."
+        )
+    if not urgency:
+        inactive.append(
+            "**Urgency mode** — not applied. "
+            "Enabling this would add a lead-time cost premium, causing the optimizer to favor faster-delivering suppliers."
+        )
+    if max_share >= 1.0 and div_mode == "none":
+        inactive.append(
+            "**Supplier share cap** — no cap set. "
+            "Adding one (e.g., 40%) would prevent any single supplier from dominating the allocation."
+        )
+    if div_mode != "country_diversified":
+        inactive.append(
+            "**Country diversification** — not applied. "
+            "Enabling this would require exactly 3 suppliers from 3 different countries, each receiving ~33% of volume."
+        )
+    if svc_tgt == 1.0:
+        inactive.append(
+            "**Service-level buffer (service_level_target > 1.0)** — not applied. "
+            "A value of 1.10 would procure 10% above the computed requirement as an additional planning buffer."
+        )
+    if not budget_cap:
+        inactive.append(
+            "**Budget cap** — no spending limit set. "
+            "Adding one could constrain supplier feasibility or force the optimizer toward cheaper options."
+        )
+    if not facility_id:
+        inactive.append(
+            "**Single-facility scope (facility_id)** — currently aggregated across all facilities. "
+            "Restricting to one facility would reduce the demand floor and potentially change supplier selection."
+        )
+    if not excl_ids:
+        inactive.append(
+            "**Supplier exclusions (exclude_supplier_ids)** — no suppliers excluded. "
+            "Removing a specific supplier forces full reallocation across the remaining pool — "
+            "useful for disruption and what-if scenario testing."
+        )
+
+    if inactive:
+        for opt in inactive:
+            st.markdown(f"- {opt}")
+    else:
+        st.markdown("All supported parameters are active in this run.")
+
+    # ── F. How Different Settings Would Change This Recommendation ────────────
+    st.markdown("**F. How Different Settings Would Change This Recommendation**")
+
+    changes = []
+
+    if lambda_risk > 0:
+        changes.append(
+            f"**Lowering λ to 0** would remove risk weighting entirely — "
+            "the optimizer would choose solely on landed unit cost. "
+            "Volume would likely shift to the cheapest compliant supplier(s), matching the cost-only baseline."
+        )
+    if lambda_risk < 1.5:
+        changes.append(
+            f"**Raising λ above {lambda_risk}** would further penalize riskier suppliers, "
+            "potentially concentrating more volume in fewer, costlier but more reliable sources."
+        )
+
+    if max_share < 1.0:
+        changes.append(
+            f"**Relaxing the share cap above {max_share:.0%}** would allow more volume concentration, "
+            "potentially reducing cost by flowing more volume to the single lowest adjusted-cost supplier."
+        )
+        changes.append(
+            f"**Tightening the share cap below {max_share:.0%}** would force even broader diversification, "
+            "likely increasing cost as volume is spread to less competitive suppliers."
+        )
+    else:
+        changes.append(
+            "**Adding a supplier share cap** (e.g., 40%) would prevent any single supplier from "
+            "dominating, distributing volume across at least two or three sources at potential cost premium."
+        )
+
+    if div_mode != "country_diversified":
+        changes.append(
+            "**Enabling country diversification** would constrain the plan to exactly 3 suppliers "
+            "from 3 countries, each allocated ~33% of volume. "
+            "Geographic risk protection is introduced, but cost may increase."
+        )
+
+    if svc_tgt == 1.0:
+        changes.append(
+            "**Raising service_level_target to 1.10** would increase total quantity procured by 10%, "
+            "scaling all supplier allocations proportionally above the current requirement."
+        )
+    else:
+        changes.append(
+            f"**Lowering service_level_target to 1.0** would reduce total quantity by "
+            f"{(svc_tgt - 1)*100:.0f}%, removing the current buffer and procuring only what the requirement demands."
+        )
+
+    if not urgency:
+        changes.append(
+            "**Enabling urgency mode** would add a lead-time premium. "
+            "Slower suppliers would become more expensive in the model, "
+            "causing the optimizer to favor faster-delivering alternatives even at higher base cost."
+        )
+    else:
+        changes.append(
+            "**Disabling urgency mode** would remove the lead-time penalty. "
+            "Cost and risk alone would drive allocation — delivery speed would not be penalized."
+        )
+
+    if not budget_cap:
+        changes.append(
+            "**Adding a budget cap** could render the current plan infeasible if the optimal allocation "
+            "exceeds the cap, forcing the optimizer toward cheaper or fewer suppliers."
+        )
+    else:
+        changes.append(
+            f"**Raising the budget cap above ${budget_cap:,.0f}** would give the optimizer "
+            "more flexibility to select risk-adjusted suppliers that may cost slightly more."
+        )
+
+    if not excl_ids:
+        changes.append(
+            "**Excluding a specific supplier** (e.g., a single-source concentration risk) "
+            "would force full reallocation across the remaining eligible pool — "
+            "directly modeling a supply disruption scenario."
+        )
+    else:
+        changes.append(
+            f"**Reinstating {', '.join(excl_ids)}** would expand the eligible pool, "
+            "potentially changing the cost and risk profile of the optimal allocation."
+        )
+
+    if not facility_id:
+        changes.append(
+            "**Restricting to a single facility** would reduce the demand floor "
+            "and may change which suppliers are optimal for that facility's specific requirement."
+        )
+
+    for chg in changes:
+        st.markdown(f"- {chg}")
+
+    # ── MOQ note ─────────────────────────────────────────────────────────────
+    st.markdown("**Note on MOQ / Minimum Order Quantity**")
+    st.markdown(
+        "Minimum order quantity (MOQ) and bulk-unit thresholds are currently surfaced in "
+        "the allocation output (showing whether MOQ was met and whether bulk pricing applies) "
+        "but are not enforced as hard constraints in the optimizer. "
+        "This keeps the LP formulation simple and safe for the current demo scope."
+    )
 
 
 def _render_lp_result(raw: dict) -> None:
@@ -1804,6 +2214,10 @@ def _render_lp_result(raw: dict) -> None:
                             st.rerun()
                         except Exception as _e:
                             st.error(f"Could not generate analysis: {_e}")
+
+    # ── Decision Explanation ──────────────────────────────────────────────────
+    with st.expander("How was this decision made?"):
+        _render_lp_decision_explanation(raw)
 
 
 def render_lp_approval():
@@ -2650,6 +3064,37 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 "ss_context":        _ss_context,
             })
             st.rerun()
+
+        elif _is_lp_decision_explanation_request(prompt):
+            # ── LP decision explanation ────────────────────────────────────
+            _last_raw = st.session_state.get("last_lp_raw_full") or {}
+            if not _last_raw:
+                with st.chat_message("assistant"):
+                    st.info(
+                        "No LP run has been completed in this session yet. "
+                        "Run a procurement plan first, then ask again and I will explain how "
+                        "the decision was made."
+                    )
+                st.session_state.messages.append({
+                    "role":      "assistant",
+                    "content":   "No LP run available yet. Run a procurement plan first.",
+                    "has_trace": False,
+                    "summary":   "",
+                })
+                st.rerun()
+            else:
+                with st.chat_message("assistant"):
+                    for _pk, _raw in _last_raw.items():
+                        _plabel = _pk.replace("lp_", "").replace("_", " ").title()
+                        st.subheader(f"How Was This Decision Made — {_plabel}")
+                        _render_lp_decision_explanation(_raw)
+                st.session_state.messages.append({
+                    "role":      "assistant",
+                    "content":   "LP decision explanation rendered. See structured breakdown above.",
+                    "has_trace": False,
+                    "summary":   "",
+                })
+                st.rerun()
 
         else:
             # ── Normal graph invocation ────────────────────────────────────
