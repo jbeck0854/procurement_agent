@@ -695,6 +695,33 @@ def query_full_horizon_drilldown(**kwargs) -> dict:
     }
 
 
+def query_supplier_lead_times(product: str, supplier_ids: list) -> dict:
+    """Return {supplier_id: lead_time_mean_days} for the given supplier IDs × product.
+
+    Queries dim_supplier (joined to dim_product for the product filter) to retrieve
+    the mean lead time in days for each supplier. Used by the urgency section in
+    _render_lp_result() to determine when selected suppliers can first deliver.
+    """
+    if not supplier_ids:
+        return {}
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT ds.supplier_id, ds.lead_time_mean
+                FROM dim_supplier ds
+                JOIN dim_product dp ON dp.product_key = ds.product_key
+                WHERE dp.product = %s
+                  AND ds.supplier_id = ANY(%s)
+                """,
+                (product, list(supplier_ids)),
+            )
+            return {r[0]: float(r[1]) for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+
 # ── Tool registry ───────────────────────────────────────────────────────────
 
 DIRECT_PIPELINE_TOOLS = {

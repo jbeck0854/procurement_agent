@@ -2260,71 +2260,111 @@ def _render_lp_result(raw: dict) -> None:
     )
 
     # ── 4. Supply Urgency & Lead Time Assessment ──────────────────────────────
+    # Source: query_triggered_rows_structured() — weekly-trigger semantics only.
+    # Only rows where net_requirement > 0 are included (procurement actually required).
+    # Row scope: limited to the "immediate gap" — weeks before the selected supplier
+    # can realistically begin replenishing, derived from dim_supplier lead_time_mean.
     exec_summary = raw.get("executive_summary", "")
     _sf_match = _re.search(r'Early shortfall begins Week (\d+)', exec_summary)
     if _sf_match:
         shortfall_week = int(_sf_match.group(1))
         st.markdown("**Supply Urgency & Lead Time Assessment**")
 
-        # Pull triggered procurement rows and bucket by urgency band
-        _urgency_bands: dict[str, list] = {"Critical": [], "High": [], "Moderate": []}
+        _product_key = recap.get("product", "")
+        _sel_sup_ids = [r.get("supplier_id", "") for r in alloc if r.get("supplier_id")]
+
+        # Step 1 — Resolve selected-supplier lead times → first coverable week.
+        # dim_supplier.lead_time_mean (days); same formula LP uses: round(lt / 7).
+        _min_selected_lead_weeks: int | None = None
+        _sel_lt_map: dict[str, float] = {}
+        try:
+            from tools.pipeline_queries import query_supplier_lead_times
+            _sel_lt_map = query_supplier_lead_times(_product_key, _sel_sup_ids)
+            if _sel_lt_map:
+                _min_lt_days = min(_sel_lt_map.values())
+                _min_selected_lead_weeks = max(1, round(_min_lt_days / 7.0))
+        except Exception:
+            pass
+
+        # Step 2 — Fetch weekly-trigger rows (net_requirement > 0 only).
+        _all_trig_rows: list[dict] = []
         try:
             from tools.pipeline_queries import query_triggered_rows_structured
             _trig = query_triggered_rows_structured()
-            _product_key = recap.get("product", "")
-            _window_rows = [
+            _all_trig_rows = [
                 r for r in _trig.get("rows", [])
                 if r["Component"] == _product_key
-                and r["Forecast Week"] <= shortfall_week + 3
             ]
-            for _r in _window_rows:
-                _ss    = _r["Safety Stock Reserve"]
-                _avail = _r["Available Inventory Before Demand"]
-                _need  = _r["Procurement Need"]
-                _ss_util = (_ss - _avail) / _ss * 100 if _ss > 0 else 100.0
-                if _avail <= 0:
-                    _band = "Critical"
-                elif _avail <= 0.25 * _ss:
-                    _band = "High"
-                elif _avail <= 0.5 * _ss:
-                    _band = "Moderate"
-                else:
-                    continue  # OK — no urgency flag needed
-                _urgency_bands[_band].append({
-                    "Forecast Week":       _r["Forecast Week"],
-                    "Facility":            _r["Facility"],
-                    "Component":           _r["Component"].replace("_", " ").title(),
-                    "Procurement Need":    f"{_need:,}",
-                    "Available Inventory": f"{_avail:,}",
-                    "SS Utilization (%)":  f"{_ss_util:.0f}%",
-                })
         except Exception:
             pass  # don't crash render if DB unavailable
 
-        if _urgency_bands["Critical"]:
-            st.error("**Critical** — Inventory depleted; immediate procurement action required.")
-            st.dataframe(
-                pd.DataFrame(_urgency_bands["Critical"]),
-                use_container_width=True, hide_index=True,
-                height=min(150 + 35 * len(_urgency_bands["Critical"]), 300),
-            )
-        if _urgency_bands["High"]:
-            st.warning("**High** — Inventory critically low (below 25% of safety stock).")
-            st.dataframe(
-                pd.DataFrame(_urgency_bands["High"]),
-                use_container_width=True, hide_index=True,
-                height=min(150 + 35 * len(_urgency_bands["High"]), 300),
-            )
+        # Step 3 — Separate immediate-gap rows from covered rows.
+        # Gap: triggered weeks BEFORE selected supplier can first deliver.
+        # Conservative fallback: shortfall_week + 3 when lead time is unknown.
+        if _min_selected_lead_weeks is not None:
+            _gap_rows = [r for r in _all_trig_rows if r["Forecast Week"] < _min_selected_lead_weeks]
+        else:
+            _gap_rows = [r for r in _all_trig_rows if r["Forecast Week"] <= shortfall_week + 3]
+
+        # Step 4 — Assign each gap row to an urgency band.
+        # SS Utilization = (safety_stock - available_inventory) / safety_stock × 100
+        # True value (not capped): avail < 0 → util > 100% → Critical.
+        # Bands: Low < 50%, Moderate 50–74%, High 75–99%, Critical ≥ 100%.
+        _urgency_bands: dict[str, list] = {
+            "Low": [], "Moderate": [], "High": [], "Critical": [],
+        }
+        _cum_pressure: dict[tuple, float] = {}  # running sum per (facility, component)
+
+        for _r in sorted(_gap_rows, key=lambda x: x["Forecast Week"]):
+            _ss    = _r["Safety Stock Reserve"]
+            _avail = _r["Available Inventory Before Demand"]
+            _need  = _r["Procurement Need"]
+            _ss_util = ((_ss - _avail) / _ss * 100) if _ss > 0 else 100.0
+
+            _fc_key = (_r["Facility"], _r["Component"])
+            _cum_pressure[_fc_key] = _cum_pressure.get(_fc_key, 0.0) + _need
+
+            if _ss_util >= 100:
+                _band = "Critical"
+            elif _ss_util >= 75:
+                _band = "High"
+            elif _ss_util >= 50:
+                _band = "Moderate"
+            else:
+                _band = "Low"
+
+            _urgency_bands[_band].append({
+                "Forecast Week":                   _r["Forecast Week"],
+                "Facility":                        _r["Facility"],
+                "Component":                       _r["Component"].replace("_", " ").title(),
+                "Direct Procurement Needed":       f"{_need:,.0f}",
+                "Cumulative Procurement Pressure": f"{_cum_pressure[_fc_key]:,.0f}",
+                "Safety Stock":                    f"{_ss:,.0f}",
+                "Safety Stock Utilization (%)":    f"{_ss_util:.1f}%",
+            })
+
+        # Step 5 — Render bands: Low → Moderate → High → Critical
+        _df_opts: dict = {"use_container_width": True, "hide_index": True}
+
+        if _urgency_bands["Low"]:
+            st.success("**Low** — Less than 50% of safety stock being utilized to cover demand.")
+            st.dataframe(pd.DataFrame(_urgency_bands["Low"]), **_df_opts,
+                         height=min(150 + 35 * len(_urgency_bands["Low"]), 300))
         if _urgency_bands["Moderate"]:
-            st.info("**Moderate** — Inventory below 50% of safety stock; monitor closely.")
-            st.dataframe(
-                pd.DataFrame(_urgency_bands["Moderate"]),
-                use_container_width=True, hide_index=True,
-                height=min(150 + 35 * len(_urgency_bands["Moderate"]), 300),
-            )
+            st.info("**Moderate** — 50% or more of safety stock being utilized to cover demand needs; monitor closely.")
+            st.dataframe(pd.DataFrame(_urgency_bands["Moderate"]), **_df_opts,
+                         height=min(150 + 35 * len(_urgency_bands["Moderate"]), 300))
+        if _urgency_bands["High"]:
+            st.warning("**High** — 75% or more of safety stock being utilized; inventory critically low.")
+            st.dataframe(pd.DataFrame(_urgency_bands["High"]), **_df_opts,
+                         height=min(150 + 35 * len(_urgency_bands["High"]), 300))
+        if _urgency_bands["Critical"]:
+            st.error("**Critical** — Safety stock fully exhausted or exceeded; immediate replenishment action required.")
+            st.dataframe(pd.DataFrame(_urgency_bands["Critical"]), **_df_opts,
+                         height=min(150 + 35 * len(_urgency_bands["Critical"]), 300))
 
         if not any(_urgency_bands.values()):
-            # Fall back to exec_summary text signals
+            # Fallback: DB unavailable or no gap rows in any band
             if "Faster alternative(s) in pool:" in exec_summary:
                 _alt_m = _re.search(r'Faster alternative\(s\) in pool: (.+?)(?:\.|$)', exec_summary)
                 alts_str = (_alt_m.group(1).strip()) if _alt_m else ""
@@ -2339,21 +2379,141 @@ def _render_lp_result(raw: dict) -> None:
                     f"window. Emergency domestic or spot sourcing required."
                 )
 
-        # Relaxed-compliance fallback — name the suppliers when available
-        _relaxed_m = _re.search(r'Relaxed compliance pool includes: (.+?)(?:\.|$)', exec_summary)
-        if _relaxed_m:
-            st.caption(f"Relaxed compliance fallback available: {_relaxed_m.group(1).strip()}")
+        # Step 6 — Compliance-excluded suppliers with fast enough lead times.
+        # Shown if their lead_weeks ≤ shortfall_week (could cover the early gap if threshold relaxed).
+        _excl_compliance_fast: list[tuple[str, int, float]] = []
+        _excl_all = raw.get("excluded_suppliers", [])
+        _excl_comp_ids = [
+            e["supplier_id"] for e in _excl_all
+            if "compliance" in e.get("exclusion_reason", "")
+        ]
+        if _excl_comp_ids and _gap_rows:
+            try:
+                from tools.pipeline_queries import query_supplier_lead_times
+                _excl_lt_map = query_supplier_lead_times(_product_key, _excl_comp_ids)
+                for _sup_id, _lt_days in _excl_lt_map.items():
+                    _sup_lt_wks = max(1, round(_lt_days / 7.0))
+                    if _sup_lt_wks <= shortfall_week:
+                        _comp_elig = next(
+                            (e.get("compliance_eligibility", 0.0)
+                             for e in _excl_all if e["supplier_id"] == _sup_id),
+                            0.0,
+                        )
+                        _excl_compliance_fast.append((_sup_id, _sup_lt_wks, float(_comp_elig)))
+            except Exception:
+                pass
 
-        # Recommendations with real values
+        # ── Recommendation bullets ──────────────────────────────────────────────
         _top_supplier = alloc[0].get("supplier_id", "primary supplier") if alloc else "primary supplier"
-        _lead_m = _re.search(r'[Ll]ead[- ]time[:\s]+(\d+)', exec_summary)
-        _lead_str = f"{_lead_m.group(1)}-week" if _lead_m else "supplier"
-        st.markdown(
-            f"- Place purchase orders with **{_top_supplier}** immediately to account for "
-            f"{_lead_str} lead time before Week {shortfall_week}.\n"
-            f"- Confirm safety stock replenishment schedule with all facilities flagged above "
-            f"before the next procurement cycle."
-        )
+
+        # Parse faster alternatives (Case A) from exec_summary
+        _alt_list: list[tuple[str, int]] = []
+        _alt_raw_m = _re.search(r'Faster alternative\(s\) in pool: (.+?)(?:\.|$)', exec_summary)
+        if _alt_raw_m:
+            for _am in _re.finditer(r'\d+\)\s*(\S+)\s*\((\d+)\s*d\)', _alt_raw_m.group(1)):
+                _alt_days = int(_am.group(2))
+                _alt_list.append((_am.group(1).strip(), max(1, round(_alt_days / 7.0))))
+
+        _has_alternatives = bool(_alt_list)
+        _no_eligible_in_time = "Recommend emergency domestic / spot sourcing" in exec_summary
+
+        # Facilities impacted — highest-urgency first
+        _fac_seen: list[str] = []
+        for _bname in ("Critical", "High", "Moderate", "Low"):
+            for _br in _urgency_bands[_bname]:
+                _f = _br.get("Facility", "")
+                if _f and _f not in _fac_seen:
+                    _fac_seen.append(_f)
+        if not _fac_seen:
+            for _fb in req.get("facility_breakdown", []):
+                _f = _fb.get("facility_id", "")
+                if _f and _f not in _fac_seen:
+                    _fac_seen.append(_f)
+        _fac_str = ", ".join(_fac_seen) if _fac_seen else "all affected facilities"
+
+        # Explicit uncovered forecast weeks for emergency bullet
+        _gap_weeks = sorted({r["Forecast Week"] for r in _gap_rows}) if _gap_rows else []
+        _gap_weeks_str = ", ".join(str(w) for w in _gap_weeks)
+        _week_plural = "Weeks" if len(_gap_weeks) != 1 else "Week"
+
+        _rec_bullets: list[str] = []
+
+        # Bullet 1 — selected supplier with actual first-coverable week (from DB lead time)
+        if _min_selected_lead_weeks is not None:
+            _fastest_sel = (
+                min(_sel_lt_map, key=_sel_lt_map.get) if _sel_lt_map else _top_supplier
+            )
+            _rec_bullets.append(
+                f"Selected suppliers (**{_fastest_sel}**) are expected to begin replenishing "
+                f"inventory around Forecast Week {_min_selected_lead_weeks}, based on current "
+                f"lead-time expectations. Orders placed now will support demand from that "
+                f"window onwards."
+            )
+        elif _has_alternatives:
+            _rec_bullets.append(
+                f"Place purchase orders with **{_top_supplier}** immediately to support "
+                f"replenishment in later weeks of the planning horizon — current lead-time "
+                f"expectations indicate this supplier cannot cover the initial shortfall "
+                f"window at Forecast Week {shortfall_week}."
+            )
+        else:
+            _rec_bullets.append(
+                f"Place purchase orders with **{_top_supplier}** immediately. "
+                f"Current lead-time expectations position this supplier to support "
+                f"replenishment in later planning horizon weeks rather than the initial "
+                f"shortfall window at Forecast Week {shortfall_week}."
+            )
+
+        # Bullet 2 (Case A only) — faster alternatives for early window
+        if _alt_list:
+            _alt_names = ", ".join(f"**{s}** ({w}w lead)" for s, w in _alt_list)
+            _rec_bullets.append(
+                f"For earlier coverage, consider spot orders with {_alt_names} — "
+                f"their lead times are consistent with delivery by or before "
+                f"Forecast Week {shortfall_week} for {_fac_str}."
+            )
+
+        # Bullet 3 — compliance-excluded suppliers with short enough lead times
+        if _excl_compliance_fast:
+            _comp_thr_val = recap.get("compliance_threshold", 0.6)
+            _excl_lines = [
+                f"**{sid}** ({wk}w lead, {elig:.0%} compliance eligibility)"
+                for sid, wk, elig in _excl_compliance_fast
+            ]
+            _rec_bullets.append(
+                f"The following supplier(s) were excluded under the current compliance "
+                f"threshold ({_comp_thr_val:.0%}) but have lead times short enough to "
+                f"cover Forecast Week {shortfall_week}: {', '.join(_excl_lines)}. "
+                f"Consider relaxing the compliance threshold as a contingency."
+            )
+
+        # Bullet 4 — emergency / spot sourcing with explicit uncovered week numbers
+        if _gap_weeks_str:
+            if _no_eligible_in_time:
+                _rec_bullets.append(
+                    f"Contact sales/sourcing for emergency domestic or spot suppliers to cover "
+                    f"immediate replenishment needs for Forecast {_week_plural} {_gap_weeks_str} "
+                    f"at heightened cost — no currently eligible selected supplier can deliver "
+                    f"within this window."
+                )
+            elif _has_alternatives:
+                _rec_bullets.append(
+                    f"If the faster alternatives above are not available for spot ordering, "
+                    f"contact sales/sourcing for emergency domestic suppliers to cover "
+                    f"Forecast {_week_plural} {_gap_weeks_str} at heightened cost."
+                )
+        else:
+            # No gap rows from DB — fall back to shortfall_week only
+            if _no_eligible_in_time:
+                _rec_bullets.append(
+                    f"Contact sales/sourcing for emergency domestic or spot suppliers to cover "
+                    f"immediate replenishment needs for Forecast Week {shortfall_week} "
+                    f"at heightened cost — no currently eligible selected supplier can deliver "
+                    f"within this window."
+                )
+
+        for _rb in _rec_bullets:
+            st.markdown(f"- {_rb}")
 
     # ── Supplier Deep Dive ─────────────────────────────────────────────────────
     if alloc:
