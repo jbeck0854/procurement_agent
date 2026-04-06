@@ -2316,13 +2316,17 @@ def _render_lp_result(raw: dict) -> None:
         _cum_pressure: dict[tuple, float] = {}  # running sum per (facility, component)
 
         for _r in sorted(_gap_rows, key=lambda x: x["Forecast Week"]):
-            _ss    = _r["Safety Stock Reserve"]
-            _avail = _r["Available Inventory Before Demand"]
-            _need  = _r["Procurement Need"]
-            _ss_util = ((_ss - _avail) / _ss * 100) if _ss > 0 else 100.0
+            _ss   = _r["Safety Stock Reserve"]
+            _need = _r["Procurement Need"]
 
+            # Cumulative pressure must be updated before computing SS utilization
             _fc_key = (_r["Facility"], _r["Component"])
             _cum_pressure[_fc_key] = _cum_pressure.get(_fc_key, 0.0) + _need
+            _cum = _cum_pressure[_fc_key]
+
+            # SS Utilization = (Cumulative Procurement Pressure / Safety Stock) × 100
+            # True value — not capped. Exceeds 100% when cumulative need exceeds SS floor.
+            _ss_util = (_cum / _ss * 100) if _ss > 0 else 100.0
 
             if _ss_util >= 100:
                 _band = "Critical"
@@ -2338,7 +2342,7 @@ def _render_lp_result(raw: dict) -> None:
                 "Facility":                        _r["Facility"],
                 "Component":                       _r["Component"].replace("_", " ").title(),
                 "Direct Procurement Needed":       f"{_need:,.0f}",
-                "Cumulative Procurement Pressure": f"{_cum_pressure[_fc_key]:,.0f}",
+                "Cumulative Procurement Pressure": f"{_cum:,.0f}",
                 "Safety Stock":                    f"{_ss:,.0f}",
                 "Safety Stock Utilization (%)":    f"{_ss_util:.1f}%",
             })
@@ -2852,10 +2856,11 @@ def _render_executive_summary() -> None:
         _covered:     list[dict] = []
 
         def _build_section_d_row(row: dict, cum_press: float) -> dict:
-            _ss    = row.get("Safety Stock Reserve", 0)
-            _avail = row.get("Available Inventory Before Demand", 0)
-            _need  = row.get("Procurement Need", 0)
-            _ss_util = ((_ss - _avail) / _ss * 100) if _ss > 0 else 100.0
+            _ss   = row.get("Safety Stock Reserve", 0)
+            _need = row.get("Procurement Need", 0)
+            # SS Utilization = (Cumulative Procurement Pressure / Safety Stock) × 100
+            # Same formula as urgency section — true value, no cap.
+            _ss_util = (cum_press / _ss * 100) if _ss > 0 else 100.0
             return {
                 "Forecast Week":                   row.get("Forecast Week", ""),
                 "Facility":                        row.get("Facility", ""),
