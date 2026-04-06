@@ -1381,30 +1381,36 @@ def finalize_execution(final_state, fallback_plan=None):
     if risk_result:
         parts.append("---\n\n**🌐 Geopolitical Risk Analysis**\n\n" + risk_result)
     lp_items = {k: v for k, v in trace["agent_results"].items() if k.startswith("lp_")}
-    if lp_items:
-        lp_parts = []
-        for key, content in lp_items.items():
-            product = key.replace("lp_", "").replace("_", " ").title()
-            lp_parts.append(f"**{product}**\n\n```\n{content}\n```")
-        parts.append("---\n\n**⚙️ LP Optimization Results**\n\n" + "\n\n".join(lp_parts))
+    is_lp_flow = bool(lp_items)
+    # For LP flows, suppress the verbose formatted LP text and synthesizer summary.
+    # The structured result was already shown in render_lp_approval(); repeating it
+    # here would create a confusing duplicate in the message history.
     final_response = final_state.get("final_response", "")
     summary_text = ""
-    if final_response:
+    if final_response and not is_lp_flow:
         summary_text = "---\n\n**📋 Summary & Recommendations**\n\n" + final_response
     combined = "\n\n".join(parts)
 
     with st.chat_message("assistant"):
-        if combined:
-            st.markdown(combined)
-        for chart_name, b64_img in trace["chart_results"].items():
-            st.caption(chart_name.replace("_", " ").title())
-            st.image(base64.b64decode(b64_img))
-        if summary_text:
-            st.markdown(summary_text)
+        if is_lp_flow:
+            # Minimal acknowledgement — the full result lives in the approval panel above.
+            products = [k.replace("lp_", "").replace("_", " ").title() for k in lp_items]
+            st.markdown(
+                f"Procurement plan for **{', '.join(products)}** has been processed. "
+                "Review the result above and approve or discard."
+            )
+        else:
+            if combined:
+                st.markdown(combined)
+            for chart_name, b64_img in trace["chart_results"].items():
+                st.caption(chart_name.replace("_", " ").title())
+                st.image(base64.b64decode(b64_img))
+            if summary_text:
+                st.markdown(summary_text)
 
     st.session_state.messages.append({
         "role": "assistant",
-        "content": combined,
+        "content": combined if not is_lp_flow else f"LP optimization completed for: {', '.join(lp_items.keys())}",
         "summary": summary_text,
         "has_trace": True,
     })
@@ -1414,16 +1420,44 @@ def finalize_execution(final_state, fallback_plan=None):
 
 def render_pending_plan():
     plan = st.session_state.pending_plan or {}
-    st.write("## Pending Plan")
-    st.write(f"**Intent:** {plan.get('intent')}")
-    if plan.get("question"):
-        st.info(plan["question"])
-    for i, task in enumerate(plan.get("tasks", [])):
-        st.write(f"### Task {i+1}")
-        st.write(f"- Agent: {task.get('agent')}")
-        st.write(f"- Objective: {task.get('objective')}")
-        st.write(f"- Context: {task.get('context')}")
-        st.write(f"- Instructions: {task.get('instructions')}")
+    tasks = plan.get("tasks", [])
+
+    lp_tasks    = [t for t in tasks if t.get("agent") == "lp_agent"]
+    other_tasks = [t for t in tasks if t.get("agent") not in ("lp_agent", "chart_agent")]
+    is_lp_only  = len(lp_tasks) > 0 and len(other_tasks) == 0
+
+    if is_lp_only:
+        # ── Lean LP approval UI — skip verbose work-order breakdown ──────────
+        st.subheader("Procurement Optimization — Ready to Run")
+        for t in lp_tasks:
+            params = t.get("params") or {}
+            prod   = (params.get("product") or "").replace("_", " ").title()
+            lam    = params.get("lambda_risk", 0.5)
+            share  = params.get("max_supplier_share", 1.0)
+            div    = params.get("diversification_mode", "none")
+            urg    = params.get("urgency", False)
+            cap    = params.get("budget_cap")
+            parts_lp = [f"**{prod}**  ·  λ = {lam}  ·  Max share: {share:.0%}"]
+            if div != "none":
+                parts_lp.append(f"  ·  Diversification: {div}")
+            if urg:
+                parts_lp.append("  ·  Urgency mode: on")
+            if cap:
+                parts_lp.append(f"  ·  Budget cap: ${cap:,.0f}")
+            st.markdown("  ".join(parts_lp))
+    else:
+        # ── Standard verbose plan display for non-LP or mixed plans ─────────
+        st.write("## Pending Plan")
+        st.write(f"**Intent:** {plan.get('intent')}")
+        if plan.get("question"):
+            st.info(plan["question"])
+        for i, task in enumerate(tasks):
+            st.write(f"### Task {i+1}")
+            st.write(f"- Agent: {task.get('agent')}")
+            st.write(f"- Objective: {task.get('objective')}")
+            st.write(f"- Context: {task.get('context')}")
+            st.write(f"- Instructions: {task.get('instructions')}")
+
     st.text_input("Modify the plan (optional)", key="plan_feedback")
     if st.button("Approve Plan", key="approve_plan"):
         with st.spinner("Executing approved plan..."):
@@ -3098,16 +3132,24 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
 
         else:
             # ── Normal graph invocation ────────────────────────────────────
-            with st.spinner("Thinking..."):
+            # If the query maps to LP intent, inject detected params so the
+            # orchestrator can use them verbatim without guessing.
+            _lp_detected = _parse_lp_intent(prompt)
+            _graph_prompt = prompt
+            if _lp_detected:
+                _params_note = ", ".join(f"{k}={v!r}" for k, v in _lp_detected.items())
+                _graph_prompt = f"{prompt}\n\n[LP_PARAMS: {{{_params_note}}}]"
+
+            with st.spinner("Optimizing..." if _lp_detected else "Thinking..."):
                 thread_id = str(uuid.uuid4())
                 st.session_state.thread_id = thread_id
                 config = {"configurable": {"thread_id": thread_id}}
-                result = asyncio.run(graph.ainvoke({"messages": [("user", prompt)]}, config=config))
+                result = asyncio.run(graph.ainvoke({"messages": [("user", _graph_prompt)]}, config=config))
                 state = asyncio.run(graph.aget_state(config=config))
             plan = extract_plan(state)
             if state.next and plan:
                 st.session_state.waiting_for_approval = True
                 st.session_state.pending_plan = plan
-                assistant_text = "I have a plan ready. Review the work orders below and approve when ready."
+                assistant_text = "Plan ready — approve to run." if _lp_detected else "I have a plan ready. Review the work orders below and approve when ready."
                 st.session_state.messages.append({"role": "assistant", "content": assistant_text})
                 st.rerun()

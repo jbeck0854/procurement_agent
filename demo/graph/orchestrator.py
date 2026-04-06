@@ -122,11 +122,16 @@ HOW TO WRITE WORK ORDERS:
 - params_json: A JSON string with tool parameters (required when tool is set). Example: '{"product": "transistors", "Q": 5000}'
 - phase: 1 or 2. Phase 1 agents run first; Phase 2 agents run after Phase 1 completes.
 
-LAMBDA_RISK GUIDE:
-- "low risk" / "cost focused" → 0.2-0.3
-- "balanced" / "moderate" → 0.5
-- "risk averse" / "care about risk" → 0.7-0.8
-- "very risk averse" / "risk is top priority" → 0.9
+LAMBDA_RISK GUIDE (use EXACT values — do not interpolate):
+- "cost only" / "no risk" / "cost-only" → 0.0
+- "cost focused" / "low risk" / "low" → 0.25
+- "balanced" / "moderate" / "moderate risk" / "moderate risk aversion" → 0.5
+- "risk averse" / "risk aversion" / "high risk" → 1.0
+- "very risk averse" / "risk first" / "risk priority" → 1.5
+Default if no preference stated: 0.5
+
+If the user message contains [LP_PARAMS: ...], extract the JSON object inside and use those
+values VERBATIM in the lp_agent params_json — do not change, merge, or override them.
 
 CRITICAL — CHART TOOLS ARE SELF-CONTAINED:
   chart_agent tools query the database, score suppliers, and render charts ALL internally.
@@ -142,10 +147,9 @@ TASK GENERATION RULES:
 - For procurement optimization / supplier allocation / "optimize" / "allocate" / "procurement plan":
   generate lp_agent (phase=2) with tool="run_optimization".
   Generate one lp_agent task PER product that needs optimization.
-  Also generate a chart_agent task with tool="plot_score_breakdown" for each product being optimized,
-  using the same lambda_risk — this gives the user visual context for the optimization results.
-  UNLESS the user explicitly says "no charts", "skip charts", or similar.
-  Example: "optimize transistors with moderate risk and 40% max share" → one lp_agent task + one chart_agent task.
+  Do NOT generate a separate chart_agent task alongside LP runs — supplier score breakdowns
+  are available on-demand from within the LP result panel.
+  Example: "optimize transistors with moderate risk and 40% max share" → one lp_agent task only.
   Example: "optimize all components" → one lp_agent task per product (transistors, power_devices, etc.).
 - For disruption / what-if scenarios ("what if supplier X is unavailable"):
   generate lp_agent with exclude_supplier_ids=["SUP_XXX_NN"].
