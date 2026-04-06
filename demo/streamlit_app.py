@@ -277,6 +277,8 @@ _LP_PROCUREMENT_SIGNALS = (
     "source from",
     "where should we buy",
     "who should we buy from",
+    # "procure" alone (e.g. "To procure transistors...")
+    "procure",
     # fast-path technical terms still accepted
     "optimize", "optimise", "optimization", "optimisation",
     "allocate", "run lp", "run the lp",
@@ -294,6 +296,8 @@ _COMPONENT_CANONICAL: dict[str, str] = {
     "transistor":                      "transistors",
     "microprocessors":                 "microprocessors",
     "microprocessor":                  "microprocessors",
+    # common misspelling / plural variant — normalize to canonical
+    "microprocesses":                  "microprocessors",
     "power_devices":                   "power_devices",
     "power devices":                   "power_devices",
     "power device":                    "power_devices",
@@ -330,6 +334,8 @@ _LAMBDA_MAP: list[tuple[str, float]] = [
     ("risk averse",        1.0),
     ("risk-averse",        1.0),
     ("high risk",          1.0),
+    ("heightened",         1.0),      # "heightened state / level / risk aversion"
+    ("elevated risk",      1.0),
     ("moderate risk",      0.5),
     ("moderate",           0.5),
     ("balanced",           0.5),
@@ -364,10 +370,19 @@ def _parse_lp_intent(prompt: str) -> dict | None:
 
     # ── Signal 2: Component (checked first — cheapest gate) ─────────────────
     detected_product: str | None = None
+    _matched_phrase: str | None = None
     for phrase, canonical in _COMPONENT_CANONICAL.items():
         if phrase in t:
             detected_product = canonical
+            _matched_phrase  = phrase
             break
+    logger.debug(
+        "[LP INTENT] matched_phrase=%r | normalized_product=%r | "
+        "signal1=%s | signal3=%s",
+        _matched_phrase, detected_product,
+        any(s in t for s in _LP_PROCUREMENT_SIGNALS),
+        any(s in t for s in _LP_DECISION_SIGNALS),
+    )
     if not detected_product:
         return None
 
@@ -407,7 +422,142 @@ def _parse_lp_intent(prompt: str) -> dict | None:
         if 0 < pct <= 100:
             params["max_supplier_share"] = round(pct / 100, 2)
 
+    # ── Extract diversification_mode ─────────────────────────────────────────
+    _DIVERSIF_PHRASES = (
+        "diversif", "different countr", "different country", "3 countries",
+        "three countries", "country diversif", "across countries",
+        "each from a different country", "different country of origin",
+    )
+    if any(p in t for p in _DIVERSIF_PHRASES):
+        params["diversification_mode"] = "country_diversified"
+
+    # ── Extract urgency ───────────────────────────────────────────────────────
+    _URGENCY_PHRASES = ("urgent", "urgency", "emergency sourcing", "expedite")
+    if any(p in t for p in _URGENCY_PHRASES):
+        params["urgency"] = True
+
+    # ── Extract exclude_supplier_ids ──────────────────────────────────────────
+    # Matches explicit supplier IDs like SUP_HKG_38, SUP_CHN_07, etc.
+    _excl_ids = _re.findall(r'\bSUP_[A-Z]{3}_\d+\b', prompt)
+    _EXCLUSION_CTX = ("exclude", "unavailable", "without supplier", "remove supplier",
+                      "can't use", "cannot use", "what if")
+    if _excl_ids and any(p in t for p in _EXCLUSION_CTX):
+        params["exclude_supplier_ids"] = _excl_ids
+
     return params
+
+
+# ── LP follow-up detector ───────────────────────────────────────────────────────
+# Handles revision queries that don't use full procurement-planning language.
+# Examples: "Keep transistors but lower the cap to 30%"
+#           "Same product but make this urgency-focused"
+#           "Exclude SUP_HKG_38 and rerun"
+#
+# Requires: product detected + prior LP context for that product + at least one
+# refinement/parameter signal.  Returns fully-merged params (prior base + overrides).
+# Returns None if any gate fails.
+
+_LP_FOLLOWUP_SIGNALS = (
+    # explicit refinement intent
+    "keep", "same", "but", "instead", "lower", "higher", "change",
+    "without", "except", "different", "try", "adjust", "rerun", "redo",
+    # LP-parameter hints (risk / cost)
+    "risk", "cost", "moderate", "balanced", "avers",
+    # constraint hints
+    "cap", "share", "limit", "exceed", "%",
+    # mode hints
+    "diversif", "countr", "urgent", "urgency",
+    # exclusion hint (explicit ID present)
+    "exclude",
+)
+
+
+def _parse_lp_followup(prompt: str, lp_history: dict) -> dict | None:
+    """
+    Detect LP follow-up / refinement from prior session context + minimal signal.
+
+    Unlike _parse_lp_intent(), this does NOT require the full 3-signal set.
+    It triggers when:
+      1. A known product is mentioned in the prompt.
+      2. Prior LP params for that product exist in lp_history.
+      3. At least one LP-parameter hint is present.
+
+    Returns fully-merged params (prior base overridden by current-prompt values),
+    or None if any gate fails.
+    """
+    t = prompt.lower()
+
+    # Gate 1 — product
+    detected_product: str | None = None
+    for phrase, canonical in _COMPONENT_CANONICAL.items():
+        if phrase in t:
+            detected_product = canonical
+            break
+    if not detected_product:
+        return None
+
+    # Gate 2 — prior LP context for this product
+    prior = lp_history.get(detected_product)
+    if not prior:
+        return None
+
+    # Gate 3 — at least one refinement / parameter signal
+    if not any(s in t for s in _LP_FOLLOWUP_SIGNALS):
+        return None
+
+    # Build merged params: prior base → apply current-prompt overrides.
+    merged: dict = {
+        "product":              prior.get("product", detected_product),
+        "lambda_risk":          prior.get("lambda_risk", 0.5),
+        "max_supplier_share":   prior.get("max_supplier_share", 1.0),
+        "diversification_mode": prior.get("diversification_mode", "none"),
+        "urgency":              prior.get("urgency", False),
+        "exclude_supplier_ids": list(prior.get("exclude_supplier_ids") or []),
+        "budget_cap":           prior.get("budget_cap"),
+        "service_level_target": prior.get("service_level_target", 1.0),
+        "compliance_threshold": prior.get("compliance_threshold", 0.60),
+        "facility_id":          prior.get("facility_id"),
+    }
+
+    # Override lambda_risk
+    for phrase, value in _LAMBDA_MAP:
+        if phrase in t:
+            merged["lambda_risk"] = value
+            break
+
+    # Override max_supplier_share
+    _cap_m = _re.search(r'(\d+)\s*%\s*(?:supplier\s*)?(?:cap|share|max)', t)
+    if not _cap_m:
+        _cap_m = _re.search(
+            r'(?:max\s*(?:supplier\s*)?share|supplier\s*cap)\s*(?:of\s*)?(\d+)\s*%', t
+        )
+    if not _cap_m:
+        _cap_m = _re.search(
+            r'(?:no\s+supplier\s+should\s+exceed|limit\s+supplier(?:\s+\w+){0,2}\s+to)\s+(\d+)\s*%', t
+        )
+    if _cap_m:
+        _pct = int(_cap_m.group(1))
+        if 0 < _pct <= 100:
+            merged["max_supplier_share"] = round(_pct / 100, 2)
+
+    # Override diversification_mode
+    _DIV = ("diversif", "different countr", "different country", "3 countries",
+            "three countries", "country diversif", "across countries",
+            "each from a different country", "different country of origin")
+    if any(p in t for p in _DIV):
+        merged["diversification_mode"] = "country_diversified"
+
+    # Override urgency
+    if any(p in t for p in ("urgent", "urgency", "emergency sourcing", "expedite")):
+        merged["urgency"] = True
+
+    # Override exclude_supplier_ids (only when explicit IDs present + exclusion context)
+    _xids = _re.findall(r'\bSUP_[A-Z]{3}_\d+\b', prompt)
+    if _xids and any(p in t for p in ("exclude", "unavailable", "without supplier",
+                                       "remove supplier", "can't use", "cannot use")):
+        merged["exclude_supplier_ids"] = _xids
+
+    return merged
 
 
 # ── LP direct-route gating ─────────────────────────────────────────────────────
@@ -417,30 +567,25 @@ def _parse_lp_intent(prompt: str) -> dict | None:
 # budget cap, service-level target).  They use the orchestrator fast path
 # (which still bypasses plan-approval) rather than the direct LP route.
 _LP_ORCHESTRATOR_REQUIRED_SIGNALS = (
-    "unavailable",          # disruption / supplier exclusion
-    "what if",              # disruption / what-if scenario
-    "exclude",              # explicit supplier exclusion
-    "without supplier",     # disruption phrasing
-    "remove supplier",
-    "can't use",
-    "cannot use",
-    "diversif",             # diversification_mode
-    "different countr",     # country diversification
-    "3 countries",
-    "three countries",
-    "urgent",               # urgency mode
-    "urgency",
-    "emergency",
+    # Supplier exclusion where ID is NOT matchable by SUP_XXX_NN regex
+    "unavailable",          # e.g. "supplier X is unavailable" (no explicit ID)
+    "what if",              # disruption / what-if scenario (ambiguous supplier ref)
+    "without supplier",     # disruption phrasing without explicit ID
+    "reinstate",            # what-if reversal
+    # Facility-scoped runs referenced by description (not ID)
     "facility ",            # facility-scoped run
     "single facility",
-    "budget cap",           # budget_cap
+    # Budget / service level adjustments that require numeric extraction
+    "budget cap",
     "budget limit",
     "spending limit",
     "spend cap",
-    "service level",        # service_level_target > 1
+    "service level",
     "buffer stock",
     "extra buffer",
-    "reinstate",            # what-if reversal
+    # NOTE: "diversif", "different countr", "urgent", "urgency", "exclude",
+    # "emergency" are now handled deterministically by _parse_lp_intent()
+    # and do NOT require the orchestrator.
 )
 
 
@@ -481,11 +626,19 @@ def _run_lp_direct(params: dict) -> None:
     product = params.get("product", "transistors")
     lam     = params.get("lambda_risk", 0.5)
     share   = params.get("max_supplier_share", 1.0)
+    div_mode    = params.get("diversification_mode", "none")
+    urgency_flg = params.get("urgency", False)
+    excl_ids    = params.get("exclude_supplier_ids") or []
+    budget_cap  = params.get("budget_cap", None)
+    svc_level   = params.get("service_level_target", 1.0)
+    compliance  = params.get("compliance_threshold", 0.60)
+    facility_id = params.get("facility_id", None)
 
     t0 = _time.perf_counter()
     logger.info(
-        "[LP DIRECT] product=%s | lambda_risk=%s | max_supplier_share=%s",
-        product, lam, share,
+        "[LP DIRECT] product=%s | lambda_risk=%s | max_supplier_share=%s | "
+        "diversification_mode=%s | urgency=%s | exclude=%s",
+        product, lam, share, div_mode, urgency_flg, excl_ids,
     )
 
     try:
@@ -493,11 +646,13 @@ def _run_lp_direct(params: dict) -> None:
             product=product,
             lambda_risk=lam,
             max_supplier_share=share,
-            # All other params stay at run_optimization() defaults:
-            # budget_cap=None, compliance_threshold=0.60,
-            # service_level_target=1.0, urgency=False,
-            # facility_id=None, exclude_supplier_ids=[],
-            # diversification_mode="none", forecast_run_id=None
+            diversification_mode=div_mode,
+            urgency=urgency_flg,
+            exclude_supplier_ids=excl_ids,
+            budget_cap=budget_cap,
+            service_level_target=svc_level,
+            compliance_threshold=compliance,
+            facility_id=facility_id,
         )
         t_solve = _time.perf_counter()
         status = (
@@ -3942,22 +4097,84 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
 
         else:
             # ── Query routing ──────────────────────────────────────────────────
-            _lp_detected = _parse_lp_intent(prompt)
             import time as _time
             _t0 = _time.perf_counter()
+            _lp_history = st.session_state.get("lp_params_history", {})
+
+            # Step 1 — try full 3-signal LP detection.
+            _lp_detected   = _parse_lp_intent(prompt)
+            _is_lp_followup = False
+
+            # Step 2 — if that failed, try follow-up detection (product + prior
+            # context + any parameter hint).  Returns fully-merged params.
+            if not _lp_detected:
+                _followup = _parse_lp_followup(prompt, _lp_history)
+                if _followup:
+                    _lp_detected    = _followup
+                    _is_lp_followup = True
+
+            # ── Debug logging ──────────────────────────────────────────────────
+            _dbg_product = (_lp_detected or {}).get("product", "")
+            _dbg_has_prior = bool(_lp_history.get(_dbg_product))
+            _dbg_new_product = bool(_lp_detected and not _dbg_has_prior)
+            _dbg_needs_orch  = _needs_orchestrator(prompt) if _lp_detected else False
+            _dbg_route = (
+                "direct_lp"   if (_lp_detected and not _dbg_needs_orch) else
+                "followup_lp" if _is_lp_followup else
+                "orch_lp"     if _lp_detected else
+                "non_lp"
+            )
+            logger.info(
+                "[LP ROUTE] parsed_product=%r | prior_context=%s | same_product=%s | "
+                "new_product_lp_query=%s | lp_intent_detected=%s | "
+                "same_product_followup=%s | needs_orch=%s | route_chosen=%s",
+                _dbg_product,
+                _dbg_has_prior,
+                bool(_dbg_product and _dbg_product in _lp_history),
+                _dbg_new_product,
+                bool(_lp_detected),
+                _is_lp_followup,
+                _dbg_needs_orch,
+                _dbg_route,
+            )
 
             if _lp_detected and not _needs_orchestrator(prompt):
                 # ── DIRECT LP ROUTE — no orchestrator, no LangGraph graph ─────
-                # _parse_lp_intent() fully captured product / lambda / share cap.
-                # _run_lp_direct() calls run_optimization() and sets session
-                # state, then calls st.rerun() — execution stops here.
+                # Follow-up queries: _parse_lp_followup() already merged prior
+                #   params + current overrides → use as-is.
+                # First-run queries:  apply carry-forward from lp_params_history
+                #   (covers same-product re-runs after a previous approve/discard).
+                if _is_lp_followup:
+                    # Already merged — no additional carry-forward needed.
+                    _final_params = _lp_detected
+                else:
+                    _prior_params = _lp_history.get(_dbg_product) or {}
+                    if _prior_params:
+                        _merged = {
+                            "product":              _prior_params.get("product", _dbg_product),
+                            "lambda_risk":          _prior_params.get("lambda_risk", 0.5),
+                            "max_supplier_share":   _prior_params.get("max_supplier_share", 1.0),
+                            "diversification_mode": _prior_params.get("diversification_mode", "none"),
+                            "urgency":              _prior_params.get("urgency", False),
+                            "exclude_supplier_ids": _prior_params.get("exclude_supplier_ids") or [],
+                            "budget_cap":           _prior_params.get("budget_cap"),
+                            "service_level_target": _prior_params.get("service_level_target", 1.0),
+                            "compliance_threshold": _prior_params.get("compliance_threshold", 0.60),
+                            "facility_id":          _prior_params.get("facility_id"),
+                        }
+                        for _k, _v in _lp_detected.items():
+                            _merged[_k] = _v
+                        _final_params = _merged
+                    else:
+                        _final_params = _lp_detected
+
                 logger.info(
-                    "[LP DIRECT] lp_detected=True | needs_orchestrator=False | "
-                    "params=%s | t0=%.3fs",
-                    _lp_detected, _t0,
+                    "[LP DIRECT] direct_rerun_path=True | intermediate_plan_page=False | "
+                    "is_followup=%s | params=%s | t0=%.3fs",
+                    _is_lp_followup, _final_params, _t0,
                 )
                 with st.spinner("Optimizing..."):
-                    _run_lp_direct(_lp_detected)
+                    _run_lp_direct(_final_params)
                 # _run_lp_direct() calls st.rerun() — code below is unreachable
                 # for this branch.
 
@@ -3972,8 +4189,8 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 _graph_prompt = f"{prompt}\n\n[LP_PARAMS: {{{_params_note}}}]"
 
                 logger.info(
-                    "[LP ORCH FAST PATH] lp_detected=True | needs_orchestrator=True | "
-                    "params=%s", _lp_detected,
+                    "[LP ORCH FAST PATH] direct_rerun_path=False | intermediate_plan_page=False | "
+                    "needs_orchestrator=True | params=%s", _lp_detected,
                 )
                 with st.spinner("Optimizing..."):
                     thread_id = str(uuid.uuid4())
