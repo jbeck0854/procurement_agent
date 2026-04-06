@@ -560,6 +560,128 @@ def _parse_lp_followup(prompt: str, lp_history: dict) -> dict | None:
     return merged
 
 
+# ── LP contextual follow-up detector ───────────────────────────────────────────
+# Handles vague urgency / schedule messages that rely on conversational LP context
+# rather than an explicit product mention.  Examples:
+#   "It appears we are a bit behind schedule this cycle for this particular product"
+#   "Let's make this one more urgent"
+#   "Speed this product up"
+#
+# Does NOT require a product name in the prompt.
+# Resolves product from the most recent LP result in session state.
+# Returns merged params (prior base + urgency=True), or None if no context / no signal.
+
+_LP_CONTEXTUAL_URGENCY_SIGNALS = (
+    "behind schedule",
+    "a bit behind",
+    "falling behind",
+    "behind on this",
+    "behind this cycle",
+    "need this faster",
+    "need it faster",
+    "tighter timeline",
+    "more urgent",
+    "make this urgent",
+    "make it urgent",
+    "make this more urgent",
+    "speed this up",
+    "speed this product up",
+    "accelerate this",
+    "this is urgent",
+    "becoming urgent",
+)
+
+# Contextual references that anchor the message to the current plan/product.
+_LP_CONTEXTUAL_REF_SIGNALS = (
+    "this particular product",
+    "this particular component",
+    "this component",
+    "this product",
+    "this one",
+    "this order",
+    "this plan",
+    "this cycle",
+    "for this",
+)
+
+
+def _parse_lp_contextual_followup(
+    prompt: str,
+    lp_history: dict,
+    last_lp_raw: dict,
+) -> dict | None:
+    """
+    Detect vague urgency / schedule follow-ups in the context of the most recent LP run.
+
+    Unlike _parse_lp_followup(), this does NOT require a product name in the prompt.
+    It resolves the product from the most recent LP result in session state.
+
+    Requirements:
+      1. Recent LP context in session (non-empty lp_history or last_lp_raw).
+      2. At least one urgency/schedule signal.
+      3. At least one contextual reference signal  OR  a strong schedule phrase alone
+         ("behind schedule", "a bit behind", "falling behind").
+
+    Returns fully-merged params (prior base + urgency=True), or None.
+    """
+    t = prompt.lower()
+
+    # Gate 1 — recent LP context required
+    if not lp_history and not last_lp_raw:
+        return None
+
+    # Gate 2 — at least one urgency/schedule signal
+    has_urgency = any(s in t for s in _LP_CONTEXTUAL_URGENCY_SIGNALS)
+    # Also accept bare "urgent" / "urgency" / "expedite" when paired with a context ref
+    has_bare_urgency = any(s in t for s in ("urgent", "urgency", "expedite"))
+
+    if not has_urgency and not has_bare_urgency:
+        return None
+
+    # Gate 3 — contextual product reference, OR strong schedule phrasing alone
+    has_context_ref = any(s in t for s in _LP_CONTEXTUAL_REF_SIGNALS)
+    strong_schedule  = any(s in t for s in ("behind schedule", "a bit behind", "falling behind"))
+
+    # Bare urgency ("urgent", "urgency") alone is too broad — require a context ref.
+    if has_bare_urgency and not has_urgency and not has_context_ref:
+        return None
+
+    # Strong schedule phrasing alone (without context ref) is sufficient.
+    if not has_urgency and not strong_schedule and not has_context_ref:
+        return None
+
+    # ── Resolve product from most recent LP context ────────────────────────────
+    # Priority 1: last_lp_raw_full keys are "lp_{product}" — most recently shown result.
+    # Priority 2: last key in lp_history (Python 3.7+ preserves insertion order).
+    recent_product: str | None = None
+    if last_lp_raw:
+        for key in last_lp_raw:
+            if key.startswith("lp_"):
+                recent_product = key[3:]
+                break
+    if not recent_product and lp_history:
+        recent_product = list(lp_history.keys())[-1]
+
+    if not recent_product:
+        return None
+
+    # ── Build merged params: prior base + urgency override ────────────────────
+    prior = lp_history.get(recent_product, {})
+    merged: dict = {
+        "product":              prior.get("product", recent_product),
+        "lambda_risk":          prior.get("lambda_risk", 0.5),
+        "max_supplier_share":   prior.get("max_supplier_share", 1.0),
+        "diversification_mode": prior.get("diversification_mode", "none"),
+        "urgency":              True,   # always set for contextual urgency follow-up
+        "exclude_supplier_ids": list(prior.get("exclude_supplier_ids") or []),
+        "budget_cap":           prior.get("budget_cap"),
+        "service_level_target": prior.get("service_level_target", 1.0),
+        "compliance_threshold": prior.get("compliance_threshold", 0.60),
+        "facility_id":          prior.get("facility_id"),
+    }
+    return merged
+
+
 # ── LP direct-route gating ─────────────────────────────────────────────────────
 # Signals that indicate params _parse_lp_intent() cannot fully extract.
 # Queries matching any of these require the orchestrator to interpret complex
@@ -1086,9 +1208,22 @@ def _is_component_requirements_request(text: str) -> bool:
 
     Fires on direct signals (e.g. 'component requirement', 'gross bom') or on the
     combined pattern: 'component(s)' + a horizon/window context term.
-    Does NOT touch procurement-status or LP routes.
+
+    LP PRECEDENCE: If _parse_lp_intent() detects a procurement-allocation query,
+    this function returns False so LP routing is not shadowed.  This prevents queries
+    like "Provide a procurement plan ... for this particular component ... demand window"
+    from firing via the combined 'component' + 'demand window' match.
     """
     t = text.lower()
+    # ── LP allocation intent takes priority over BOM routing ─────────────────
+    if _parse_lp_intent(text) is not None:
+        logger.debug(
+            "[ROUTE ARBITRATION] LP intent detected — suppressing BOM/component-req route "
+            "| bom_signal_would_have_fired=%s",
+            any(s in t for s in _COMPONENT_REQ_SIGNALS)
+            or ("component" in t and any(s in t for s in _COMPONENT_REQ_HORIZON_SIGNALS)),
+        )
+        return False
     if any(s in t for s in _COMPONENT_REQ_SIGNALS):
         return True
     # Combined: 'component' + planning horizon / window context
@@ -1121,8 +1256,14 @@ def _is_procurement_summary_request(text: str) -> bool:
     Catches 'Do we need to buy anything?', 'What is our net procurement
     requirement?', and similar. Fires AFTER BOM/component-requirements routes
     so those more specific signals are not shadowed.
+
+    LP PRECEDENCE: Same guard as _is_component_requirements_request() — if LP
+    allocation intent is detected, LP routing wins.
     """
     t = text.lower()
+    # ── LP allocation intent takes priority ───────────────────────────────────
+    if _parse_lp_intent(text) is not None:
+        return False
     if any(s in t for s in _PROC_SUMMARY_SIGNALS):
         return True
     # "procurement" + requirement/need intent
@@ -3601,7 +3742,10 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
             st.rerun()
 
         # ── Component requirements — gross BOM demand (no inventory netting) ─
+        # NOTE: _is_component_requirements_request() contains an LP-priority guard.
+        # If the query has LP allocation intent, it returns False and LP routing wins.
         elif _is_component_requirements_request(prompt):
+            logger.debug("[ROUTE ARBITRATION] route_chosen=bom_component_req | lp_intent=False")
             with st.spinner("Retrieving component requirements..."):
                 data = _fetch_component_req_data()
 
@@ -4099,19 +4243,45 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
             # ── Query routing ──────────────────────────────────────────────────
             import time as _time
             _t0 = _time.perf_counter()
-            _lp_history = st.session_state.get("lp_params_history", {})
+            _lp_history  = st.session_state.get("lp_params_history", {})
+            _last_lp_raw = st.session_state.get("last_lp_raw_full", {})
 
             # Step 1 — try full 3-signal LP detection.
-            _lp_detected   = _parse_lp_intent(prompt)
+            _lp_detected    = _parse_lp_intent(prompt)
             _is_lp_followup = False
+            _is_contextual  = False
 
-            # Step 2 — if that failed, try follow-up detection (product + prior
-            # context + any parameter hint).  Returns fully-merged params.
+            # Step 2 — if that failed, try explicit follow-up detection (product
+            # must be mentioned + prior context + any parameter hint).
             if not _lp_detected:
                 _followup = _parse_lp_followup(prompt, _lp_history)
                 if _followup:
                     _lp_detected    = _followup
                     _is_lp_followup = True
+
+            # Step 3 — if still not detected, try contextual urgency follow-up.
+            # Fires for vague schedule / urgency statements that rely on recent
+            # LP session context rather than an explicit product mention.
+            # Example: "It appears we are a bit behind schedule this cycle for
+            #           this particular product"
+            if not _lp_detected:
+                _ctx = _parse_lp_contextual_followup(prompt, _lp_history, _last_lp_raw)
+                if _ctx:
+                    _lp_detected    = _ctx
+                    _is_lp_followup = True
+                    _is_contextual  = True
+                    logger.info(
+                        "[LP CONTEXTUAL] contextual_lp_followup_detected=True | "
+                        "recent_lp_context_exists=True | "
+                        "resolved_current_product=%s | mapped_urgency_override=True",
+                        _ctx.get("product"),
+                    )
+                else:
+                    logger.info(
+                        "[LP CONTEXTUAL] contextual_lp_followup_detected=False | "
+                        "recent_lp_context_exists=%s",
+                        bool(_lp_history or _last_lp_raw),
+                    )
 
             # ── Debug logging ──────────────────────────────────────────────────
             _dbg_product = (_lp_detected or {}).get("product", "")
@@ -4119,21 +4289,24 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
             _dbg_new_product = bool(_lp_detected and not _dbg_has_prior)
             _dbg_needs_orch  = _needs_orchestrator(prompt) if _lp_detected else False
             _dbg_route = (
-                "direct_lp"   if (_lp_detected and not _dbg_needs_orch) else
-                "followup_lp" if _is_lp_followup else
-                "orch_lp"     if _lp_detected else
+                "direct_lp_contextual" if _is_contextual else
+                "direct_lp"            if (_lp_detected and not _dbg_needs_orch) else
+                "followup_lp"          if _is_lp_followup else
+                "orch_lp"              if _lp_detected else
                 "non_lp"
             )
             logger.info(
                 "[LP ROUTE] parsed_product=%r | prior_context=%s | same_product=%s | "
                 "new_product_lp_query=%s | lp_intent_detected=%s | "
-                "same_product_followup=%s | needs_orch=%s | route_chosen=%s",
+                "same_product_followup=%s | contextual_lp_followup=%s | "
+                "needs_orch=%s | route_chosen=%s",
                 _dbg_product,
                 _dbg_has_prior,
                 bool(_dbg_product and _dbg_product in _lp_history),
                 _dbg_new_product,
                 bool(_lp_detected),
                 _is_lp_followup,
+                _is_contextual,
                 _dbg_needs_orch,
                 _dbg_route,
             )
