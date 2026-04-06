@@ -2637,8 +2637,8 @@ def _render_executive_summary() -> None:
                     "Component":            row.get("Component", "").replace("_", " ").title(),
                     "Facility":             row.get("Facility", ""),
                     "Week":                 row.get("Forecast Week", ""),
-                    "Net Req (units)":      row.get("Net Requirement", 0),
-                    "Avail Inventory":      row.get("Available Inventory Before Demand", 0),
+                    "Procurement Need":     row.get("Procurement Need", 0),
+                    "Avail Inventory":      _avail,
                     "Safety Stock":         _ss,
                     "SS Utilization (%)":   f"{_ss_util:.1f}%",
                     "Urgency":              _urgency,
@@ -2688,13 +2688,14 @@ def _render_executive_summary() -> None:
     st.subheader("E  Forward-Looking Note")
     _fwd_products = ", ".join(approved_product_names)
     st.markdown(
-        f"The approved procurement plan covers the current planning horizon for "
-        f"**{_fwd_products}**. Supplier lead times embedded in the LP objective "
-        f"ensure that orders placed now arrive within the urgency window. "
-        f"Demand beyond the current planning window should be re-evaluated at the "
-        f"next planning cycle using updated forecasts and refreshed inventory positions. "
-        f"Any approved diversification constraints (country-diversified or share-capped) "
-        f"remain in effect and should be carried forward to subsequent runs."
+        f"- **Coverage:** The approved plan covers the current planning horizon "
+        f"for **{_fwd_products}**.\n"
+        f"- **Lead times:** Supplier lead times were embedded in the LP objective, "
+        f"ensuring orders placed now arrive within the urgency window.\n"
+        f"- **Next cycle:** Demand beyond the current planning horizon should be "
+        f"re-evaluated using updated forecasts and refreshed inventory positions.\n"
+        f"- **Constraints:** Any active diversification constraints (country-diversified "
+        f"or share-capped) should be carried forward to subsequent planning runs."
     )
     st.divider()
 
@@ -2723,40 +2724,50 @@ def _render_executive_summary() -> None:
     if _urgency_runs:
         _constraint_parts.append(f"urgency mode active on {len(_urgency_runs)} product(s)")
 
-    _constraint_sentence = (
-        f" Constraints applied include: {'; '.join(_constraint_parts)}."
-        if _constraint_parts else ""
+    # What was done
+    st.markdown(
+        f"- **What was done:** Procurement plans approved for "
+        f"**{len(approved)} product(s)** ({', '.join(approved_product_names)}) — "
+        f"**{total_qty:,} units** at an estimated cost of **${total_cost:,.2f}**."
     )
 
-    _premium_sentence = ""
+    # Why it is optimal
+    _opt_reason = (
+        "the optimizer minimized cost across compliant suppliers with no additional weighting"
+        if avg_lambda == 0.0
+        else f"cost and supplier risk were jointly minimized (avg λ = {avg_lambda:.2f}), "
+             f"favoring a more stable supplier mix over the cheapest available options"
+    )
+    st.markdown(f"- **Why it is optimal:** Under the configured constraints, {_opt_reason}.")
+
+    # Tradeoffs
+    _tradeoff_parts = []
+    if _constraint_parts:
+        _tradeoff_parts.append("; ".join(_constraint_parts).capitalize())
     if total_baseline > 0:
-        _delta_pct = abs((total_cost - total_baseline) / total_baseline * 100)
-        if _delta_pct <= 1.0:
-            _premium_sentence = (
-                " The cost premium over the unconstrained baseline is negligible, "
-                "indicating minimal efficiency loss from the applied constraints."
-            )
-        elif _delta_pct <= 10.0:
-            _premium_sentence = (
-                f" The cost premium over the unconstrained baseline is modest ({_delta_pct:.1f}%), "
-                f"reflecting the expected trade-off between cost efficiency and supply resilience."
+        _delta_pct = (total_cost - total_baseline) / total_baseline * 100
+        if abs(_delta_pct) <= 1.0:
+            _tradeoff_parts.append("cost premium vs unconstrained baseline is negligible (≤1%)")
+        elif abs(_delta_pct) <= 10.0:
+            _tradeoff_parts.append(
+                f"cost premium vs unconstrained baseline is modest ({_delta_pct:.1f}%) — "
+                "reflects expected trade-off between efficiency and resilience"
             )
         else:
-            _premium_sentence = (
-                f" The cost premium over the unconstrained baseline is material ({_delta_pct:.1f}%), "
-                f"driven by diversification and risk constraints. This premium should be justified "
-                f"to stakeholders as insurance against concentration risk."
+            _tradeoff_parts.append(
+                f"cost premium vs unconstrained baseline is material ({_delta_pct:.1f}%) — "
+                "driven by diversification and risk constraints; justifiable as insurance against concentration risk"
             )
+    if _tradeoff_parts:
+        st.markdown(f"- **Tradeoffs:** {'; '.join(_tradeoff_parts)}.")
+    else:
+        st.markdown("- **Tradeoffs:** No significant cost-risk tradeoffs identified for this session.")
 
+    # Risks remaining
     st.markdown(
-        f"This session approved procurement plans for **{len(approved)} product(s)** "
-        f"({', '.join(approved_product_names)}), committing a total of **{total_qty:,} units** "
-        f"at an estimated cost of **${total_cost:,.2f}**. "
-        f"The optimization objective balanced cost minimization with risk-adjusted scoring "
-        f"under the configured constraint set.{_constraint_sentence}{_premium_sentence} "
-        f"Remaining supply risks — including lead-time exposure in high-urgency weeks and "
-        f"potential concentration in specific countries — should be monitored through "
-        f"the next planning cycle."
+        "- **Risks remaining:** Lead-time exposure in high-urgency weeks, "
+        "potential country concentration, and supplier-level disruption risk "
+        "should be monitored through the next planning cycle."
     )
 
     st.divider()
