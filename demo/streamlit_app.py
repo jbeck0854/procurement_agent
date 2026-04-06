@@ -1763,6 +1763,48 @@ def _render_lp_result(raw: dict) -> None:
             hide_index=True,
         )
 
+    # ── Supplier Deep Dive ─────────────────────────────────────────────────────
+    # Only shown when the LP has selected suppliers to explain.
+    # Lazy: chart is generated on user request and cached in session_state
+    # by a key that encodes (product, Q, lambda) — so a new LP run with
+    # different parameters always loads fresh, never serves a stale result.
+    if alloc:
+        _pk        = recap.get("product", "")
+        _Q         = int(adj_req) if adj_req else int(req.get("total_net_requirement", 5000))
+        _lam       = recap.get("lambda_risk", 0.5)
+        _comp_thr  = recap.get("compliance_threshold", 0.6)
+        _sup_ids   = [r.get("supplier_id", "") for r in alloc if r.get("supplier_id")]
+        _bd_key    = f"_lp_bd_{_pk}_{_Q}_{_lam}"   # session_state cache key
+
+        with st.expander("Tell me more about these suppliers"):
+            if _bd_key in st.session_state:
+                st.image(base64.b64decode(st.session_state[_bd_key]))
+                st.caption(
+                    f"Score breakdown — {product_label}  ·  "
+                    f"Q = {_Q:,} units  ·  λ = {_lam}  ·  "
+                    f"{len(_sup_ids)} allocated supplier(s)"
+                )
+            else:
+                st.markdown(
+                    "Cost and risk score breakdown for every allocated supplier, "
+                    "using the exact LP parameters from this run."
+                )
+                if st.button("Load supplier analysis", key=f"_load_bd_{_bd_key}"):
+                    with st.spinner("Generating score breakdown..."):
+                        try:
+                            from tools.chart_tools import plot_score_breakdown
+                            _res = plot_score_breakdown(
+                                supplier_ids=_sup_ids,
+                                product=_pk,
+                                Q=_Q,
+                                lambda_risk=_lam,
+                                compliance_threshold=_comp_thr,
+                            )
+                            st.session_state[_bd_key] = _res["image"]
+                            st.rerun()
+                        except Exception as _e:
+                            st.error(f"Could not generate analysis: {_e}")
+
 
 def render_lp_approval():
     """Show LP results and present an approve / discard decision to the user."""
@@ -1770,19 +1812,16 @@ def render_lp_approval():
     raw          = lp_interrupt.get("raw", {})
     partial      = st.session_state.get("lp_partial_state") or {}
 
-    # Re-display pipeline and chart results that arrived before the interrupt.
+    # Re-display any pipeline text results that arrived before the interrupt.
+    # Chart results from chart_agent are intentionally suppressed here — supplier
+    # score breakdowns are accessible via the "Tell me more" deep-dive inside
+    # each LP result block below, using the correct LP run parameters.
     pipeline_results = partial.get("pipeline_results") or {}
     if pipeline_results:
         st.subheader("Pipeline Results")
         for key, content in pipeline_results.items():
             st.caption(key.replace("_", " ").title())
             st.code(content)
-    charts = partial.get("chart_results") or {}
-    if charts:
-        st.subheader("Visualizations")
-        for chart_name, b64_img in charts.items():
-            st.caption(chart_name.replace("_", " ").title())
-            st.image(base64.b64decode(b64_img))
 
     st.divider()
     st.subheader("LP Optimization Results — Pending Your Approval")
@@ -1791,12 +1830,8 @@ def render_lp_approval():
         "**Approve** to include in the session plan, or **Discard** to exclude."
     )
 
-    for product_key, result_dict in raw.items():
-        product_label = product_key.replace("lp_", "").replace("_", " ").title()
-        st.markdown(f"### {product_label}")
-        _render_lp_result(result_dict)
-        st.divider()
-
+    # ── Approve / Discard — rendered above LP content so controls are immediately
+    # visible without scrolling, regardless of result length.
     col1, col2 = st.columns(2)
     config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
@@ -1826,6 +1861,15 @@ def render_lp_approval():
             st.session_state.lp_partial_state = {}
             st.session_state.saved_plan = {}
             st.rerun()
+
+    st.divider()
+
+    # ── LP result content — one block per product ──────────────────────────────
+    for product_key, result_dict in raw.items():
+        product_label = product_key.replace("lp_", "").replace("_", " ").title()
+        st.markdown(f"### {product_label}")
+        _render_lp_result(result_dict)
+        st.divider()
 
 
 # ── Main rendering logic ───────────────────────────────────────────────────────
