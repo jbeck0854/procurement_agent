@@ -236,6 +236,179 @@ def _is_full_horizon_drilldown_request(text: str) -> bool:
     return False
 
 
+# ── LP intent parser ───────────────────────────────────────────────────────────
+# Detects procurement optimization intent from BUSINESS language.
+# Users will NOT say "optimize" or "run LP". They will say things like:
+#   "provide a procurement plan", "ensure we have enough supply",
+#   "recommend suppliers", "balance cost and risk", "limit supplier concentration"
+#
+# Detection requires THREE signals (all checked independently):
+#   1. Procurement planning intent — e.g. "procurement plan", "source from"
+#   2. Component reference        — e.g. "transistors", "microprocessors"
+#   3. Decision framing           — e.g. risk/cost language, constraints, feasibility
+#
+# If all three are present, extract: product, lambda_risk, max_supplier_share.
+# Result is injected as [LP_PARAMS: {...}] into the user message before graph
+# invocation so the orchestrator receives exact values instead of inferring them.
+
+# Signal 1 — Procurement planning intent (REQUIRED)
+# Business-language triggers. No dependency on "optimize" or "run LP".
+_LP_PROCUREMENT_SIGNALS = (
+    "procurement plan",
+    "sourcing plan",
+    "sourcing strategy",
+    "supply plan",
+    "buying plan",
+    "supplier allocation",
+    "procurement recommendation",
+    "procurement strategy",
+    "how should we source",
+    "how much should we buy",
+    "how much to buy",
+    "recommend suppliers",
+    "recommend how much",
+    "secure supply",
+    "ensure we have enough",
+    "ensure supply",
+    "provide a plan",
+    "allocate supply",
+    "allocate procurement",
+    "source from",
+    "where should we buy",
+    "who should we buy from",
+    # fast-path technical terms still accepted
+    "optimize", "optimise", "optimization", "optimisation",
+    "allocate", "run lp", "run the lp",
+)
+
+# Signal 2 — Component (REQUIRED).
+# Ordered most-specific → least-specific. Checked via _COMPONENT_CANONICAL (below).
+
+_COMPONENT_CANONICAL: dict[str, str] = {
+    # longest phrases first to prevent partial matches
+    "integrated_circuit_components":   "integrated_circuit_components",
+    "integrated circuit components":   "integrated_circuit_components",
+    "integrated circuit":              "integrated_circuit_components",
+    "transistors":                     "transistors",
+    "transistor":                      "transistors",
+    "microprocessors":                 "microprocessors",
+    "microprocessor":                  "microprocessors",
+    "power_devices":                   "power_devices",
+    "power devices":                   "power_devices",
+    "power device":                    "power_devices",
+}
+
+# Signal 3 — Decision framing (AT LEAST ONE REQUIRED)
+# Covers: cost/risk tradeoff, supplier constraints, feasibility language,
+# and strategy-intent words.
+_LP_DECISION_SIGNALS = (
+    # cost / risk tradeoff
+    "cost", "risk", "tradeoff", "trade-off",
+    # supplier constraints
+    "cap", "exceed", "limit", "concentrate", "concentration",
+    "no supplier should", "share", "diversif",
+    # feasibility / demand coverage
+    "meet demand", "meet our demand", "meet upcoming demand",
+    "enough supply", "enough", "sufficient",
+    "cover demand", "cover our demand",
+    # strategy language
+    "strategy", "aversion", "averse", "balance", "balanced",
+    # optimization-adjacent (still valid framing, just not required)
+    "minimize", "minimise", "optimal", "best mix",
+)
+
+# Lambda_risk mapping — ordered most-specific → least-specific.
+# Exact values; no ranges.
+_LAMBDA_MAP: list[tuple[str, float]] = [
+    ("very risk averse",   1.5),
+    ("very risk-averse",   1.5),
+    ("risk first",         1.5),
+    ("risk priority",      1.5),
+    ("risk aversion",      1.0),  # "moderate risk aversion" still hits "moderate" first below
+    ("risk averse",        1.0),
+    ("risk-averse",        1.0),
+    ("high risk",          1.0),
+    ("moderate risk aversion", 0.5),  # before bare "risk aversion" → 1.0
+    ("moderate risk",      0.5),
+    ("moderate",           0.5),
+    ("balanced",           0.5),
+    ("low risk",           0.25),
+    ("cost focused",       0.25),
+    ("cost-focused",       0.25),
+    ("low",                0.25),
+    ("cost only",          0.0),
+    ("cost-only",          0.0),
+    ("no risk",            0.0),
+]
+
+import re as _re
+
+
+def _parse_lp_intent(prompt: str) -> dict | None:
+    """
+    Detect LP optimization intent from business language and extract parameters.
+
+    Three signals must all be present:
+      1. Procurement planning intent  — business-language buy/source/plan phrasing
+      2. Component reference          — specific product name
+      3. Decision framing             — cost/risk/constraints/feasibility language
+
+    Returns dict with detected params (product, lambda_risk, max_supplier_share),
+    or None if the query is not an LP request.
+
+    The caller injects the result as [LP_PARAMS: {...}] into the user message
+    before graph invocation.
+    """
+    t = prompt.lower()
+
+    # ── Signal 2: Component (checked first — cheapest gate) ─────────────────
+    detected_product: str | None = None
+    for phrase, canonical in _COMPONENT_CANONICAL.items():
+        if phrase in t:
+            detected_product = canonical
+            break
+    if not detected_product:
+        return None
+
+    # ── Signal 1: Procurement planning intent ────────────────────────────────
+    if not any(s in t for s in _LP_PROCUREMENT_SIGNALS):
+        return None
+
+    # ── Signal 3: Decision framing ───────────────────────────────────────────
+    if not any(s in t for s in _LP_DECISION_SIGNALS):
+        return None
+
+    params: dict = {"product": detected_product}
+
+    # ── Extract lambda_risk ──────────────────────────────────────────────────
+    # Most-specific match wins (list is ordered).
+    for phrase, value in _LAMBDA_MAP:
+        if phrase in t:
+            params["lambda_risk"] = value
+            break
+
+    # ── Extract max_supplier_share ───────────────────────────────────────────
+    # Handles all common phrasings:
+    #   "40% cap", "40% supplier cap", "40% max share"
+    #   "max share 40%", "no supplier should exceed 40%", "limit supplier to 40%"
+    cap_m = _re.search(r'(\d+)\s*%\s*(?:supplier\s*)?(?:cap|share|max)', t)
+    if not cap_m:
+        cap_m = _re.search(
+            r'(?:max\s*(?:supplier\s*)?share|supplier\s*cap)\s*(?:of\s*)?(\d+)\s*%', t
+        )
+    if not cap_m:
+        cap_m = _re.search(
+            r'(?:no\s+supplier\s+should\s+exceed|limit\s+supplier(?:\s+\w+){0,2}\s+to)\s+(\d+)\s*%',
+            t,
+        )
+    if cap_m:
+        pct = int(cap_m.group(1))
+        if 0 < pct <= 100:
+            params["max_supplier_share"] = round(pct / 100, 2)
+
+    return params
+
+
 # Transition sentences and section headings for each assessment direction.
 _FORECAST_ASSESS_META = {
     "validation": (
@@ -1250,38 +1423,317 @@ def render_pending_plan():
                 st.rerun()
 
 
+def _render_lp_result(raw: dict) -> None:
+    """
+    Render one LP optimization result dict as structured Streamlit output.
+
+    Sections (in order):
+      1. Requirement Summary
+      2. Supplier Allocation  (DataFrame table)
+      3. Cost & Risk Summary
+      4. Key Insights         (bullets)
+      5. Active Business Rules
+      6. Inactive Business Rules
+      7. Excluded Suppliers   (compliance + zero-allocation)
+
+    Does NOT render the approve/discard buttons — that is handled by the caller.
+    """
+    import pandas as pd
+
+    status = (
+        raw.get("constraint_diagnostics", {}).get("lp_status")
+        or raw.get("lp_status", "Unknown")
+    )
+
+    if status != "Optimal":
+        reason = raw.get("reason") or raw.get("executive_summary") or "No feasible solution found."
+        st.error(f"LP Status: {status}  —  {reason}")
+        return
+
+    recap   = raw.get("params_recap", {})
+    req     = raw.get("requirement", {})
+    pool    = raw.get("supplier_pool", {})
+    alloc   = raw.get("allocation", [])
+    cost    = raw.get("cost_summary", {})
+    diag    = raw.get("constraint_diagnostics", {})
+    excl    = raw.get("excluded_suppliers", [])
+    base    = raw.get("baseline", {})
+
+    product_label = recap.get("product", "").replace("_", " ").title()
+
+    # ── 1. Requirement Summary ────────────────────────────────────────────────
+    st.markdown("**Requirement Summary**")
+    fac_bd = req.get("facility_breakdown", [])
+    req_rows = []
+    for fb in fac_bd:
+        req_rows.append({
+            "Facility":             fb.get("facility_id", ""),
+            "Net Requirement":      f"{fb.get('net_req', 0):,.0f}",
+            "Share of Total (%)":   f"{fb.get('share_pct', 0):.1f}",
+            "Allocated (units)":    f"{fb.get('allocated_qty', 0):,.0f}",
+        })
+    if req_rows:
+        st.dataframe(
+            pd.DataFrame(req_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        net = req.get("adjusted_requirement", req.get("total_net_requirement", 0))
+        st.markdown(f"Total net procurement requirement: **{net:,} units**")
+
+    n_fac    = req.get("n_facilities_included", len(fac_bd))
+    adj_req  = req.get("adjusted_requirement", 0)
+    svc_pct  = int(recap.get("service_level_target", 1.0) * 100)
+    st.caption(
+        f"{n_fac} facilit{'y' if n_fac == 1 else 'ies'} included  ·  "
+        f"Demand floor: {adj_req:,} units  ·  Service-level target: {svc_pct}%"
+    )
+
+    # ── 2. Supplier Allocation ────────────────────────────────────────────────
+    st.markdown("**Supplier Allocation**")
+    if alloc:
+        alloc_rows = []
+        for r in alloc:
+            drivers = r.get("top_risk_drivers") or []
+            driver_str = ", ".join(str(d) for d in drivers[:2]) if drivers else "—"
+            alloc_rows.append({
+                "Supplier":           r.get("supplier_id", ""),
+                "Country":            r.get("country_code", ""),
+                "Tier":               r.get("decision_tier", "—"),
+                "Allocated (units)":  f"{r.get('allocated_qty', 0):,}",
+                "Share (%)":          f"{r.get('share_pct', 0):.1f}",
+                "Unit Cost (USD)":    f"${r.get('landed_unit_cost', 0):.4f}",
+                "Total Cost (USD)":   f"${r.get('total_cost', 0):,.0f}",
+                "Risk Penalty":       f"{r.get('risk_penalty_norm', 0):.4f}",
+                "Top Risk Drivers":   driver_str,
+            })
+        st.dataframe(
+            pd.DataFrame(alloc_rows),
+            use_container_width=True,
+            hide_index=True,
+            height=min(200 + 40 * len(alloc_rows), 420),
+        )
+    else:
+        st.warning("No suppliers were allocated.")
+
+    # ── 3. Cost & Risk Summary ────────────────────────────────────────────────
+    st.markdown("**Cost & Risk Summary**")
+    total_cost  = cost.get("total_cost_usd", 0)
+    avg_cost    = cost.get("avg_landed_unit_cost", 0)
+    avg_risk    = cost.get("avg_risk_penalty_norm", 0)
+    n_selected  = pool.get("n_selected_by_lp", len(alloc))
+    n_eligible  = pool.get("n_eligible_post_compliance", 0)
+    countries   = diag.get("countries_selected", [])
+
+    # Baseline delta
+    base_cost   = base.get("total_cost_usd") if base else None
+    if base_cost and base_cost > 0:
+        delta     = total_cost - base_cost
+        delta_pct = delta / base_cost * 100
+        delta_str = f"${delta:+,.0f} ({delta_pct:+.1f}% vs cost-only baseline)"
+    else:
+        delta_str = "Baseline not available"
+
+    cost_summary_rows = [
+        {"Metric": "Total Procurement Cost",         "Value": f"${total_cost:,.2f}"},
+        {"Metric": "Average Unit Cost",              "Value": f"${avg_cost:.4f}"},
+        {"Metric": "Weighted Avg Risk Penalty",       "Value": f"{avg_risk:.4f}  (0=no risk, higher=riskier)"},
+        {"Metric": "Suppliers Selected / Eligible",  "Value": f"{n_selected} / {n_eligible}"},
+        {"Metric": "Countries Represented",          "Value": ", ".join(countries) if countries else "—"},
+        {"Metric": "Cost vs Cost-Only Baseline",     "Value": delta_str},
+    ]
+    bud_util = cost.get("budget_utilization_pct")
+    if bud_util is not None:
+        cost_summary_rows.append(
+            {"Metric": "Budget Utilization", "Value": f"{bud_util:.1f}%"}
+        )
+    st.dataframe(
+        pd.DataFrame(cost_summary_rows),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # ── 4. Key Insights ────────────────────────────────────────────────────────
+    st.markdown("**Key Insights**")
+    insights = []
+
+    # Demand coverage
+    if diag.get("demand_satisfied"):
+        insights.append(f"Full demand coverage achieved — {adj_req:,} units allocated.")
+    else:
+        insights.append("Demand requirement **not fully covered** — review budget or supplier pool.")
+
+    # Primary supplier share
+    if alloc:
+        top = alloc[0]
+        insights.append(
+            f"Largest allocation: **{top['supplier_id']}** ({top['share_pct']:.0f}% of volume) "
+            f"— {top['country_code']}, ${top['landed_unit_cost']:.4f}/unit."
+        )
+
+    # Baseline cost delta
+    if base_cost and base_cost > 0:
+        if delta > 0:
+            insights.append(
+                f"Risk-adjusted plan costs **${delta:,.0f} more** than cost-only baseline "
+                f"({delta_pct:+.1f}%) — premium paid for lower-risk supplier mix."
+            )
+        elif delta < 0:
+            insights.append(
+                f"Risk-adjusted plan costs **${abs(delta):,.0f} less** than cost-only baseline "
+                f"({delta_pct:+.1f}%) — better value achieved through optimization."
+            )
+        else:
+            insights.append("Plan matches cost-only baseline — no cost premium for risk adjustment.")
+
+    # Country diversity
+    if len(countries) > 1:
+        insights.append(f"Supply distributed across {len(countries)} countries: {', '.join(countries)}.")
+    elif len(countries) == 1:
+        insights.append(f"All supply sourced from a single country ({countries[0]}) — consider diversification.")
+
+    # Share constraint binding
+    n_binding = diag.get("n_share_constraints_binding", 0)
+    if n_binding:
+        insights.append(f"{n_binding} supplier share constraint(s) binding — cap is actively shaping the allocation.")
+
+    for ins in insights:
+        st.markdown(f"- {ins}")
+
+    # ── 5 & 6. Business Rules (Active / Inactive) ─────────────────────────────
+    lambda_risk      = recap.get("lambda_risk", 0.5)
+    max_share        = recap.get("max_supplier_share", 1.0)
+    budget_cap       = recap.get("budget_cap")
+    compliance_thr   = recap.get("compliance_threshold", 0.6)
+    urgency          = recap.get("urgency", False)
+    div_mode         = recap.get("diversification_mode", "none")
+    svc_tgt          = recap.get("service_level_target", 1.0)
+    excl_ids         = recap.get("exclude_supplier_ids") or []
+
+    active_rules   = []
+    inactive_rules = []
+
+    # Risk weighting — always active when λ > 0
+    if lambda_risk > 0:
+        active_rules.append(
+            f"Risk weighting active (λ = {lambda_risk}) — cost and supplier risk are jointly minimized."
+        )
+    else:
+        inactive_rules.append("Risk weighting off (λ = 0) — cost-only optimization.")
+
+    # Supplier share cap
+    if max_share < 1.0:
+        active_rules.append(
+            f"Supplier share cap: no single supplier may exceed {max_share:.0%} of volume."
+        )
+    else:
+        inactive_rules.append("Supplier share cap: not applied (single-supplier allocation allowed).")
+
+    # Compliance threshold — always active
+    active_rules.append(
+        f"Compliance gate: suppliers below {compliance_thr:.0%} eligibility excluded from consideration."
+    )
+
+    # Budget cap
+    if budget_cap:
+        active_rules.append(f"Budget cap: ${budget_cap:,.0f}.")
+    else:
+        inactive_rules.append("Budget cap: not applied.")
+
+    # Urgency
+    if urgency:
+        active_rules.append("Urgency mode: slow suppliers carry a lead-time cost premium.")
+    else:
+        inactive_rules.append("Urgency mode: not applied (lead time not penalized).")
+
+    # Diversification
+    if div_mode == "country_diversified":
+        active_rules.append("Country diversification: allocation spread across exactly 3 countries (~33% each).")
+    elif div_mode == "supplier_share_only":
+        active_rules.append("Supplier-share diversification: maximum share cap enforced per supplier.")
+    else:
+        inactive_rules.append("Country diversification: not applied.")
+
+    # Service level
+    if svc_tgt != 1.0:
+        active_rules.append(f"Service-level multiplier: demand scaled to {svc_tgt:.0%} of base requirement.")
+    else:
+        inactive_rules.append("Service-level multiplier: not applied (1× base requirement).")
+
+    # Manual exclusions
+    if excl_ids:
+        active_rules.append(f"Manual exclusions: {', '.join(excl_ids)} removed from supplier pool.")
+    else:
+        inactive_rules.append("Manual exclusions: none.")
+
+    st.markdown("**Active Business Rules**")
+    for rule in active_rules:
+        st.markdown(f"- {rule}")
+
+    st.markdown("**Inactive Business Rules**")
+    for rule in inactive_rules:
+        st.markdown(f"- {rule}")
+
+    # ── 7. Excluded Suppliers ─────────────────────────────────────────────────
+    excl_compliance = [e for e in excl if "compliance" in e.get("exclusion_reason", "")]
+    excl_zero       = [e for e in excl if e.get("exclusion_reason") == "zero_allocation"]
+    excl_manual     = [e for e in excl if e.get("exclusion_reason") == "excluded_by_user_scenario"]
+
+    if excl_compliance or excl_zero or excl_manual:
+        st.markdown("**Excluded Suppliers**")
+        excl_rows = []
+        for e in excl:
+            reason_map = {
+                "zero_allocation":           "Not selected by LP (zero allocation)",
+                "excluded_by_user_scenario": "Manually excluded for this scenario",
+            }
+            reason_raw  = e.get("exclusion_reason", "")
+            reason_disp = reason_map.get(reason_raw) or f"Compliance gate ({e.get('compliance_eligibility', 0):.0%} eligibility)"
+            excl_rows.append({
+                "Supplier":    e.get("supplier_id", ""),
+                "Country":     e.get("country_code", ""),
+                "Reason":      reason_disp,
+            })
+        st.dataframe(
+            pd.DataFrame(excl_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
 def render_lp_approval():
     """Show LP results and present an approve / discard decision to the user."""
     lp_interrupt = st.session_state.pending_lp_result or {}
-    formatted    = lp_interrupt.get("formatted", {})
     raw          = lp_interrupt.get("raw", {})
     partial      = st.session_state.get("lp_partial_state") or {}
 
     # Re-display pipeline and chart results that arrived before the interrupt.
     pipeline_results = partial.get("pipeline_results") or {}
     if pipeline_results:
-        st.subheader("📊 Pipeline Results")
+        st.subheader("Pipeline Results")
         for key, content in pipeline_results.items():
             st.caption(key.replace("_", " ").title())
             st.code(content)
     charts = partial.get("chart_results") or {}
     if charts:
-        st.subheader("📈 Visualizations")
+        st.subheader("Visualizations")
         for chart_name, b64_img in charts.items():
             st.caption(chart_name.replace("_", " ").title())
             st.image(base64.b64decode(b64_img))
 
     st.divider()
-    st.subheader("⚙️ LP Optimization Results — Pending Your Approval")
+    st.subheader("LP Optimization Results — Pending Your Approval")
     st.info(
         "Review the optimization results below. "
         "**Approve** to include in the session plan, or **Discard** to exclude."
     )
 
-    for product_key, content in formatted.items():
-        product = product_key.replace("lp_", "").replace("_", " ").title()
-        st.caption(f"**{product}**")
-        st.code(content)
+    for product_key, result_dict in raw.items():
+        product_label = product_key.replace("lp_", "").replace("_", " ").title()
+        st.markdown(f"### {product_label}")
+        _render_lp_result(result_dict)
+        st.divider()
 
     col1, col2 = st.columns(2)
     config = {"configurable": {"thread_id": st.session_state.thread_id}}
