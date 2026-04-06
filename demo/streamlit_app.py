@@ -1730,6 +1730,68 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
             })
             st.rerun()
 
+        # ── Safety stock / inventory policy explainability ────────────────
+        elif _is_ss_policy_request(prompt):
+            _SS_FORMULA = (
+                "**S = \u03bc\u1d05 (r + \u03bc\u2097) + z \u00b7 "
+                "\u221a((r + \u03bc\u2097) \u03c3\u1d05\u00b2 + \u03bc\u1d05\u00b2 \u03c3\u2097\u00b2)**"
+            )
+            _SS_TERMS = (
+                "| Symbol | Definition |\n"
+                "|---|---|\n"
+                "| \u03bc\u1d05 | Average weekly component demand |\n"
+                "| \u03c3\u1d05 | Demand standard deviation |\n"
+                "| \u03bc\u2097 | Average lead time (weeks) |\n"
+                "| \u03c3\u2097 | Lead time standard deviation |\n"
+                "| r | Review period \u2014 **8 weeks** |\n"
+                "| z | Service level factor \u2014 **\u22481.65** for 95% target |"
+            )
+            _SS_BUSINESS = (
+                "- The formula computes the **base-stock level (S)** \u2014 the total inventory "
+                "required to meet demand across the review period and lead time under uncertainty.\n"
+                "- **Safety stock** is the buffer component embedded within this level, covering "
+                "demand and lead-time variability.\n"
+                "- In this system, safety stock is enforced as a **protected inventory floor** "
+                "per facility \u00d7 component. It is not consumed during planning.\n"
+                "- Only inventory **above** this floor is used to satisfy weekly demand."
+            )
+            _SS_PLANNING = (
+                "- Weekly procurement is triggered when **usable inventory** (above the safety "
+                "stock floor) reaches zero.\n"
+                "- Safety stock is already accounted for before any weekly demand calculations "
+                "begin \u2014 it does not appear as a deduction in the weekly trigger table.\n"
+                "- The weekly trigger table reflects how demand consumes usable inventory, "
+                "not safety stock itself."
+            )
+            _ss_content = (
+                "**Inventory Policy \u2014 Safety Stock and Base-Stock Logic**\n\n"
+                "**Base-Stock Formula**\n\n"
+                + _SS_FORMULA + "\n\n"
+                "**Term Definitions**\n\n"
+                + _SS_TERMS + "\n\n"
+                "**How It Works**\n\n"
+                + _SS_BUSINESS + "\n\n"
+                "**Connection to Planning Outputs**\n\n"
+                + _SS_PLANNING
+            )
+            with st.chat_message("assistant"):
+                st.subheader("Inventory Policy \u2014 Safety Stock and Base-Stock Logic")
+                st.markdown("**Base-Stock Formula**")
+                st.markdown(_SS_FORMULA)
+                st.markdown("**Term Definitions**")
+                st.markdown(_SS_TERMS)
+                st.markdown("**How It Works**")
+                st.markdown(_SS_BUSINESS)
+                st.markdown("**Connection to Planning Outputs**")
+                st.markdown(_SS_PLANNING)
+            st.session_state.messages.append({
+                "role":      "assistant",
+                "content":   _ss_content,
+                "has_trace": False,
+                "summary":   "",
+            })
+            st.rerun()
+
         # ── Weekly procurement trigger drill-down ──────────────────────────
         elif _is_weekly_trigger_request(prompt):
             with st.spinner("Fetching triggered procurement rows..."):
