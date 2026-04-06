@@ -579,7 +579,8 @@ def query_triggered_rows_structured(**kwargs) -> dict:
                     r.gross_requirement,
                     r.remaining_inventory,
                     r.net_requirement,
-                    r.safety_stock_qty
+                    r.safety_stock_qty,
+                    r.horizon_week
                 FROM vw_procurement_requirement r
                 JOIN dim_product p ON p.product_key = r.product_key
                 WHERE r.forecast_run_id = %s
@@ -596,6 +597,7 @@ def query_triggered_rows_structured(**kwargs) -> dict:
         "run_id": run_id,
         "rows": [
             {
+                "Forecast Week":                     int(r[7]),
                 "Week":                              str(r[0]),
                 "Component":                         r[2],
                 "Facility":                          r[1],

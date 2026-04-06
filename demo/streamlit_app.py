@@ -173,6 +173,37 @@ def _is_weekly_trigger_request(text: str) -> bool:
     return False
 
 
+# Safety stock / inventory policy explainability route.
+# Canonical queries: "How is safety stock calculated?", "Explain safety stock policy",
+# "How does base stock policy work?"
+# Pure text output — no DB query required.
+_SS_POLICY_SIGNALS = (
+    "how is safety stock calculated",
+    "explain safety stock policy",
+    "how does base stock policy work",
+    "base stock policy",
+    "base-stock policy",
+    "safety stock formula",
+    "how is safety stock computed",
+    "safety stock calculation",
+    "explain the inventory policy",
+)
+# Combined guard: "safety stock" + explanation-intent word fires the same route.
+_SS_POLICY_EXPLAIN_SIGNALS = (
+    "explain", "how is", "how does", "what is", "calculate", "computed", "formula",
+)
+
+
+def _is_ss_policy_request(text: str) -> bool:
+    """True for safety stock / inventory policy explainability queries."""
+    t = text.lower()
+    if any(s in t for s in _SS_POLICY_SIGNALS):
+        return True
+    if "safety stock" in t and any(s in t for s in _SS_POLICY_EXPLAIN_SIGNALS):
+        return True
+    return False
+
+
 # Transition sentences and section headings for each assessment direction.
 _FORECAST_ASSESS_META = {
     "validation": (
@@ -869,7 +900,7 @@ for _msg_loop_idx, msg in enumerate(st.session_state.messages):
         if _trig_rows:
             import pandas as _pd
             _trig_df = _pd.DataFrame(_trig_rows)
-            # Interactive filters — applied in-memory on the stored unfiltered rows
+            # Filters — applied in-memory on the stored unfiltered rows
             _fac_opts  = sorted(_trig_df["Facility"].unique().tolist())  if "Facility"  in _trig_df.columns else []
             _comp_opts = sorted(_trig_df["Component"].unique().tolist()) if "Component" in _trig_df.columns else []
             _col_f, _col_c = st.columns(2)
@@ -891,12 +922,35 @@ for _msg_loop_idx, msg in enumerate(st.session_state.messages):
                 _trig_df = _trig_df[_trig_df["Facility"].isin(_sel_fac)]
             if _sel_comp:
                 _trig_df = _trig_df[_trig_df["Component"].isin(_sel_comp)]
+            # Safety Stock context block (above primary table)
+            _ss_ctx = msg.get("ss_context", [])
+            if _ss_ctx:
+                _ss_ctx_df = _pd.DataFrame(_ss_ctx)
+                # Apply facility filter to context block if active
+                if _sel_fac and "Facility" in _ss_ctx_df.columns:
+                    _ss_ctx_df = _ss_ctx_df[_ss_ctx_df["Facility"].isin(_sel_fac)]
+                if _sel_comp and "Component" in _ss_ctx_df.columns:
+                    _ss_ctx_df = _ss_ctx_df[_ss_ctx_df["Component"].isin(_sel_comp)]
+                st.dataframe(
+                    _ss_ctx_df.style.format({"Safety Stock (Protected Floor)": "{:,.0f}"}),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.caption(
+                    "This value represents the inventory buffer required to maintain the "
+                    "target service level. It is preserved in all inventory calculations "
+                    "and not consumed by demand. The table below shows how procurement "
+                    "pressure accumulates relative to this buffer."
+                )
             _trig_fmt = {
-                c: "{:,.0f}"
-                for c in ("Gross Requirement", "Available Inventory Before Demand",
-                          "Procurement Need", "Safety Stock Reserve")
-                if c in _trig_df.columns
+                "Forecast Week":                  "{:,.0f}",
+                "Gross Requirement":              "{:,.0f}",
+                "Usable Inventory Before Demand": "{:,.0f}",
+                "Direct Procurement Needed":      "{:,.0f}",
+                "Cumulative Procurement Pressure":"{:,.0f}",
+                "Safety Stock Utilization (%)":   "{:.1f}%",
             }
+            _trig_fmt = {c: v for c, v in _trig_fmt.items() if c in _trig_df.columns}
             st.caption(f"{len(_trig_df):,} rows shown")
             st.dataframe(
                 _trig_df.style.format(_trig_fmt),
@@ -1690,35 +1744,82 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
             if not df_trig.empty and "Facility" in df_trig.columns:
                 df_trig["Facility"] = df_trig["Facility"].apply(_format_facility_label)
 
-            # Enforce column order per spec
+            # ── Presentation-layer renames ──────────────────────────────────
+            df_trig = df_trig.rename(columns={
+                "Available Inventory Before Demand": "Usable Inventory Before Demand",
+                "Procurement Need":                  "Direct Procurement Needed",
+            })
+
+            # ── Extract SS context BEFORE dropping Safety Stock Reserve ────
+            # Used for the context block — stored separately in the message dict.
+            _ss_context = []
+            if not df_trig.empty and "Safety Stock Reserve" in df_trig.columns:
+                _ss_context = (
+                    df_trig[["Facility", "Component", "Safety Stock Reserve"]]
+                    .drop_duplicates()
+                    .sort_values(["Facility", "Component"])
+                    .rename(columns={"Safety Stock Reserve": "Safety Stock (Protected Floor)"})
+                    .to_dict("records")
+                )
+
+            # ── Presentation-layer derived columns ─────────────────────────
+            # All computed from existing fetched values — no inventory logic change.
+            if not df_trig.empty and "Safety Stock Reserve" in df_trig.columns:
+                # Ensure correct per-series cumsum order (date within each series)
+                df_trig = df_trig.sort_values(["Component", "Facility", "Week"])
+                df_trig["Cumulative Procurement Pressure"] = (
+                    df_trig.groupby(["Facility", "Component"])["Direct Procurement Needed"]
+                    .cumsum()
+                )
+                df_trig["Safety Stock Utilization (%)"] = (
+                    df_trig["Cumulative Procurement Pressure"]
+                    / df_trig["Safety Stock Reserve"]
+                    * 100
+                ).round(1)
+                df_trig["Urgency Level"] = df_trig["Safety Stock Utilization (%)"].apply(
+                    lambda u: "Critical" if u >= 100 else
+                              "High"     if u >= 75  else
+                              "Medium"   if u >= 50  else
+                              "Low"
+                )
+
+            # ── Enforce display column order (Safety Stock Reserve excluded) ─
+            # Forecast Week comes from r.horizon_week (true planning horizon index).
             _TRIG_COL_ORDER = [
-                "Week", "Component", "Facility",
-                "Gross Requirement", "Available Inventory Before Demand",
-                "Procurement Need", "Safety Stock Reserve",
+                "Forecast Week", "Week", "Component", "Facility",
+                "Gross Requirement", "Usable Inventory Before Demand",
+                "Direct Procurement Needed", "Cumulative Procurement Pressure",
+                "Safety Stock Utilization (%)", "Urgency Level",
             ]
             if not df_trig.empty:
                 df_trig = df_trig[[c for c in _TRIG_COL_ORDER if c in df_trig.columns]]
 
-            _TRIG_FMT = {
-                c: "{:,.0f}"
-                for c in ("Gross Requirement", "Available Inventory Before Demand",
-                          "Procurement Need", "Safety Stock Reserve")
-            }
-            # Store unfiltered rows — replay handler applies filters interactively
+            # Store unfiltered rows (Forecast Week = r.horizon_week from DB, not a counter)
             _trig_display_rows = df_trig.to_dict("records")
 
+            _TRIG_FMT = {
+                "Gross Requirement":              "{:,.0f}",
+                "Usable Inventory Before Demand": "{:,.0f}",
+                "Direct Procurement Needed":      "{:,.0f}",
+                "Cumulative Procurement Pressure":"{:,.0f}",
+                "Safety Stock Utilization (%)":   "{:.1f}%",
+                "Forecast Week":                  "{:,.0f}",
+            }
+
             _TRIG_BULLETS = (
-                "- **Each row is a week \u00d7 facility \u00d7 component combination** "
-                "where this week\u2019s demand exceeds the remaining usable inventory \u2014 "
-                "the point at which a procurement order must be placed.\n"
-                "- **Available Inventory Before Demand** is the remaining usable inventory "
-                "at the start of this week \u2014 after the safety stock reserve has already "
-                "been set aside and prior weeks\u2019 demand has been consumed.\n"
-                "- **Procurement Need** is the quantity that must be ordered this week: "
-                "the portion of gross demand not covered by remaining usable inventory.\n"
-                "- **Safety Stock Reserve** is the minimum buffer held for the 95\u0025 "
-                "service level target. It is a fixed floor per facility \u00d7 component \u2014 "
-                "set aside before any demand is counted and shown here as reference context only."
+                "- **Gross Requirement:** forecast-driven component demand for that week.\n"
+                "- **Usable Inventory Before Demand:** inventory available after preserving "
+                "the safety stock floor.\n"
+                "- **Direct Procurement Needed:** portion of demand not covered by usable "
+                "inventory.\n"
+                "- **Cumulative Procurement Pressure:** total procurement required up to that "
+                "week, per facility \u00d7 component.\n"
+                "- **Safety Stock Utilization (%):** how much of the safety buffer is being "
+                "matched by cumulative procurement demand.\n"
+                "- **Urgency Level:** qualitative indicator \u2014 Low / Medium / High / "
+                "Critical \u2014 based on how close cumulative pressure is to the safety "
+                "buffer.\n"
+                "- Procurement is triggered when usable inventory reaches zero."
             )
 
             with st.chat_message("assistant"):
@@ -1726,9 +1827,23 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 st.caption(
                     f"Forecast run {trig_data['run_id']}"
                     f"  \u00b7  {len(_trig_rows)} triggered week\u2013facility\u2013component rows"
-                    "  \u00b7  Use filters in the table view to drill down by facility or component"
+                    "  \u00b7  Use filters to drill down by facility or component"
                 )
-                st.markdown(_TRIG_BULLETS)
+                # ── Safety Stock context block ──────────────────────────────
+                if _ss_context:
+                    _ss_ctx_df = pd.DataFrame(_ss_context)
+                    st.dataframe(
+                        _ss_ctx_df.style.format({"Safety Stock (Protected Floor)": "{:,.0f}"}),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    st.caption(
+                        "This value represents the inventory buffer required to maintain the "
+                        "target service level. It is preserved in all inventory calculations "
+                        "and not consumed by demand. The table below shows how procurement "
+                        "pressure accumulates relative to this buffer."
+                    )
+                # ── Primary trigger table ───────────────────────────────────
                 if not df_trig.empty:
                     st.dataframe(
                         df_trig.style.format(_TRIG_FMT),
@@ -1738,6 +1853,7 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                     )
                 else:
                     st.info("No triggered procurement rows found \u2014 all inventory positions appear sufficient.")
+                st.markdown(_TRIG_BULLETS)
             st.session_state.messages.append({
                 "role":    "assistant",
                 "content": (
@@ -1748,6 +1864,7 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 "has_trace":         False,
                 "summary":           "",
                 "weekly_trigger_df": _trig_display_rows,
+                "ss_context":        _ss_context,
             })
             st.rerun()
 
