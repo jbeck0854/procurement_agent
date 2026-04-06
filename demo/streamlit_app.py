@@ -14,6 +14,7 @@ logging.basicConfig(
     format="%(asctime)s %(name)s %(message)s",
     datefmt="%H:%M:%S",
 )
+logger = logging.getLogger(__name__)
 
 nest_asyncio.apply()
 
@@ -407,6 +408,136 @@ def _parse_lp_intent(prompt: str) -> dict | None:
             params["max_supplier_share"] = round(pct / 100, 2)
 
     return params
+
+
+# ── LP direct-route gating ─────────────────────────────────────────────────────
+# Signals that indicate params _parse_lp_intent() cannot fully extract.
+# Queries matching any of these require the orchestrator to interpret complex
+# params (exclude_supplier_ids, diversification_mode, urgency, facility scope,
+# budget cap, service-level target).  They use the orchestrator fast path
+# (which still bypasses plan-approval) rather than the direct LP route.
+_LP_ORCHESTRATOR_REQUIRED_SIGNALS = (
+    "unavailable",          # disruption / supplier exclusion
+    "what if",              # disruption / what-if scenario
+    "exclude",              # explicit supplier exclusion
+    "without supplier",     # disruption phrasing
+    "remove supplier",
+    "can't use",
+    "cannot use",
+    "diversif",             # diversification_mode
+    "different countr",     # country diversification
+    "3 countries",
+    "three countries",
+    "urgent",               # urgency mode
+    "urgency",
+    "emergency",
+    "facility ",            # facility-scoped run
+    "single facility",
+    "budget cap",           # budget_cap
+    "budget limit",
+    "spending limit",
+    "spend cap",
+    "service level",        # service_level_target > 1
+    "buffer stock",
+    "extra buffer",
+    "reinstate",            # what-if reversal
+)
+
+
+def _needs_orchestrator(prompt: str) -> bool:
+    """Return True if the LP query contains params the orchestrator must extract.
+
+    Direct LP route is only safe for queries that _parse_lp_intent() can fully
+    interpret: product + lambda_risk + max_supplier_share.  Everything else
+    (exclusion IDs, diversification, urgency, facility scope, budget) needs the
+    orchestrator LLM to parse the natural language into structured params.
+    """
+    t = prompt.lower()
+    return any(s in t for s in _LP_ORCHESTRATOR_REQUIRED_SIGNALS)
+
+
+def _run_lp_direct(params: dict) -> None:
+    """Execute LP optimization without the orchestrator or LangGraph graph.
+
+    Calls run_optimization() from tools/optimization.py directly, builds the
+    LP approval payload, and sets session state so render_lp_approval() renders
+    the result immediately on the next Streamlit rerun.
+
+    Args:
+        params: dict from _parse_lp_intent() — must contain 'product' key.
+                May also contain 'lambda_risk' and 'max_supplier_share'.
+                All other LP params use run_optimization() defaults.
+
+    Side-effects:
+        Sets st.session_state.waiting_for_lp_approval = True
+        Sets st.session_state.pending_lp_result       = LP approval payload
+        Sets st.session_state.last_lp_raw_full        = {result_key: result}
+        Saves params_recap to st.session_state.lp_params_history for carry-forward
+        Calls st.rerun() to surface the LP result page
+    """
+    import time as _time
+    from tools.optimization import run_optimization
+
+    product = params.get("product", "transistors")
+    lam     = params.get("lambda_risk", 0.5)
+    share   = params.get("max_supplier_share", 1.0)
+
+    t0 = _time.perf_counter()
+    logger.info(
+        "[LP DIRECT] product=%s | lambda_risk=%s | max_supplier_share=%s",
+        product, lam, share,
+    )
+
+    try:
+        result = run_optimization(
+            product=product,
+            lambda_risk=lam,
+            max_supplier_share=share,
+            # All other params stay at run_optimization() defaults:
+            # budget_cap=None, compliance_threshold=0.60,
+            # service_level_target=1.0, urgency=False,
+            # facility_id=None, exclude_supplier_ids=[],
+            # diversification_mode="none", forecast_run_id=None
+        )
+        t_solve = _time.perf_counter()
+        status = (
+            result.get("constraint_diagnostics", {}).get("lp_status")
+            or result.get("lp_status", "Unknown")
+        )
+        logger.info(
+            "[LP DIRECT] status=%s | solve_elapsed=%.3fs | total=%.3fs",
+            status, t_solve - t0, t_solve - t0,
+        )
+    except Exception as _e:
+        logger.error("[LP DIRECT] LP solve failed: %s", _e, exc_info=True)
+        st.error(f"LP optimization failed: {_e}")
+        return
+
+    result_key = f"lp_{product}"
+
+    # Persist params_recap for carry-forward on subsequent disruption / urgency reruns.
+    params_recap = result.get("params_recap", {})
+    if "lp_params_history" not in st.session_state:
+        st.session_state.lp_params_history = {}
+    if params_recap:
+        st.session_state.lp_params_history[product] = params_recap
+
+    # Build LP approval payload — identical schema to lp_agent_node interrupt payload.
+    # direct_mode=True tells render_lp_approval() to skip graph resume on approve/discard.
+    lp_interrupt_payload = {
+        "type":        "lp_approval",
+        "direct_mode": True,
+        "raw":         {result_key: result},
+        "formatted":   {result_key: ""},   # _render_lp_result() renders from raw, not formatted
+    }
+
+    st.session_state.waiting_for_lp_approval = True
+    st.session_state.pending_lp_result       = lp_interrupt_payload
+    st.session_state.lp_partial_state        = {}
+    st.session_state.last_lp_raw_full        = {result_key: result}
+    st.session_state.saved_plan              = {}
+    # thread_id intentionally not set — no graph session exists in direct mode.
+    st.rerun()
 
 
 # ── LP decision explanation route ──────────────────────────────────────────────
@@ -2780,20 +2911,13 @@ def render_lp_approval():
     """Show LP results and present an approve / discard decision to the user."""
     lp_interrupt = st.session_state.pending_lp_result or {}
     raw          = lp_interrupt.get("raw", {})
+    # Kept for _merge_final_states — not displayed (intermediate output suppressed).
     partial      = st.session_state.get("lp_partial_state") or {}
 
-    # Re-display any pipeline text results that arrived before the interrupt.
-    # Chart results from chart_agent are intentionally suppressed here — supplier
-    # score breakdowns are accessible via the "Tell me more" deep-dive inside
-    # each LP result block below, using the correct LP run parameters.
-    pipeline_results = partial.get("pipeline_results") or {}
-    if pipeline_results:
-        st.subheader("Pipeline Results")
-        for key, content in pipeline_results.items():
-            st.caption(key.replace("_", " ").title())
-            st.code(content)
+    # Intermediate pipeline results and chart_agent outputs are intentionally
+    # suppressed — the LP result page is the first and only visible output.
+    # Supplier breakdowns are accessible via the "Tell me more" deep-dive expander.
 
-    st.divider()
     st.subheader("LP Optimization Results — Pending Your Approval")
     st.info(
         "Review the optimization results below. "
@@ -2802,18 +2926,35 @@ def render_lp_approval():
 
     # ── Approve / Discard — rendered above LP content so controls are immediately
     # visible without scrolling, regardless of result length.
+    # direct_mode=True means the result came from _run_lp_direct() — no active
+    # LangGraph session exists, so Command(resume=...) must NOT be called.
+    is_direct = lp_interrupt.get("direct_mode", False)
+    # config is only needed for graph-mode approve/discard; guard thread_id access.
     col1, col2 = st.columns(2)
-    config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
     with col1:
         if st.button("✅ Approve Recommendation", key="approve_lp_btn"):
-            # Persist each approved LP run in Streamlit session state.
             for result_dict in raw.values():
                 _store_approved_run(result_dict)
-            with st.spinner("Finalizing recommendation..."):
-                second_state = stream_graph(Command(resume="approve"), config=config)
-            merged = _merge_final_states(partial, second_state)
-            finalize_execution(merged, fallback_plan=st.session_state.get("saved_plan", {}))
+
+            if is_direct:
+                # No graph session — write completion message directly.
+                _approved_products = [
+                    k.replace("lp_", "").replace("_", " ").title() for k in raw
+                ]
+                st.session_state.messages.append({
+                    "role":      "assistant",
+                    "content":   f"Procurement plan for **{', '.join(_approved_products)}** approved and added to session.",
+                    "has_trace": False,
+                    "summary":   "",
+                })
+            else:
+                config = {"configurable": {"thread_id": st.session_state.thread_id}}
+                with st.spinner("Finalizing recommendation..."):
+                    second_state = stream_graph(Command(resume="approve"), config=config)
+                merged = _merge_final_states(partial, second_state)
+                finalize_execution(merged, fallback_plan=st.session_state.get("saved_plan", {}))
+
             st.session_state.waiting_for_lp_approval = False
             st.session_state.pending_lp_result = None
             st.session_state.lp_partial_state = {}
@@ -2822,10 +2963,13 @@ def render_lp_approval():
 
     with col2:
         if st.button("❌ Discard", key="discard_lp_btn"):
-            with st.spinner("Discarding..."):
-                second_state = stream_graph(Command(resume="discard"), config=config)
-            merged = _merge_final_states(partial, second_state)
-            finalize_execution(merged, fallback_plan=st.session_state.get("saved_plan", {}))
+            if not is_direct:
+                config = {"configurable": {"thread_id": st.session_state.thread_id}}
+                with st.spinner("Discarding..."):
+                    second_state = stream_graph(Command(resume="discard"), config=config)
+                merged = _merge_final_states(partial, second_state)
+                finalize_execution(merged, fallback_plan=st.session_state.get("saved_plan", {}))
+            # direct mode: nothing to resume — just clean state.
             st.session_state.waiting_for_lp_approval = False
             st.session_state.pending_lp_result = None
             st.session_state.lp_partial_state = {}
@@ -3672,25 +3816,104 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 st.rerun()
 
         else:
-            # ── Normal graph invocation ────────────────────────────────────
-            # If the query maps to LP intent, inject detected params so the
-            # orchestrator can use them verbatim without guessing.
+            # ── Query routing ──────────────────────────────────────────────────
             _lp_detected = _parse_lp_intent(prompt)
-            _graph_prompt = prompt
-            if _lp_detected:
+            import time as _time
+            _t0 = _time.perf_counter()
+
+            if _lp_detected and not _needs_orchestrator(prompt):
+                # ── DIRECT LP ROUTE — no orchestrator, no LangGraph graph ─────
+                # _parse_lp_intent() fully captured product / lambda / share cap.
+                # _run_lp_direct() calls run_optimization() and sets session
+                # state, then calls st.rerun() — execution stops here.
+                logger.info(
+                    "[LP DIRECT] lp_detected=True | needs_orchestrator=False | "
+                    "params=%s | t0=%.3fs",
+                    _lp_detected, _t0,
+                )
+                with st.spinner("Optimizing..."):
+                    _run_lp_direct(_lp_detected)
+                # _run_lp_direct() calls st.rerun() — code below is unreachable
+                # for this branch.
+
+            elif _lp_detected:
+                # ── ORCHESTRATOR FAST PATH — LP with complex params ────────────
+                # Query has signals (_needs_orchestrator=True) that require the
+                # orchestrator LLM to extract: exclusion IDs, diversification,
+                # urgency, facility scope, budget cap, etc.
+                # Auto-resume the orchestrator interrupt; no plan page shown.
+                _graph_prompt = prompt
                 _params_note = ", ".join(f"{k}={v!r}" for k, v in _lp_detected.items())
                 _graph_prompt = f"{prompt}\n\n[LP_PARAMS: {{{_params_note}}}]"
 
-            with st.spinner("Optimizing..." if _lp_detected else "Thinking..."):
-                thread_id = str(uuid.uuid4())
-                st.session_state.thread_id = thread_id
-                config = {"configurable": {"thread_id": thread_id}}
-                result = asyncio.run(graph.ainvoke({"messages": [("user", _graph_prompt)]}, config=config))
-                state = asyncio.run(graph.aget_state(config=config))
-            plan = extract_plan(state)
-            if state.next and plan:
-                st.session_state.waiting_for_approval = True
-                st.session_state.pending_plan = plan
-                assistant_text = "Plan ready — approve to run." if _lp_detected else "I have a plan ready. Review the work orders below and approve when ready."
-                st.session_state.messages.append({"role": "assistant", "content": assistant_text})
+                logger.info(
+                    "[LP ORCH FAST PATH] lp_detected=True | needs_orchestrator=True | "
+                    "params=%s", _lp_detected,
+                )
+                with st.spinner("Optimizing..."):
+                    thread_id = str(uuid.uuid4())
+                    st.session_state.thread_id = thread_id
+                    config = {"configurable": {"thread_id": thread_id}}
+
+                    result = asyncio.run(
+                        graph.ainvoke({"messages": [("user", _graph_prompt)]}, config=config)
+                    )
+                    state = asyncio.run(graph.aget_state(config=config))
+                    _t_orch = _time.perf_counter()
+                    plan = extract_plan(state)
+                    logger.info(
+                        "[LP ORCH FAST PATH] orch_elapsed=%.3fs | tasks=%s",
+                        _t_orch - _t0,
+                        [t.get("agent") for t in (plan or {}).get("tasks", [])],
+                    )
+
+                    second_state = stream_graph(Command(resume="ok"), config=config)
+                    _t_lp = _time.perf_counter()
+                    lp_interrupt = second_state.get("__interrupt__")
+                    logger.info(
+                        "[LP ORCH FAST PATH] lp_interrupt=%s | lp_elapsed=%.3fs | total=%.3fs",
+                        lp_interrupt.get("type") if lp_interrupt else None,
+                        _t_lp - _t_orch,
+                        _t_lp - _t0,
+                    )
+
+                if lp_interrupt and lp_interrupt.get("type") == "lp_approval":
+                    st.session_state.waiting_for_lp_approval = True
+                    st.session_state.pending_lp_result = lp_interrupt
+                    st.session_state.lp_partial_state  = second_state
+                    st.session_state.last_lp_raw_full  = lp_interrupt.get("raw", {})
+                    st.session_state.saved_plan        = plan or {}
+                else:
+                    logger.warning("[LP ORCH FAST PATH] No LP interrupt — finalizing as normal.")
+                    finalize_execution(second_state, fallback_plan=plan or {})
                 st.rerun()
+
+            else:
+                # ── NORMAL (non-LP) orchestrator path ─────────────────────────
+                _graph_prompt = prompt
+                with st.spinner("Thinking..."):
+                    thread_id = str(uuid.uuid4())
+                    st.session_state.thread_id = thread_id
+                    config = {"configurable": {"thread_id": thread_id}}
+                    result = asyncio.run(
+                        graph.ainvoke({"messages": [("user", _graph_prompt)]}, config=config)
+                    )
+                    state = asyncio.run(graph.aget_state(config=config))
+
+                _t_orch = _time.perf_counter()
+                plan = extract_plan(state)
+
+                if state.next and plan:
+                    logger.info(
+                        "[NORMAL PATH] lp_detected=False | entered_pending_plan=True | "
+                        "tasks=%s | orch_elapsed=%.3fs",
+                        [t.get("agent") for t in plan.get("tasks", [])],
+                        _t_orch - _t0,
+                    )
+                    st.session_state.waiting_for_approval = True
+                    st.session_state.pending_plan = plan
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": "I have a plan ready. Review the work orders below and approve when ready.",
+                    })
+                    st.rerun()
