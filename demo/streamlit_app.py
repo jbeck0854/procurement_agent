@@ -1828,6 +1828,20 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 "per facility \u00d7 component. It is not consumed during planning.\n"
                 "- Only inventory **above** this floor is used to satisfy weekly demand."
             )
+            _SS_CYCLE_STOCK = (
+                "The base-stock level (S) has two distinct components:\n\n"
+                "**1. Cycle Stock** \u2014 \u03bc\u1d05 \u00d7 (r + \u03bc\u2097)\n"
+                "- Covers **expected demand** over the review period and lead time\n"
+                "- This is the primary driver of inventory volume\n\n"
+                "**2. Safety Stock** \u2014 z \u00b7 \u221a((r + \u03bc\u2097)\u03c3\u1d05\u00b2 "
+                "+ \u03bc\u1d05\u00b2\u03c3\u2097\u00b2)\n"
+                "- Covers **uncertainty** in demand and lead time\n"
+                "- This is a buffer \u2014 NOT intended to cover expected demand\n\n"
+                "On-hand inventory at the start of planning is anchored at "
+                "**S = Cycle Stock + Safety Stock**. "
+                "Safety stock alone will often appear small relative to weekly demand \u2014 "
+                "this is expected and correct."
+            )
             _SS_PLANNING = (
                 "- Weekly procurement is triggered when **usable inventory** (above the safety "
                 "stock floor) reaches zero.\n"
@@ -1844,6 +1858,8 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 + _SS_TERMS + "\n\n"
                 "**How It Works**\n\n"
                 + _SS_BUSINESS + "\n\n"
+                "**Cycle Stock vs Safety Stock (Key Distinction)**\n\n"
+                + _SS_CYCLE_STOCK + "\n\n"
                 "**Connection to Planning Outputs**\n\n"
                 + _SS_PLANNING
             )
@@ -1855,6 +1871,8 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 st.markdown(_SS_TERMS)
                 st.markdown("**How It Works**")
                 st.markdown(_SS_BUSINESS)
+                st.markdown("**Cycle Stock vs Safety Stock (Key Distinction)**")
+                st.markdown(_SS_CYCLE_STOCK)
                 st.markdown("**Connection to Planning Outputs**")
                 st.markdown(_SS_PLANNING)
             st.session_state.messages.append({

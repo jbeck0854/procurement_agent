@@ -231,7 +231,7 @@ available_above_ss = max(0, on_hand + SR − BO − safety_stock)
 LP demand floor    = max(0, SUM(gross) − available_above_ss)
 ```
 
-At the decision point: `BO = 0`, `SR = 0`, `OH = SS + μ_D`. SS cancels: LP demand floor = `SUM(gross) − μ_D`.
+At the decision point: `BO = 0`, `SR = 0`, `OH = SS + 8×μ_D`. LP demand floor = `max(0, SUM(gross) − 8×μ_D)`.
 
 ---
 
@@ -386,7 +386,9 @@ state is recorded for each facility × component. This represents what is
 available at the moment the planning horizon begins:
 
 - **on_hand_qty** — stock physically on hand at the decision point; set to
-  `safety_stock + one week of average demand (SS + μ_D)`
+  `SS + 8 × μ_D` (safety stock floor plus one full review period of average
+  demand), providing roughly 8 weeks of usable inventory above the SS floor
+  before procurement is triggered
 - **scheduled_receipts_qty** — quantity already on order and inbound; currently
   zero by design at the decision point
 - **backorder_qty** — unfilled demand carried forward; currently zero by design
@@ -395,6 +397,17 @@ available at the moment the planning horizon begins:
 These are **point-in-time values**. They do not change as the forecast advances
 week by week — they capture the starting inventory position at the beginning of
 the planning window.
+
+**Why `SS + 8 × μ_D` is used at the decision point:**
+The formula represents a controlled but not overstocked planning state:
+- `SS` is the protected safety buffer (never consumed during planning)
+- `8 × μ_D` is one full review period (`r = 8 weeks`) of average weekly demand
+- Usable inventory above the SS floor = `8 × μ_D`
+
+This initialization means the first ~8 weeks of the forecast horizon are covered
+by existing inventory, and procurement is triggered in later weeks where demand
+exhausts that usable pool. It produces nontrivial LP demand without the
+artificial extreme of triggering procurement immediately in week 1.
 
 ---
 
@@ -452,18 +465,17 @@ the LP additionally captures the SS deficit, making LP D slightly larger.
 
 ### Cold-start vs decision-point (for reference)
 
-The historical simulation begins with on_hand initialized at **65% of the
-base-stock target** — a warm-up assumption to seed realistic early replenishment
-behavior in the historical inventory trace.
+The historical simulation begins with on_hand initialized at **95% of the
+base-stock target** — a near-steady-state assumption that avoids artificial
+early procurement triggers in the historical inventory trace.
 
-The planning horizon uses a **separate decision-point snapshot** taken from the
-final week of the historical simulation, where on_hand is anchored at
-`SS + μ_D`. These are two distinct concepts that should not be confused:
+The planning horizon uses a **separate decision-point snapshot** that overrides
+the final week of the historical simulation. These are two distinct concepts:
 
 | | What it is | Used for |
 |---|---|---|
-| Cold-start (65% × S) | Historical simulation warm-up | Generating representative inventory history |
-| Decision-point snapshot (SS + μ_D) | Starting inventory at the planning horizon | Driving procurement requirements and LP demand floor |
+| Cold-start (95% × S) | Historical simulation warm-up | Generating representative inventory history |
+| Decision-point snapshot (SS + 8 × μ_D) | Starting inventory at the planning horizon | Driving procurement requirements and LP demand floor |
 
 All planning helpers and the LP use the **decision-point snapshot**, not the
 cold-start value.
