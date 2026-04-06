@@ -204,6 +204,38 @@ def _is_ss_policy_request(text: str) -> bool:
     return False
 
 
+# Full inventory planning horizon drilldown route — diagnostic / traceability only.
+# Returns ALL horizon rows (triggered + non-triggered) at facility × component × week.
+# Canonical queries: "Show full horizon inventory drilldown",
+#                    "Show all upcoming demand weeks across each facility for inventory planning"
+# Must NOT overlap with: _is_procurement_summary_request (horizon-level net totals)
+#                        _is_weekly_trigger_request (triggered rows only)
+_FULL_HORIZON_SIGNALS = (
+    "full horizon inventory",
+    "full inventory planning",
+    "full facility-component-week",
+    "all upcoming demand weeks",
+    "all planning rows for inventory",
+    "full horizon drilldown",
+    "all demand weeks across",
+    "planning horizon drilldown",
+    "full planning detail",
+    "full horizon planning",
+)
+# Combined guard: "full" + "inventory" + drill-down-intent fires the same route.
+_FULL_HORIZON_CONTEXT_SIGNALS = ("drilldown", "drill-down", "detail", "all weeks", "all rows")
+
+
+def _is_full_horizon_drilldown_request(text: str) -> bool:
+    """True for full-horizon inventory planning diagnostic / traceability queries."""
+    t = text.lower()
+    if any(s in t for s in _FULL_HORIZON_SIGNALS):
+        return True
+    if "full" in t and "inventory" in t and any(s in t for s in _FULL_HORIZON_CONTEXT_SIGNALS):
+        return True
+    return False
+
+
 # Transition sentences and section headings for each assessment direction.
 _FORECAST_ASSESS_META = {
     "validation": (
@@ -957,6 +989,47 @@ for _msg_loop_idx, msg in enumerate(st.session_state.messages):
                 use_container_width=True,
                 hide_index=True,
                 height=500,
+            )
+        # ── Full horizon drilldown replay (diagnostic) ────────────────────
+        _fh_rows_replay = msg.get("full_horizon_df")
+        if _fh_rows_replay:
+            import pandas as _pd
+            _fh_df = _pd.DataFrame(_fh_rows_replay)
+            _fh_fac_opts  = sorted(_fh_df["Facility"].unique().tolist())  if "Facility"  in _fh_df.columns else []
+            _fh_comp_opts = sorted(_fh_df["Component"].unique().tolist()) if "Component" in _fh_df.columns else []
+            _fh_col_a, _fh_col_b = st.columns(2)
+            with _fh_col_a:
+                _fh_sel_fac = st.multiselect(
+                    "Filter by Facility",
+                    options=_fh_fac_opts,
+                    default=_fh_fac_opts,
+                    key=f"fh_fac_{_msg_loop_idx}",
+                )
+            with _fh_col_b:
+                _fh_sel_comp = st.multiselect(
+                    "Filter by Component",
+                    options=_fh_comp_opts,
+                    default=_fh_comp_opts,
+                    key=f"fh_comp_{_msg_loop_idx}",
+                )
+            if _fh_sel_fac:
+                _fh_df = _fh_df[_fh_df["Facility"].isin(_fh_sel_fac)]
+            if _fh_sel_comp:
+                _fh_df = _fh_df[_fh_df["Component"].isin(_fh_sel_comp)]
+            _fh_fmt = {
+                "Forecast Week":                  "{:,.0f}",
+                "Gross Requirement":              "{:,.0f}",
+                "Usable Inventory Before Demand": "{:,.0f}",
+                "Direct Procurement Needed":      "{:,.0f}",
+                "Safety Stock (Protected Floor)": "{:,.0f}",
+            }
+            _fh_fmt = {c: v for c, v in _fh_fmt.items() if c in _fh_df.columns}
+            st.caption(f"{len(_fh_df):,} rows shown")
+            st.dataframe(
+                _fh_df.style.format(_fh_fmt),
+                use_container_width=True,
+                hide_index=True,
+                height=600,
             )
         # ── Trace-backed chart replay (graph execution path) ──────────────
         if msg.get("has_trace") and assistant_index < len(st.session_state.traces):
@@ -1789,6 +1862,78 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 "content":   _ss_content,
                 "has_trace": False,
                 "summary":   "",
+            })
+            st.rerun()
+
+        # ── Full inventory planning horizon drilldown (diagnostic) ───────────
+        elif _is_full_horizon_drilldown_request(prompt):
+            with st.spinner("Loading full inventory planning horizon..."):
+                from tools.pipeline_queries import query_full_horizon_drilldown
+                fh_data = query_full_horizon_drilldown()
+
+            import pandas as pd
+            _fh_rows = fh_data.get("rows", [])
+            df_fh = pd.DataFrame(_fh_rows)
+
+            if not df_fh.empty and "Facility" in df_fh.columns:
+                df_fh["Facility"] = df_fh["Facility"].apply(_format_facility_label)
+
+            _FH_COL_ORDER = [
+                "Forecast Week", "Week", "Facility", "Component",
+                "Gross Requirement", "Usable Inventory Before Demand",
+                "Direct Procurement Needed", "Triggered?",
+                "Safety Stock (Protected Floor)",
+            ]
+            if not df_fh.empty:
+                df_fh = df_fh[[c for c in _FH_COL_ORDER if c in df_fh.columns]]
+
+            _FH_FMT = {
+                "Forecast Week":                  "{:,.0f}",
+                "Gross Requirement":              "{:,.0f}",
+                "Usable Inventory Before Demand": "{:,.0f}",
+                "Direct Procurement Needed":      "{:,.0f}",
+                "Safety Stock (Protected Floor)": "{:,.0f}",
+            }
+            _fh_display_rows = df_fh.to_dict("records")
+
+            _n_triggered = int((df_fh["Triggered?"] == "Yes").sum()) if not df_fh.empty else 0
+            _FH_NOTE = (
+                "All planning weeks are shown — including weeks where inventory covers demand "
+                "(Triggered? = No) and weeks where procurement is required (Triggered? = Yes). "
+                "Use filters to isolate a specific facility or component."
+            )
+
+            with st.chat_message("assistant"):
+                st.subheader("Inventory Planning Horizon \u2014 Full Facility \u00d7 Component \u00d7 Week Detail")
+                st.caption(
+                    f"Forecast run {fh_data['run_id']}"
+                    f"  \u00b7  {fh_data['horizon_start']} \u2192 {fh_data['horizon_end']}"
+                    f"  \u00b7  {fh_data['n_weeks']} weeks"
+                    f"  \u00b7  {len(_fh_rows):,} rows total"
+                    f"  \u00b7  {_n_triggered} triggered"
+                )
+                st.markdown(_FH_NOTE)
+                if not df_fh.empty:
+                    st.dataframe(
+                        df_fh.style.format(_FH_FMT),
+                        use_container_width=True,
+                        hide_index=True,
+                        height=600,
+                    )
+                else:
+                    st.info("No planning rows found for this forecast run.")
+            st.session_state.messages.append({
+                "role":          "assistant",
+                "content":       (
+                    "**Inventory Planning Horizon \u2014 Full Facility \u00d7 Component \u00d7 Week Detail**\n\n"
+                    f"Forecast run {fh_data['run_id']} \u00b7 "
+                    f"{fh_data['horizon_start']} \u2192 {fh_data['horizon_end']} "
+                    f"({fh_data['n_weeks']} weeks) \u00b7 {len(_fh_rows):,} rows\n\n"
+                    + _FH_NOTE
+                ),
+                "has_trace":     False,
+                "summary":       "",
+                "full_horizon_df": _fh_display_rows,
             })
             st.rerun()
 

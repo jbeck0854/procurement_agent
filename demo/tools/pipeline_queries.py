@@ -612,6 +612,89 @@ def query_triggered_rows_structured(**kwargs) -> dict:
     }
 
 
+def query_full_horizon_drilldown(**kwargs) -> dict:
+    """Full planning-horizon inventory rows at facility × component × week grain.
+
+    Returns ALL horizon rows — both triggered (net_requirement > 0) and
+    non-triggered (net_requirement = 0). Use this to trace the full rolling
+    depletion math across every forecast week.
+
+    Distinct from query_triggered_rows_structured(), which returns only rows
+    where procurement is active (net_requirement > 0).
+    """
+    forecast_run_id = kwargs.get("forecast_run_id", None)
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            if forecast_run_id:
+                run_id = int(forecast_run_id)
+            else:
+                cur.execute(
+                    "SELECT forecast_run_id FROM dim_forecast_run "
+                    "ORDER BY forecast_run_id DESC LIMIT 1"
+                )
+                row = cur.fetchone()
+                run_id = int(row[0]) if row else 0
+
+            # Planning window metadata
+            cur.execute(
+                """
+                SELECT MIN(target_week_date), MAX(target_week_date),
+                       COUNT(DISTINCT target_week_date)
+                FROM vw_procurement_requirement
+                WHERE forecast_run_id = %s
+                """,
+                (run_id,),
+            )
+            horizon_start, horizon_end, n_weeks = cur.fetchone()
+
+            cur.execute(
+                """
+                SELECT
+                    r.target_week_date,
+                    r.facility_id,
+                    p.product                                              AS component,
+                    r.gross_requirement,
+                    r.remaining_inventory,
+                    r.net_requirement,
+                    CASE WHEN r.net_requirement > 0 THEN 'Yes' ELSE 'No'
+                         END                                               AS triggered,
+                    r.safety_stock_qty,
+                    r.horizon_week
+                FROM vw_procurement_requirement r
+                JOIN dim_product p ON p.product_key = r.product_key
+                WHERE r.forecast_run_id = %s
+                ORDER BY r.horizon_week, r.facility_id, p.product
+                """,
+                (run_id,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return {
+        "run_id":        run_id,
+        "horizon_start": str(horizon_start),
+        "horizon_end":   str(horizon_end),
+        "n_weeks":       int(n_weeks),
+        "rows": [
+            {
+                "Forecast Week":                  int(r[8]),
+                "Week":                           str(r[0]),
+                "Facility":                       r[1],
+                "Component":                      r[2],
+                "Gross Requirement":              float(r[3]),
+                "Usable Inventory Before Demand": float(r[4]),
+                "Direct Procurement Needed":      float(r[5]),
+                "Triggered?":                     r[6],
+                "Safety Stock (Protected Floor)": float(r[7]),
+            }
+            for r in rows
+        ],
+        "name": "full_horizon_drilldown",
+    }
+
+
 # ── Tool registry ───────────────────────────────────────────────────────────
 
 DIRECT_PIPELINE_TOOLS = {
