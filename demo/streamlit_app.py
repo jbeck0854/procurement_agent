@@ -325,11 +325,11 @@ _LAMBDA_MAP: list[tuple[str, float]] = [
     ("very risk-averse",   1.5),
     ("risk first",         1.5),
     ("risk priority",      1.5),
-    ("risk aversion",      1.0),  # "moderate risk aversion" still hits "moderate" first below
+    ("moderate risk aversion", 0.5),  # MUST be before "risk aversion" — is a substring match
+    ("risk aversion",      1.0),
     ("risk averse",        1.0),
     ("risk-averse",        1.0),
     ("high risk",          1.0),
-    ("moderate risk aversion", 0.5),  # before bare "risk aversion" → 1.0
     ("moderate risk",      0.5),
     ("moderate",           0.5),
     ("balanced",           0.5),
@@ -2132,12 +2132,12 @@ def _render_lp_result(raw: dict) -> None:
 
     Sections (in order):
       1. Requirement Summary
-      2. Supplier Allocation  (DataFrame table)
-      3. Cost & Risk Summary
-      4. Key Insights         (bullets)
-      5. Active Business Rules
-      6. Inactive Business Rules
-      7. Excluded Suppliers   (compliance + zero-allocation)
+      2. Supplier Allocation  (DataFrame, top 4 rows, no Top Risk Drivers column)
+      3. Procurement & Risk Summary
+      4. Supply Urgency & Lead Time Assessment (only when shortfall detected)
+      5. "Tell me more about the selected suppliers" expander
+      6. "How was this decision made?" expander
+      7. Excluded Suppliers expander (after explanation)
 
     Does NOT render the approve/discard buttons — that is handled by the caller.
     """
@@ -2197,9 +2197,7 @@ def _render_lp_result(raw: dict) -> None:
     st.markdown("**Supplier Allocation**")
     if alloc:
         alloc_rows = []
-        for r in alloc:
-            drivers = r.get("top_risk_drivers") or []
-            driver_str = ", ".join(str(d) for d in drivers[:2]) if drivers else "—"
+        for r in alloc[:4]:  # cap at 4 rows
             alloc_rows.append({
                 "Supplier":           r.get("supplier_id", ""),
                 "Country":            r.get("country_code", ""),
@@ -2209,25 +2207,27 @@ def _render_lp_result(raw: dict) -> None:
                 "Unit Cost (USD)":    f"${r.get('landed_unit_cost', 0):.4f}",
                 "Total Cost (USD)":   f"${r.get('total_cost', 0):,.0f}",
                 "Risk Penalty":       f"{r.get('risk_penalty_norm', 0):.4f}",
-                "Top Risk Drivers":   driver_str,
             })
         st.dataframe(
             pd.DataFrame(alloc_rows),
             use_container_width=True,
             hide_index=True,
-            height=min(200 + 40 * len(alloc_rows), 420),
+            height=min(200 + 40 * len(alloc_rows), 360),
         )
+        if len(alloc) > 4:
+            st.caption(f"Showing top 4 of {len(alloc)} allocated suppliers.")
     else:
         st.warning("No suppliers were allocated.")
 
-    # ── 3. Cost & Risk Summary ────────────────────────────────────────────────
-    st.markdown("**Cost & Risk Summary**")
+    # ── 3. Procurement & Risk Summary ─────────────────────────────────────────
+    st.markdown("**Procurement & Risk Summary**")
     total_cost  = cost.get("total_cost_usd", 0)
     avg_cost    = cost.get("avg_landed_unit_cost", 0)
     avg_risk    = cost.get("avg_risk_penalty_norm", 0)
     n_selected  = pool.get("n_selected_by_lp", len(alloc))
     n_eligible  = pool.get("n_eligible_post_compliance", 0)
     countries   = diag.get("countries_selected", [])
+    total_units = sum(r.get("allocated_qty", 0) for r in alloc)
 
     # Baseline delta
     base_cost   = base.get("total_cost_usd") if base else None
@@ -2236,16 +2236,18 @@ def _render_lp_result(raw: dict) -> None:
         delta_pct = delta / base_cost * 100
         delta_str = f"${delta:+,.0f} ({delta_pct:+.1f}% vs cost-only baseline)"
     else:
-        delta_str = "Baseline not available"
+        delta_str = None  # will be hidden when unavailable
 
     cost_summary_rows = [
+        {"Metric": "Total Units Procured",           "Value": f"{total_units:,}"},
         {"Metric": "Total Procurement Cost",         "Value": f"${total_cost:,.2f}"},
         {"Metric": "Average Unit Cost",              "Value": f"${avg_cost:.4f}"},
-        {"Metric": "Weighted Avg Risk Penalty",       "Value": f"{avg_risk:.4f}  (0=no risk, higher=riskier)"},
+        {"Metric": "Weighted Avg Risk Penalty",      "Value": f"{avg_risk:.4f}  (0 = lowest risk, 1 = riskiest)"},
         {"Metric": "Suppliers Selected / Eligible",  "Value": f"{n_selected} / {n_eligible}"},
         {"Metric": "Countries Represented",          "Value": ", ".join(countries) if countries else "—"},
-        {"Metric": "Cost vs Cost-Only Baseline",     "Value": delta_str},
     ]
+    if delta_str is not None:
+        cost_summary_rows.append({"Metric": "Cost vs Cost-Only Baseline", "Value": delta_str})
     bud_util = cost.get("budget_utilization_pct")
     if bud_util is not None:
         cost_summary_rows.append(
@@ -2257,76 +2259,15 @@ def _render_lp_result(raw: dict) -> None:
         hide_index=True,
     )
 
-    # ── 4. Key Insights ────────────────────────────────────────────────────────
-    st.markdown("**Key Insights**")
-    insights = []
-
-    # Demand coverage
-    if diag.get("demand_satisfied"):
-        insights.append(f"Full demand coverage achieved — {adj_req:,} units allocated.")
-    else:
-        insights.append("Demand requirement **not fully covered** — review budget or supplier pool.")
-
-    # Primary supplier share
-    if alloc:
-        top = alloc[0]
-        insights.append(
-            f"Largest allocation: **{top['supplier_id']}** ({top['share_pct']:.0f}% of volume) "
-            f"— {top['country_code']}, ${top['landed_unit_cost']:.4f}/unit."
-        )
-
-    # Baseline cost delta
-    if base_cost and base_cost > 0:
-        if delta > 0:
-            insights.append(
-                f"Risk-adjusted plan costs **${delta:,.0f} more** than cost-only baseline "
-                f"({delta_pct:+.1f}%) — premium paid for lower-risk supplier mix."
-            )
-        elif delta < 0:
-            insights.append(
-                f"Risk-adjusted plan costs **${abs(delta):,.0f} less** than cost-only baseline "
-                f"({delta_pct:+.1f}%) — better value achieved through optimization."
-            )
-        else:
-            insights.append("Plan matches cost-only baseline — no cost premium for risk adjustment.")
-
-    # Country diversity
-    if len(countries) > 1:
-        insights.append(f"Supply distributed across {len(countries)} countries: {', '.join(countries)}.")
-    elif len(countries) == 1:
-        insights.append(f"All supply sourced from a single country ({countries[0]}) — consider diversification.")
-
-    # Share constraint binding
-    n_binding = diag.get("n_share_constraints_binding", 0)
-    if n_binding:
-        insights.append(f"{n_binding} supplier share constraint(s) binding — cap is actively shaping the allocation.")
-
-    for ins in insights:
-        st.markdown(f"- {ins}")
-
-    # ── 4b. Supply Urgency & Lead Time Assessment ──────────────────────────────
+    # ── 4. Supply Urgency & Lead Time Assessment ──────────────────────────────
     exec_summary = raw.get("executive_summary", "")
     _sf_match = _re.search(r'Early shortfall begins Week (\d+)', exec_summary)
     if _sf_match:
         shortfall_week = int(_sf_match.group(1))
         st.markdown("**Supply Urgency & Lead Time Assessment**")
 
-        if "Faster alternative(s) in pool:" in exec_summary:
-            _alt_m = _re.search(r'Faster alternative\(s\) in pool: (.+)$', exec_summary)
-            alts_str = (_alt_m.group(1).strip().rstrip(".")) if _alt_m else ""
-            st.warning(
-                f"**Shortfall Risk — Week {shortfall_week}:** Selected supplier lead times "
-                f"cannot deliver before first demand peaks. "
-                f"Faster eligible alternatives: {alts_str}."
-            )
-        else:
-            st.error(
-                f"**Critical — Week {shortfall_week}:** No eligible supplier can cover this "
-                f"window. Emergency domestic or spot sourcing required for immediate coverage; "
-                f"planned orders will support later weeks."
-            )
-
-        # Impacted-facilities sub-table (first-shortfall window only)
+        # Pull triggered procurement rows and bucket by urgency band
+        _urgency_bands: dict[str, list] = {"Critical": [], "High": [], "Moderate": []}
         try:
             from tools.pipeline_queries import query_triggered_rows_structured
             _trig = query_triggered_rows_structured()
@@ -2336,141 +2277,85 @@ def _render_lp_result(raw: dict) -> None:
                 if r["Component"] == _product_key
                 and r["Forecast Week"] <= shortfall_week + 3
             ]
-            if _window_rows:
-                _sf_table = []
-                for _r in _window_rows:
-                    _ss   = _r["Safety Stock Reserve"]
-                    _avail = _r["Available Inventory Before Demand"]
-                    _ss_util = max(0.0, (_ss - _avail) / _ss * 100) if _ss > 0 else 100.0
-                    if _avail <= 0:
-                        _urgency = "Critical"
-                    elif _avail <= 0.25 * _ss:
-                        _urgency = "High"
-                    elif _avail <= 0.5 * _ss:
-                        _urgency = "Moderate"
-                    else:
-                        _urgency = "Low"
-                    _sf_table.append({
-                        "Forecast Week":      _r["Forecast Week"],
-                        "Facility":           _r["Facility"],
-                        "Component":          _r["Component"].replace("_", " ").title(),
-                        "SS Utilization (%)": f"{_ss_util:.0f}%",
-                        "Urgency":            _urgency,
-                    })
-                st.dataframe(
-                    pd.DataFrame(_sf_table),
-                    use_container_width=True,
-                    hide_index=True,
-                    height=min(150 + 35 * len(_sf_table), 320),
-                )
+            for _r in _window_rows:
+                _ss    = _r["Safety Stock Reserve"]
+                _avail = _r["Available Inventory Before Demand"]
+                _need  = _r["Procurement Need"]
+                _ss_util = (_ss - _avail) / _ss * 100 if _ss > 0 else 100.0
+                if _avail <= 0:
+                    _band = "Critical"
+                elif _avail <= 0.25 * _ss:
+                    _band = "High"
+                elif _avail <= 0.5 * _ss:
+                    _band = "Moderate"
+                else:
+                    continue  # OK — no urgency flag needed
+                _urgency_bands[_band].append({
+                    "Forecast Week":       _r["Forecast Week"],
+                    "Facility":            _r["Facility"],
+                    "Component":           _r["Component"].replace("_", " ").title(),
+                    "Procurement Need":    f"{_need:,}",
+                    "Available Inventory": f"{_avail:,}",
+                    "SS Utilization (%)":  f"{_ss_util:.0f}%",
+                })
         except Exception:
             pass  # don't crash render if DB unavailable
 
-    # ── 5 & 6. Business Rules (Active / Inactive) ─────────────────────────────
-    lambda_risk      = recap.get("lambda_risk", 0.5)
-    max_share        = recap.get("max_supplier_share", 1.0)
-    budget_cap       = recap.get("budget_cap")
-    compliance_thr   = recap.get("compliance_threshold", 0.6)
-    urgency          = recap.get("urgency", False)
-    div_mode         = recap.get("diversification_mode", "none")
-    svc_tgt          = recap.get("service_level_target", 1.0)
-    excl_ids         = recap.get("exclude_supplier_ids") or []
+        if _urgency_bands["Critical"]:
+            st.error("**Critical** — Inventory depleted; immediate procurement action required.")
+            st.dataframe(
+                pd.DataFrame(_urgency_bands["Critical"]),
+                use_container_width=True, hide_index=True,
+                height=min(150 + 35 * len(_urgency_bands["Critical"]), 300),
+            )
+        if _urgency_bands["High"]:
+            st.warning("**High** — Inventory critically low (below 25% of safety stock).")
+            st.dataframe(
+                pd.DataFrame(_urgency_bands["High"]),
+                use_container_width=True, hide_index=True,
+                height=min(150 + 35 * len(_urgency_bands["High"]), 300),
+            )
+        if _urgency_bands["Moderate"]:
+            st.info("**Moderate** — Inventory below 50% of safety stock; monitor closely.")
+            st.dataframe(
+                pd.DataFrame(_urgency_bands["Moderate"]),
+                use_container_width=True, hide_index=True,
+                height=min(150 + 35 * len(_urgency_bands["Moderate"]), 300),
+            )
 
-    active_rules   = []
-    inactive_rules = []
+        if not any(_urgency_bands.values()):
+            # Fall back to exec_summary text signals
+            if "Faster alternative(s) in pool:" in exec_summary:
+                _alt_m = _re.search(r'Faster alternative\(s\) in pool: (.+?)(?:\.|$)', exec_summary)
+                alts_str = (_alt_m.group(1).strip()) if _alt_m else ""
+                st.warning(
+                    f"**Shortfall Risk — Week {shortfall_week}:** Selected supplier lead times "
+                    f"cannot deliver before first demand peaks. "
+                    f"Faster eligible alternatives: {alts_str}."
+                )
+            else:
+                st.error(
+                    f"**Critical — Week {shortfall_week}:** No eligible supplier can cover this "
+                    f"window. Emergency domestic or spot sourcing required."
+                )
 
-    # Risk weighting — always active when λ > 0
-    if lambda_risk > 0:
-        active_rules.append(
-            f"Risk weighting active (λ = {lambda_risk}) — cost and supplier risk are jointly minimized."
-        )
-    else:
-        inactive_rules.append("Risk weighting off (λ = 0) — cost-only optimization.")
+        # Relaxed-compliance fallback — name the suppliers when available
+        _relaxed_m = _re.search(r'Relaxed compliance pool includes: (.+?)(?:\.|$)', exec_summary)
+        if _relaxed_m:
+            st.caption(f"Relaxed compliance fallback available: {_relaxed_m.group(1).strip()}")
 
-    # Supplier share cap
-    if max_share < 1.0:
-        active_rules.append(
-            f"Supplier share cap: no single supplier may exceed {max_share:.0%} of volume."
-        )
-    else:
-        inactive_rules.append("Supplier share cap: not applied (single-supplier allocation allowed).")
-
-    # Compliance threshold — always active
-    active_rules.append(
-        f"Compliance gate: suppliers below {compliance_thr:.0%} eligibility excluded from consideration."
-    )
-
-    # Budget cap
-    if budget_cap:
-        active_rules.append(f"Budget cap: ${budget_cap:,.0f}.")
-    else:
-        inactive_rules.append("Budget cap: not applied.")
-
-    # Urgency
-    if urgency:
-        active_rules.append("Urgency mode: slow suppliers carry a lead-time cost premium.")
-    else:
-        inactive_rules.append("Urgency mode: not applied (lead time not penalized).")
-
-    # Diversification
-    if div_mode == "country_diversified":
-        active_rules.append("Country diversification: allocation spread across exactly 3 countries (~33% each).")
-    elif div_mode == "supplier_share_only":
-        active_rules.append("Supplier-share diversification: maximum share cap enforced per supplier.")
-    else:
-        inactive_rules.append("Country diversification: not applied.")
-
-    # Service level
-    if svc_tgt != 1.0:
-        active_rules.append(f"Service-level multiplier: demand scaled to {svc_tgt:.0%} of base requirement.")
-    else:
-        inactive_rules.append("Service-level multiplier: not applied (1× base requirement).")
-
-    # Manual exclusions
-    if excl_ids:
-        active_rules.append(f"Manual exclusions: {', '.join(excl_ids)} removed from supplier pool.")
-    else:
-        inactive_rules.append("Manual exclusions: none.")
-
-    st.markdown("**Active Business Rules**")
-    for rule in active_rules:
-        st.markdown(f"- {rule}")
-
-    st.markdown("**Inactive Business Rules**")
-    for rule in inactive_rules:
-        st.markdown(f"- {rule}")
-
-    # ── 7. Excluded Suppliers ─────────────────────────────────────────────────
-    excl_compliance = [e for e in excl if "compliance" in e.get("exclusion_reason", "")]
-    excl_zero       = [e for e in excl if e.get("exclusion_reason") == "zero_allocation"]
-    excl_manual     = [e for e in excl if e.get("exclusion_reason") == "excluded_by_user_scenario"]
-
-    if excl_compliance or excl_zero or excl_manual:
-        st.markdown("**Excluded Suppliers**")
-        excl_rows = []
-        for e in excl:
-            reason_map = {
-                "zero_allocation":           "Not selected by LP (zero allocation)",
-                "excluded_by_user_scenario": "Manually excluded for this scenario",
-            }
-            reason_raw  = e.get("exclusion_reason", "")
-            reason_disp = reason_map.get(reason_raw) or f"Compliance gate ({e.get('compliance_eligibility', 0):.0%} eligibility)"
-            excl_rows.append({
-                "Supplier":    e.get("supplier_id", ""),
-                "Country":     e.get("country_code", ""),
-                "Reason":      reason_disp,
-            })
-        st.dataframe(
-            pd.DataFrame(excl_rows),
-            use_container_width=True,
-            hide_index=True,
+        # Recommendations with real values
+        _top_supplier = alloc[0].get("supplier_id", "primary supplier") if alloc else "primary supplier"
+        _lead_m = _re.search(r'[Ll]ead[- ]time[:\s]+(\d+)', exec_summary)
+        _lead_str = f"{_lead_m.group(1)}-week" if _lead_m else "supplier"
+        st.markdown(
+            f"- Place purchase orders with **{_top_supplier}** immediately to account for "
+            f"{_lead_str} lead time before Week {shortfall_week}.\n"
+            f"- Confirm safety stock replenishment schedule with all facilities flagged above "
+            f"before the next procurement cycle."
         )
 
     # ── Supplier Deep Dive ─────────────────────────────────────────────────────
-    # Only shown when the LP has selected suppliers to explain.
-    # Lazy: chart is generated on user request and cached in session_state
-    # by a key that encodes (product, Q, lambda) — so a new LP run with
-    # different parameters always loads fresh, never serves a stale result.
     if alloc:
         _pk        = recap.get("product", "")
         _Q         = int(adj_req) if adj_req else int(req.get("total_net_requirement", 5000))
@@ -2479,7 +2364,7 @@ def _render_lp_result(raw: dict) -> None:
         _sup_ids   = [r.get("supplier_id", "") for r in alloc if r.get("supplier_id")]
         _bd_key    = f"_lp_bd_{_pk}_{_Q}_{_lam}"   # session_state cache key
 
-        with st.expander("Tell me more about these suppliers"):
+        with st.expander("Tell me more about the selected suppliers"):
             if _bd_key in st.session_state:
                 st.image(base64.b64decode(st.session_state[_bd_key]))
                 st.caption(
@@ -2511,6 +2396,33 @@ def _render_lp_result(raw: dict) -> None:
     # ── Decision Explanation ──────────────────────────────────────────────────
     with st.expander("How was this decision made?"):
         _render_lp_decision_explanation(raw)
+
+    # ── Excluded Suppliers (expander, shown after explanation) ────────────────
+    excl_compliance = [e for e in excl if "compliance" in e.get("exclusion_reason", "")]
+    excl_zero       = [e for e in excl if e.get("exclusion_reason") == "zero_allocation"]
+    excl_manual     = [e for e in excl if e.get("exclusion_reason") == "excluded_by_user_scenario"]
+
+    if excl_compliance or excl_zero or excl_manual:
+        _excl_label = f"Excluded Suppliers ({len(excl)})"
+        with st.expander(_excl_label):
+            excl_rows = []
+            for e in excl:
+                reason_map = {
+                    "zero_allocation":           "Not selected by LP (zero allocation)",
+                    "excluded_by_user_scenario": "Manually excluded for this scenario",
+                }
+                reason_raw  = e.get("exclusion_reason", "")
+                reason_disp = reason_map.get(reason_raw) or f"Compliance gate ({e.get('compliance_eligibility', 0):.0%} eligibility)"
+                excl_rows.append({
+                    "Supplier": e.get("supplier_id", ""),
+                    "Country":  e.get("country_code", ""),
+                    "Reason":   reason_disp,
+                })
+            st.dataframe(
+                pd.DataFrame(excl_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 def _render_procurement_status_bar(pending_products: list | None = None) -> None:
@@ -2919,17 +2831,29 @@ def render_lp_approval():
     # Supplier breakdowns are accessible via the "Tell me more" deep-dive expander.
 
     st.subheader("LP Optimization Results — Pending Your Approval")
-    st.info(
-        "Review the optimization results below. "
-        "**Approve** to include in the session plan, or **Discard** to exclude."
-    )
 
-    # ── Approve / Discard — rendered above LP content so controls are immediately
-    # visible without scrolling, regardless of result length.
+    # ── Session procurement status — shows previously approved products and
+    # exposes the "Complete Procurement Plan" button.
+    _pending_labels = [
+        k.replace("lp_", "").replace("_", " ").title() for k in raw.keys()
+    ]
+    _render_procurement_status_bar(pending_products=_pending_labels)
+
+    # ── LP result content — one block per product ──────────────────────────────
+    for product_key, result_dict in raw.items():
+        product_label = product_key.replace("lp_", "").replace("_", " ").title()
+        st.markdown(f"### {product_label}")
+        _render_lp_result(result_dict)
+
+    # ── Approve / Discard — at the very bottom, below all content + expanders ──
     # direct_mode=True means the result came from _run_lp_direct() — no active
     # LangGraph session exists, so Command(resume=...) must NOT be called.
     is_direct = lp_interrupt.get("direct_mode", False)
-    # config is only needed for graph-mode approve/discard; guard thread_id access.
+    st.divider()
+    st.info(
+        "Review the optimization results above. "
+        "**Approve** to include in the session plan, or **Discard** to exclude."
+    )
     col1, col2 = st.columns(2)
 
     with col1:
@@ -2975,26 +2899,6 @@ def render_lp_approval():
             st.session_state.lp_partial_state = {}
             st.session_state.saved_plan = {}
             st.rerun()
-
-    st.divider()
-
-    # ── Session procurement status — shows previously approved products and
-    # exposes the "Complete Procurement Plan" button.  The current pending
-    # product(s) are listed as "Pending Approval" so the user can see exactly
-    # where they are in the session.
-    _pending_labels = [
-        k.replace("lp_", "").replace("_", " ").title() for k in raw.keys()
-    ]
-    _render_procurement_status_bar(pending_products=_pending_labels)
-
-    st.divider()
-
-    # ── LP result content — one block per product ──────────────────────────────
-    for product_key, result_dict in raw.items():
-        product_label = product_key.replace("lp_", "").replace("_", " ").title()
-        st.markdown(f"### {product_label}")
-        _render_lp_result(result_dict)
-        st.divider()
 
 
 # ── Main rendering logic ───────────────────────────────────────────────────────
