@@ -1003,7 +1003,7 @@ def _build_run_entry(result: dict) -> dict:
         "n_eligible":           pool.get("n_eligible_post_compliance", 0),
         "urgency_feasibility":  result.get("urgency_feasibility"),
         "countries":            diag.get("countries_selected", []),
-        "baseline_cost":        baseline.get("total_cost_usd"),
+        "baseline_cost":        baseline.get("baseline_total_cost"),
         "baseline_n_suppliers": len(baseline.get("baseline_selected_suppliers") or []),
         "baseline_country_count": baseline.get("baseline_country_count", 0),
     }
@@ -2606,21 +2606,26 @@ def _build_coverage_rows(current_raw: dict, prev_entry: dict) -> list[dict]:
     Build coverage-impact rows for expedite what-if comparisons.
     Uses urgency_feasibility dicts from the current result and the stored previous entry.
     Omits any row that cannot be cleanly computed from available state.
+
+    Rows returned (in order):
+      1. Earliest Replenishment Week  — when selected suppliers first deliver.
+      2. Additional Weeks Covered by Selection — planning-horizon coverage gain.
+         Shows "Week N onward" on both sides using min_selected_lead_weeks, and
+         a count-based Change cell ("+N covered weeks in planning horizon").
     """
     cur_uf  = current_raw.get("urgency_feasibility") or {}
     prev_uf = prev_entry.get("urgency_feasibility") or {}
 
-    # If neither run has urgency_feasibility, no coverage rows are possible.
     if not cur_uf and not prev_uf:
         return []
 
     rows: list[dict] = []
 
+    # Pre-compute lead-week anchors once; reused across both rows.
+    cur_min_wk  = cur_uf.get("min_selected_lead_weeks")   # None = gap resolved
+    prev_min_wk = prev_uf.get("min_selected_lead_weeks")  # None = was already fine
+
     # ── Earliest Replenishment Week ───────────────────────────────────────────
-    # The first week the selected supplier pool can begin delivering.
-    # Available in urgency_feasibility only when a shortfall exists.
-    cur_min_wk  = cur_uf.get("min_selected_lead_weeks")
-    prev_min_wk = prev_uf.get("min_selected_lead_weeks")
     if cur_min_wk is not None or prev_min_wk is not None:
         cur_val  = f"Week {cur_min_wk}" if cur_min_wk is not None else "Gap resolved"
         prev_val = f"Week {prev_min_wk}" if prev_min_wk is not None else "—"
@@ -2638,48 +2643,31 @@ def _build_coverage_rows(current_raw: dict, prev_entry: dict) -> list[dict]:
             "Change":            chg,
         })
 
-    # ── Immediate Uncovered Weeks ─────────────────────────────────────────────
-    # Weeks where NO eligible supplier can deliver on time.
-    # Current run has no shortfall (urgency_feasibility=None) → 0 uncovered.
-    cur_uncov  = cur_uf.get("uncoverable_weeks", [])
-    prev_uncov = prev_uf.get("uncoverable_weeks", [])
-    # Only show if previous run had coverage data.
-    if prev_uf:
-        cur_uncov_n  = len(cur_uncov)
-        prev_uncov_n = len(prev_uncov)
-        cur_val      = str(cur_uncov_n) if cur_uncov_n > 0 else "None"
-        prev_val     = str(prev_uncov_n) if prev_uncov_n > 0 else "None"
-        diff         = cur_uncov_n - prev_uncov_n
-        chg = (
-            "No change" if diff == 0
-            else ("Gap closed ✓" if cur_uncov_n == 0 and prev_uncov_n > 0
-                  else f"{diff:+d} weeks")
+    # ── Additional Weeks Covered by Selection ────────────────────────────────
+    # Gap weeks present in the previous run that are gone in the current run —
+    # meaning the expedited selection now covers them before they trigger.
+    # Display uses "Week N onward" framing (the point at which the supplier pool
+    # starts covering) rather than a raw count, so the cell reads more naturally.
+    prev_gap      = set(prev_uf.get("gap_weeks", []))
+    cur_gap       = set(cur_uf.get("gap_weeks", []))
+    newly_covered = sorted(prev_gap - cur_gap)
+    # Only show when the previous run had gap weeks and there is measurable improvement.
+    if prev_gap and newly_covered:
+        n_cov = len(newly_covered)
+        # "Week N onward" = the first week the suppliers can cover (min_selected_lead_weeks).
+        prev_cov_val = (
+            f"Week {prev_min_wk} onward" if prev_min_wk is not None else "—"
+        )
+        cur_cov_val = (
+            f"Week {cur_min_wk} onward"
+            if cur_min_wk is not None
+            else "All weeks covered"
         )
         rows.append({
-            "Metric":            "Immediate Uncovered Weeks",
-            "Previous Scenario": prev_val,
-            "What-If Scenario":  cur_val,
-            "Change":            chg,
-        })
-
-    # ── Weeks Now Covered ─────────────────────────────────────────────────────
-    # Gap weeks that were present in the previous run but are gone in the current run.
-    # "Covered" means: selected suppliers in the current run can reach them on time
-    # (i.e., the week is no longer in gap_weeks at all).
-    prev_gap = set(prev_uf.get("gap_weeks", []))
-    cur_gap  = set(cur_uf.get("gap_weeks", []))
-    newly_covered = sorted(prev_gap - cur_gap)
-    # Only show this row when the previous run actually had gap weeks.
-    if prev_gap:
-        n_cov    = len(newly_covered)
-        cur_val  = f"{n_cov} week(s)" if n_cov > 0 else "—"
-        prev_val = "—"
-        chg      = f"+{n_cov} covered" if n_cov > 0 else "No change"
-        rows.append({
-            "Metric":            "Weeks Now Covered by Selection",
-            "Previous Scenario": prev_val,
-            "What-If Scenario":  cur_val,
-            "Change":            chg,
+            "Metric":            "Additional Weeks Covered by Selection",
+            "Previous Scenario": prev_cov_val,
+            "What-If Scenario":  cur_cov_val,
+            "Change":            f"+{n_cov} covered weeks in planning horizon",
         })
 
     return rows
@@ -2723,8 +2711,17 @@ def _render_whatif_comparison(current_raw: dict, prev_entry: dict) -> None:
     prev_ctries   = prev_entry.get("countries", [])
 
     def _delta_currency(cur, prev):
+        """Delta for large dollar amounts (total cost).  Threshold: $0.01."""
         d = cur - prev
         return "No change" if abs(d) < 0.01 else f"${d:+,.2f}"
+
+    def _delta_unit_cost(cur, prev):
+        """Delta for per-unit costs displayed to 4 decimal places.
+        Threshold: $0.00005 (half of the last displayed digit) so that any
+        difference visible at the :.4f precision is reported rather than
+        suppressed.  Formats as +$0.0068 rather than the coarser ,.2f style."""
+        d = cur - prev
+        return "No change" if abs(d) < 0.00005 else f"${d:+.4f}"
 
     def _delta_float(cur, prev, decimals=4):
         d = cur - prev
@@ -2752,7 +2749,7 @@ def _render_whatif_comparison(current_raw: dict, prev_entry: dict) -> None:
             "Metric":            "Average Unit Cost",
             "Previous Scenario": f"${prev_avg_cost:.4f}",
             "What-If Scenario":  f"${cur_avg_cost:.4f}",
-            "Change":            _delta_currency(cur_avg_cost, prev_avg_cost),
+            "Change":            _delta_unit_cost(cur_avg_cost, prev_avg_cost),
         },
         {
             "Metric":            "Weighted Avg Risk Penalty",
@@ -2924,7 +2921,7 @@ def _render_lp_result(raw: dict) -> None:
     total_units = sum(r.get("allocated_qty", 0) for r in alloc)
 
     # Baseline delta
-    base_cost   = base.get("total_cost_usd") if base else None
+    base_cost   = base.get("baseline_total_cost") if base else None
     if base_cost and base_cost > 0:
         delta     = total_cost - base_cost
         delta_pct = delta / base_cost * 100
@@ -3419,12 +3416,12 @@ def _render_executive_summary() -> None:
     "Complete Procurement Plan".
 
     Sections:
-        A  Procurement Overview
-        B  Product-Level Summary Table
-        C  Baseline Comparison
-        D  Supply Coverage / Shortfall Summary
-        E  Forward-Looking Note
-        F  Final Narrative
+        Procurement Overview
+        Product-Level Summary
+        Baseline vs Optimized Comparison
+        Supply Coverage & Shortfall Summary
+        Forward-Looking Outlook
+        Executive Assessment
     """
     import pandas as _pd
 
@@ -3445,40 +3442,29 @@ def _render_executive_summary() -> None:
         sum(r.get("lambda_risk", 0.5) for r in approved) / len(approved)
         if approved else 0.5
     )
-    if avg_lambda == 0.0:
-        risk_profile_label = "Cost-only (no risk weighting)"
-    elif avg_lambda <= 0.25:
-        risk_profile_label = f"Cost-focused (avg λ = {avg_lambda:.2f})"
-    elif avg_lambda <= 0.5:
-        risk_profile_label = f"Balanced (avg λ = {avg_lambda:.2f})"
-    elif avg_lambda <= 1.0:
-        risk_profile_label = f"Risk-averse (avg λ = {avg_lambda:.2f})"
-    else:
-        risk_profile_label = f"Risk-priority (avg λ = {avg_lambda:.2f})"
 
     approved_product_names = [
         r.get("product", "unknown").replace("_", " ").title() for r in approved
     ]
 
     # ─────────────────────────────────────────────────────────────────────────
-    # A. Procurement Overview
+    # Procurement Overview
     # ─────────────────────────────────────────────────────────────────────────
-    st.subheader("A  Procurement Overview")
-    col1, col2, col3, col4 = st.columns(4)
+    st.subheader("Procurement Overview")
+    col1, col2, col3 = st.columns(3)
     col1.metric("Products Procured", len(approved))
     col2.metric("Total Units", f"{total_qty:,}")
     col3.metric("Total Estimated Cost", f"${total_cost:,.2f}")
-    col4.metric("Avg Risk Profile", risk_profile_label)
 
-    st.markdown(
-        f"**Products successfully procured:** {', '.join(approved_product_names)}"
+    st.success(
+        f"**Products Successfully Procured:** {', '.join(approved_product_names)}"
     )
     st.divider()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # B. Product-Level Summary Table
+    # Product-Level Summary
     # ─────────────────────────────────────────────────────────────────────────
-    st.subheader("B  Product-Level Summary")
+    st.subheader("Product-Level Summary")
     _rows_b = []
     for r in approved:
         product_label = r.get("product", "unknown").replace("_", " ").title()
@@ -3487,21 +3473,14 @@ def _render_executive_summary() -> None:
             a.get("supplier_name") or a.get("supplier_id", "?") for a in alloc
         ]
         countries = r.get("countries") or []
-        div_mode  = r.get("diversification_mode", "none")
-        div_label = (
-            "Country-diversified" if div_mode == "country_diversified"
-            else "Share-capped" if div_mode == "supplier_share_only"
-            else "None"
-        )
         _rows_b.append({
-            "Product":          product_label,
-            "Units":            f"{r.get('allocated_qty') or 0:,}",
-            "Cost (USD)":       f"${r.get('total_cost') or 0.0:,.2f}",
-            "Suppliers":        ", ".join(supplier_names) if supplier_names else "—",
-            "# Suppliers":      r.get("n_suppliers", 0),
-            "Countries":        ", ".join(countries) if countries else "—",
-            "Risk (λ)":         r.get("lambda_risk", 0.5),
-            "Diversification":  div_label,
+            "Product":      product_label,
+            "Units":        f"{r.get('allocated_qty') or 0:,}",
+            "Cost (USD)":   f"${r.get('total_cost') or 0.0:,.2f}",
+            "Suppliers":    ", ".join(supplier_names) if supplier_names else "—",
+            "# Suppliers":  r.get("n_suppliers", 0),
+            "Countries":    ", ".join(countries) if countries else "—",
+            "Risk (λ)":     r.get("lambda_risk", 0.5),
         })
     st.dataframe(
         _pd.DataFrame(_rows_b),
@@ -3511,9 +3490,9 @@ def _render_executive_summary() -> None:
     st.divider()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # C. Baseline Comparison
+    # Baseline vs Optimized Comparison
     # ─────────────────────────────────────────────────────────────────────────
-    st.subheader("C  Baseline Comparison")
+    st.subheader("Baseline vs Optimized Comparison")
     st.caption(
         "Each approved plan is compared to the cheapest feasible unconstrained plan "
         "(λ = 0, no diversification, max share = 100%) for the same demand level."
@@ -3530,34 +3509,28 @@ def _render_executive_summary() -> None:
         countries = r.get("countries") or []
 
         if b_cost and b_cost > 0:
-            delta_abs = cost - b_cost
-            delta_pct = (delta_abs / b_cost) * 100
-            if abs(delta_pct) <= 1.0:
-                classification = "Negligible"
-            elif abs(delta_pct) <= 10.0:
-                classification = "Modest"
-            else:
-                classification = "Material"
-            delta_str = f"+${delta_abs:,.2f}" if delta_abs >= 0 else f"-${abs(delta_abs):,.2f}"
-            pct_str   = f"+{delta_pct:.1f}%" if delta_pct >= 0 else f"{delta_pct:.1f}%"
-            sup_delta = n_sup - b_n_sup
+            delta_abs  = cost - b_cost
+            delta_pct  = (delta_abs / b_cost) * 100
+            delta_str  = f"+${delta_abs:,.2f}" if delta_abs >= 0 else f"-${abs(delta_abs):,.2f}"
+            pct_str    = f"+{delta_pct:.1f}%" if delta_pct >= 0 else f"{delta_pct:.1f}%"
+            sup_delta  = n_sup - b_n_sup
             ctry_delta = len(countries) - b_n_ctry
+            sup_str    = f"+{sup_delta}" if sup_delta >= 0 else str(sup_delta)
+            ctry_str   = f"+{ctry_delta}" if ctry_delta >= 0 else str(ctry_delta)
         else:
-            delta_str = "N/A"
-            pct_str   = "N/A"
-            classification = "N/A"
-            sup_delta = "N/A"
-            ctry_delta = "N/A"
+            delta_str = "—"
+            pct_str   = "—"
+            sup_str   = "—"
+            ctry_str  = "—"
 
         _rows_c.append({
-            "Product":           product_label,
-            "Approved Cost":     f"${cost:,.2f}",
-            "Baseline Cost":     f"${b_cost:,.2f}" if b_cost else "N/A",
-            "Cost Delta":        delta_str,
-            "Delta %":           pct_str,
-            "Premium Class":     classification,
-            "Supplier Δ vs Base": f"+{sup_delta}" if isinstance(sup_delta, int) and sup_delta >= 0 else str(sup_delta),
-            "Country Δ vs Base":  f"+{ctry_delta}" if isinstance(ctry_delta, int) and ctry_delta >= 0 else str(ctry_delta),
+            "Product":            product_label,
+            "Baseline Cost":      f"${b_cost:,.2f}" if b_cost else "—",
+            "Optimized Cost":     f"${cost:,.2f}",
+            "Risk Premium ($)":   delta_str,
+            "Risk Premium (%)":   pct_str,
+            "Supplier Δ vs Base": sup_str,
+            "Country Δ vs Base":  ctry_str,
         })
     st.dataframe(
         _pd.DataFrame(_rows_c),
@@ -3569,28 +3542,36 @@ def _render_executive_summary() -> None:
         session_delta_abs = total_cost - total_baseline
         session_delta_pct = (session_delta_abs / total_baseline) * 100
         if abs(session_delta_pct) <= 1.0:
-            session_class = "negligible"
+            _premium_interp = (
+                f"The {session_delta_pct:+.1f}% premium is negligible — risk weighting and "
+                f"diversification added virtually no cost over the cheapest available option."
+            )
         elif abs(session_delta_pct) <= 10.0:
-            session_class = "modest"
+            _premium_interp = (
+                f"The {session_delta_pct:+.1f}% premium is modest — a reasonable trade-off for "
+                f"improved supplier diversification and reduced concentration risk."
+            )
         else:
-            session_class = "material"
-        direction = "above" if session_delta_abs >= 0 else "below"
-        st.info(
-            f"**Session total risk/diversification premium:** "
-            f"${abs(session_delta_abs):,.2f} ({abs(session_delta_pct):.1f}% {direction} "
-            f"the cost-only baseline) — **{session_class}**"
+            _premium_interp = (
+                f"The {session_delta_pct:+.1f}% premium is material — driven by diversification "
+                f"and risk constraints. This is justifiable as insurance against supply disruption."
+            )
+        st.markdown(
+            f"- {_premium_interp}\n"
+            f"- **Session total:** Optimized at **${total_cost:,.2f}** vs cost-only baseline of "
+            f"**${total_baseline:,.2f}** (risk premium: **${abs(session_delta_abs):,.2f}**).\n"
+            f"- The baseline reflects the cheapest single-supplier option with no risk or "
+            f"diversification weighting — the premium quantifies what was paid for resilience."
         )
+    else:
+        st.caption("Baseline comparison unavailable — baseline data not present for this run.")
     st.divider()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # D. Supply Coverage / Shortfall Summary
+    # Supply Coverage & Shortfall Summary
     # ─────────────────────────────────────────────────────────────────────────
-    # Classification uses the same logic as the urgency section in _render_lp_result():
-    #   earliest_replenishment_week = max(1, round(min_selected_lead_time_days / 7))
-    # Rows with Forecast Week < earliest → NOT COVERED (true immediate risk)
-    # Rows with Forecast Week >= earliest → COVERED (expected supplier fulfillment)
-    # Source rows: query_triggered_rows_structured() — net_requirement > 0 only.
-    st.subheader("D  Supply Coverage & Shortfall Summary")
+    st.subheader("Supply Coverage & Shortfall Summary")
+    _covered_pct_global: float | None = None
     try:
         from tools.pipeline_queries import (
             query_triggered_rows_structured as _qtr,
@@ -3599,8 +3580,7 @@ def _render_executive_summary() -> None:
         _trig_data = _qtr()
         _trig_rows = _trig_data.get("rows", [])
 
-        # Step 1 — Build coverage map: product → earliest_replenishment_week
-        # Uses selected supplier IDs stored in the approved run's allocation list.
+        # Build coverage map: product → earliest_replenishment_week
         _coverage_map: dict[str, int | None] = {}
         for _apr in approved:
             _prd = _apr.get("product", "")
@@ -3616,7 +3596,7 @@ def _render_executive_summary() -> None:
                         _min_days = min(_lt_map.values())
                         _coverage_map[_prd] = max(1, round(_min_days / 7.0))
                     else:
-                        _coverage_map[_prd] = None  # conservative: unknown → all uncovered
+                        _coverage_map[_prd] = None
                 except Exception:
                     _coverage_map[_prd] = None
             else:
@@ -3624,15 +3604,15 @@ def _render_executive_summary() -> None:
 
         approved_products_keys = [r.get("product", "") for r in approved]
 
-        # Step 2 — Filter to approved products and classify each row
+        # Classify trigger rows
         _not_covered: list[dict] = []
         _covered:     list[dict] = []
+        _cum_nc: dict[tuple, float] = {}
+        _cum_cv: dict[tuple, float] = {}
 
         def _build_section_d_row(row: dict, cum_press: float) -> dict:
             _ss   = row.get("Safety Stock Reserve", 0)
             _need = row.get("Procurement Need", 0)
-            # SS Utilization = (Cumulative Procurement Pressure / Safety Stock) × 100
-            # Same formula as urgency section — true value, no cap.
             _ss_util = (cum_press / _ss * 100) if _ss > 0 else 100.0
             return {
                 "Forecast Week":                   row.get("Forecast Week", ""),
@@ -3644,31 +3624,65 @@ def _render_executive_summary() -> None:
                 "Safety Stock Utilization (%)":    f"{_ss_util:.1f}%",
             }
 
-        # Accumulate cumulative procurement pressure per (component, facility) — separate
-        # accumulators for uncovered and covered tracks to reflect their distinct windows.
-        _cum_nc: dict[tuple, float] = {}
-        _cum_cv: dict[tuple, float] = {}
-
         for row in sorted(
             (r for r in _trig_rows if r.get("Component", "") in approved_products_keys),
             key=lambda x: x.get("Forecast Week", 0),
         ):
-            _prod = row.get("Component", "")
+            _prod    = row.get("Component", "")
             _earliest = _coverage_map.get(_prod)
-            _fw = row.get("Forecast Week", 0)
-            _fc = (_prod, row.get("Facility", ""))
-            _need = row.get("Procurement Need", 0)
-
+            _fw      = row.get("Forecast Week", 0)
+            _fc      = (_prod, row.get("Facility", ""))
+            _need    = row.get("Procurement Need", 0)
             if _earliest is None or _fw < _earliest:
-                # NOT COVERED — true immediate risk
                 _cum_nc[_fc] = _cum_nc.get(_fc, 0.0) + _need
                 _not_covered.append(_build_section_d_row(row, _cum_nc[_fc]))
             else:
-                # COVERED — expected to be fulfilled by selected supplier replenishment
                 _cum_cv[_fc] = _cum_cv.get(_fc, 0.0) + _need
                 _covered.append(_build_section_d_row(row, _cum_cv[_fc]))
 
-        # Step 3 — Render Table A: Uncovered Shortfall
+        # Per-product coverage summary table
+        _total_trigger_rows = len(_not_covered) + len(_covered)
+        _covered_pct_global = (
+            len(_covered) / _total_trigger_rows * 100 if _total_trigger_rows else 100.0
+        )
+
+        if _coverage_map:
+            _cov_summary = []
+            for _prd, _ew in _coverage_map.items():
+                _prd_rows = [r for r in _trig_rows if r.get("Component", "") == _prd]
+                _prd_cov  = sum(
+                    1 for r in _prd_rows
+                    if _ew is not None and r.get("Forecast Week", 0) >= _ew
+                )
+                _prd_tot  = len(_prd_rows)
+                _prd_pct  = (_prd_cov / _prd_tot * 100) if _prd_tot else 100.0
+                _ew_label = f"Week {_ew}" if _ew is not None else "Unknown (lead time unavailable)"
+                _cov_summary.append({
+                    "Product":                       _prd.replace("_", " ").title(),
+                    "Earliest Replenishment Week":   _ew_label,
+                    "Trigger Rows Covered":          f"{_prd_cov} / {_prd_tot}",
+                    "% Planning Horizon Covered":    f"{_prd_pct:.0f}%",
+                })
+
+            if _covered_pct_global >= 100:
+                st.success(
+                    f"**100% of triggered procurement windows are covered** by "
+                    f"selected supplier replenishment timing."
+                )
+            elif _covered_pct_global >= 70:
+                st.warning(
+                    f"**{_covered_pct_global:.0f}% of triggered procurement windows are covered.** "
+                    f"{len(_not_covered)} row(s) require expedited or spot sourcing."
+                )
+            else:
+                st.error(
+                    f"**{_covered_pct_global:.0f}% of triggered procurement windows are covered.** "
+                    f"{len(_not_covered)} row(s) fall before selected-supplier replenishment — "
+                    f"emergency sourcing required."
+                )
+            st.dataframe(_pd.DataFrame(_cov_summary), use_container_width=True, hide_index=True)
+
+        # Uncovered Shortfall
         st.markdown("##### Uncovered Shortfall — Immediate Procurement Risk")
         if _not_covered:
             st.error(
@@ -3687,7 +3701,7 @@ def _render_executive_summary() -> None:
                 "fall within or after selected-supplier replenishment timing."
             )
 
-        # Step 4 — Render Table B: Covered Demand
+        # Covered Demand
         st.markdown("##### Covered Demand — Expected to be Fulfilled by Selected Suppliers")
         if _covered:
             st.info(
@@ -3703,47 +3717,112 @@ def _render_executive_summary() -> None:
         else:
             st.caption("No covered-demand rows found for approved products in the trigger view.")
 
-        # Step 5 — Coverage week summary per product
-        if _coverage_map:
-            _cov_summary = []
-            for _prd, _ew in _coverage_map.items():
-                _ew_label = f"Week {_ew}" if _ew is not None else "Unknown (lead time unavailable)"
-                _cov_summary.append({
-                    "Product": _prd.replace("_", " ").title(),
-                    "Earliest Supplier Replenishment": _ew_label,
-                })
-            st.caption("**Coverage reference — earliest_replenishment_week per product:**")
-            st.dataframe(_pd.DataFrame(_cov_summary), use_container_width=True, hide_index=True)
-
     except Exception as _e:
         st.info(f"Supply coverage data unavailable: {_e}")
     st.divider()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # E. Forward-Looking Note
+    # Forward-Looking Outlook
     # ─────────────────────────────────────────────────────────────────────────
-    st.subheader("E  Forward-Looking Note")
-    _fwd_products = ", ".join(approved_product_names)
-    st.markdown(
-        f"- **Coverage:** The approved plan covers the current planning horizon "
-        f"for **{_fwd_products}**.\n"
-        f"- **Lead times:** Supplier lead times were embedded in the LP objective, "
-        f"ensuring orders placed now arrive within the urgency window.\n"
-        f"- **Next cycle:** Demand beyond the current planning horizon should be "
-        f"re-evaluated using updated forecasts and refreshed inventory positions.\n"
-        f"- **Constraints:** Any active diversification constraints (country-diversified "
-        f"or share-capped) should be carried forward to subsequent planning runs."
+    st.subheader("Forward-Looking Outlook")
+    _fwd_lines = []
+
+    if _covered_pct_global is not None:
+        if _covered_pct_global >= 100:
+            _fwd_lines.append(
+                f"- **Coverage:** 100% of triggered procurement windows are covered by the "
+                f"approved plan. No immediate sourcing gaps identified for "
+                f"{', '.join(approved_product_names)}."
+            )
+        else:
+            _fwd_lines.append(
+                f"- **Coverage:** {_covered_pct_global:.0f}% of triggered procurement windows "
+                f"are covered. Uncovered rows require expedited or spot-market sourcing "
+                f"before the next planning cycle."
+            )
+    else:
+        _fwd_lines.append(
+            f"- **Coverage:** The approved plan covers the current planning horizon "
+            f"for **{', '.join(approved_product_names)}**."
+        )
+
+    _fwd_lines.append(
+        "- **Lead times:** Supplier lead times were embedded in the LP objective, "
+        "ensuring orders placed now arrive within the planning window. "
+        "Place purchase orders within the next 8–10 weeks to maintain schedule."
     )
+    _fwd_lines.append(
+        "- **Next planning cycle:** Demand beyond the current horizon should be "
+        "re-evaluated using updated forecasts and refreshed on-hand inventory positions. "
+        "Re-run the optimizer at the start of each planning cycle to capture price and "
+        "lead-time changes."
+    )
+
+    _carryover = []
+    for r in approved:
+        dm = r.get("diversification_mode", "none")
+        if dm == "country_diversified":
+            _carryover.append(
+                f"{r.get('product','').replace('_',' ').title()} (country-diversified)"
+            )
+        elif dm == "supplier_share_only":
+            _max_share = r.get("max_supplier_share", 1.0)
+            _carryover.append(
+                f"{r.get('product','').replace('_',' ').title()} "
+                f"(share-capped at {_max_share:.0%})"
+            )
+    if _carryover:
+        _fwd_lines.append(
+            f"- **Carryover constraints:** Active diversification constraints should be "
+            f"carried forward to subsequent runs: {'; '.join(_carryover)}."
+        )
+
+    st.markdown("\n".join(_fwd_lines))
     st.divider()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # F. Final Narrative
+    # Executive Assessment
     # ─────────────────────────────────────────────────────────────────────────
-    st.subheader("F  Executive Assessment")
+    st.subheader("Executive Assessment")
 
-    # Build constraint summary
+    # What was done
+    st.markdown(
+        f"- **What was done:** Procurement plans approved for "
+        f"**{len(approved)} product(s)** ({', '.join(approved_product_names)}) — "
+        f"**{total_qty:,} units** at an estimated cost of **${total_cost:,.2f}**."
+    )
+
+    # Why it is optimal
+    if avg_lambda == 0.0:
+        _opt_reason = (
+            "the optimizer minimized cost across compliant suppliers with no additional "
+            "risk weighting"
+        )
+    elif avg_lambda <= 0.25:
+        _opt_reason = (
+            f"cost was the primary objective with light risk consideration "
+            f"(avg λ = {avg_lambda:.2f})"
+        )
+    elif avg_lambda <= 0.5:
+        _opt_reason = (
+            f"cost and supplier risk were jointly minimized (avg λ = {avg_lambda:.2f}), "
+            f"favoring a balanced mix of efficiency and resilience"
+        )
+    elif avg_lambda <= 1.0:
+        _opt_reason = (
+            f"risk aversion was prioritized over cost minimization (avg λ = {avg_lambda:.2f}), "
+            f"selecting more stable suppliers even at a cost premium"
+        )
+    else:
+        _opt_reason = (
+            f"supplier risk was the primary decision driver (avg λ = {avg_lambda:.2f}), "
+            f"reflecting a risk-first procurement posture"
+        )
+    st.markdown(f"- **Why it is optimal:** Under the configured constraints, {_opt_reason}.")
+
+    # Tradeoffs
     _constraint_parts = []
-    _div_counts = {}
+    _div_counts: dict[str, int] = {}
     for r in approved:
         dm = r.get("diversification_mode", "none")
         _div_counts[dm] = _div_counts.get(dm, 0) + 1
@@ -3761,23 +3840,6 @@ def _render_executive_summary() -> None:
     if _urgency_runs:
         _constraint_parts.append(f"urgency mode active on {len(_urgency_runs)} product(s)")
 
-    # What was done
-    st.markdown(
-        f"- **What was done:** Procurement plans approved for "
-        f"**{len(approved)} product(s)** ({', '.join(approved_product_names)}) — "
-        f"**{total_qty:,} units** at an estimated cost of **${total_cost:,.2f}**."
-    )
-
-    # Why it is optimal
-    _opt_reason = (
-        "the optimizer minimized cost across compliant suppliers with no additional weighting"
-        if avg_lambda == 0.0
-        else f"cost and supplier risk were jointly minimized (avg λ = {avg_lambda:.2f}), "
-             f"favoring a more stable supplier mix over the cheapest available options"
-    )
-    st.markdown(f"- **Why it is optimal:** Under the configured constraints, {_opt_reason}.")
-
-    # Tradeoffs
     _tradeoff_parts = []
     if _constraint_parts:
         _tradeoff_parts.append("; ".join(_constraint_parts).capitalize())
@@ -3793,19 +3855,50 @@ def _render_executive_summary() -> None:
         else:
             _tradeoff_parts.append(
                 f"cost premium vs unconstrained baseline is material ({_delta_pct:.1f}%) — "
-                "driven by diversification and risk constraints; justifiable as insurance against concentration risk"
+                "driven by diversification and risk constraints; justifiable as insurance "
+                "against concentration risk"
             )
     if _tradeoff_parts:
         st.markdown(f"- **Tradeoffs:** {'; '.join(_tradeoff_parts)}.")
     else:
         st.markdown("- **Tradeoffs:** No significant cost-risk tradeoffs identified for this session.")
 
+    # Country concentration risk — only flag if ≥2/3 of allocated suppliers share a country
+    _country_conc_warnings = []
+    for r in approved:
+        _alloc_r = r.get("allocation") or []
+        _n_alloc = len(_alloc_r)
+        if _n_alloc < 2:
+            continue
+        _country_counts: dict[str, int] = {}
+        for _a in _alloc_r:
+            _cc = _a.get("country_code", "?")
+            _country_counts[_cc] = _country_counts.get(_cc, 0) + 1
+        for _cc, _cnt in _country_counts.items():
+            if _cnt >= max(2, round(_n_alloc * 2 / 3)):
+                _prd_label = r.get("product", "").replace("_", " ").title()
+                _country_conc_warnings.append(
+                    f"{_prd_label}: {_cnt}/{_n_alloc} suppliers from {_cc}"
+                )
+
+    if _country_conc_warnings:
+        st.markdown(
+            f"- **Country concentration risk:** {'; '.join(_country_conc_warnings)}. "
+            f"Consider running with `country_diversified` mode to reduce single-country exposure."
+        )
+
     # Risks remaining
-    st.markdown(
-        "- **Risks remaining:** Lead-time exposure in high-urgency weeks, "
-        "potential country concentration, and supplier-level disruption risk "
-        "should be monitored through the next planning cycle."
+    _risks = [
+        "Lead-time exposure in high-urgency weeks should be monitored through the next "
+        "planning cycle."
+    ]
+    if not _country_conc_warnings:
+        _risks.append("No significant country concentration detected in the current plan.")
+    _risks.append(
+        "Supplier-level disruption risk and price volatility should be reviewed before "
+        "the next procurement run."
     )
+    st.markdown(f"- **Risks remaining:** {' '.join(_risks)}")
 
     st.divider()
     if st.button("← Back to Procurement Agent", key="exit_exec_summary_btn"):
