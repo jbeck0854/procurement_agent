@@ -1632,6 +1632,73 @@ def _narrative_facility_bullets(df, facility_id: str) -> str:
     ])
 
 
+def _render_forecast_summary_structured(s: dict) -> None:
+    """Render a production forecast summary dict as structured Streamlit UI.
+
+    Consumes the dict returned by get_latest_production_forecast_summary().
+    No ASCII blocks — identical data values, clean component-based layout.
+    """
+    import pandas as _pd_fs
+    cov = s["coverage"]
+    dm  = s["demand"]
+
+    # ── Metadata row (subtle caption) ────────────────────────────────────────
+    st.caption(
+        f"Model: **{s['model_version']}**  ·  "
+        f"Forecast run: **{s['forecast_origin_date']}**  ·  "
+        f"Last observed week: **{s['observed_through_week_date']}**  ·  "
+        f"Run ID: {s['forecast_run_id']}"
+    )
+
+    # ── Coverage cards ────────────────────────────────────────────────────────
+    _fc1, _fc2, _fc3, _fc4 = st.columns(4)
+    _fc1.metric("Facilities",             cov["facility_count"])
+    _fc2.metric("SKUs",                   cov["sku_count"])
+    _fc3.metric("Forecast Series",        cov["series_count"])
+    _fc4.metric("Total Forecasted Demand", f"{dm['total_forecasted_demand']:,.0f} units")
+
+    # ── Planning horizon + Demand summary ────────────────────────────────────
+    _col_l, _col_r = st.columns(2)
+    with _col_l:
+        st.markdown("**Planning Horizon**")
+        st.markdown(
+            f"- **Start:** {s['planning_horizon_start_date']}\n"
+            f"- **End:**   {s['planning_horizon_end_date']}\n"
+            f"- **Duration:** {s['horizon_weeks']} weeks"
+        )
+    with _col_r:
+        st.markdown("**Demand Summary**")
+        st.dataframe(
+            _pd_fs.DataFrame([
+                {"Metric": "Total Demand",       "Value": f"{dm['total_forecasted_demand']:,.0f} units"},
+                {"Metric": "Avg Weekly Demand",  "Value": f"{dm['average_weekly_demand']:,.0f} units/week"},
+                {"Metric": "Peak Week",          "Value": f"{dm['peak_week_date']}  →  {dm['peak_week_demand']:,.0f} units"},
+                {"Metric": "Lowest Week",        "Value": f"{dm['lowest_week_date']}  →  {dm['lowest_week_demand']:,.0f} units"},
+            ]),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    # ── Coverage details expander ─────────────────────────────────────────────
+    with st.expander("View Forecast Coverage Details", expanded=False):
+        if cov["grain_valid"]:
+            st.success(
+                f"**Grain check passed** — {cov['actual_rows']:,} rows = "
+                f"{cov['series_count']} series × {cov['week_count']} weeks"
+            )
+        else:
+            st.error(
+                f"**Grain check FAILED** — expected {cov['expected_rows']:,} rows, "
+                f"got {cov['actual_rows']:,}"
+            )
+        st.markdown(
+            f"- **Coverage:** {cov['facility_count']} facilities × "
+            f"{cov['sku_count']} SKUs = **{cov['series_count']} series**\n"
+            f"- **Weeks per series:** {cov['week_count']}\n"
+            f"- **Total rows validated:** {cov['actual_rows']:,}"
+        )
+
+
 def show_trace(trace):
     with st.expander("Execution Trace"):
         # --- Timing breakdown ---
@@ -4250,26 +4317,51 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
         elif st.session_state.historical_demand_verification_pending and _is_proceed_response(prompt):
             st.session_state.historical_demand_verification_pending = False
             # Direct fast path — bypasses orchestrator AND synthesizer entirely.
-            # query_forecast_summary() reads pre-computed DB tables; no LLM involved.
-            # Saves ~12–15s of orchestrator + synthesizer round-trip latency.
+            # Calls get_latest_production_forecast_summary() for the structured dict
+            # so the render helper can use Streamlit components instead of ASCII text.
             with st.spinner("Retrieving forecast summary..."):
-                from tools.pipeline_queries import query_forecast_summary
-                forecast_result = query_forecast_summary()
-                forecast_text = forecast_result.get("content", "")
-            combined = (
-                f"{_KICKOFF_TRANSITION_SENTENCE}\n\n"
-                f"---\n\n"
-                f"**📊 Production Demand Forecast**\n\n"
-                f"```\n{forecast_text}\n```"
-            )
+                import sys as _sys_fs, os as _os_fs
+                _parent_fs = _os_fs.path.join(_os_fs.path.dirname(__file__), "..")
+                if _parent_fs not in _sys_fs.path:
+                    _sys_fs.path.insert(0, _parent_fs)
+                import psycopg2 as _pg2_fs
+                from config import DATABASE_URL as _DB_URL_fs
+                from forecasting.forecast_summary import get_latest_production_forecast_summary as _get_fs
+                _conn_fs = _pg2_fs.connect(_DB_URL_fs)
+                try:
+                    _forecast_s = _get_fs(_conn_fs)
+                finally:
+                    _conn_fs.close()
+
             with st.chat_message("assistant"):
                 st.markdown(_KICKOFF_TRANSITION_SENTENCE)
                 st.divider()
                 st.subheader("📊 Production Demand Forecast")
-                st.code(forecast_text)
+                _render_forecast_summary_structured(_forecast_s)
+
+            # Build clean markdown for message history replay
+            _cov_fs = _forecast_s["coverage"]
+            _dm_fs  = _forecast_s["demand"]
+            _combined_fs = (
+                f"{_KICKOFF_TRANSITION_SENTENCE}\n\n"
+                f"**Production Demand Forecast**\n\n"
+                f"Model: {_forecast_s['model_version']}  ·  "
+                f"Run: {_forecast_s['forecast_run_id']}  ·  "
+                f"Last observed: {_forecast_s['observed_through_week_date']}\n\n"
+                f"| Metric | Value |\n|---|---|\n"
+                f"| Facilities | {_cov_fs['facility_count']} |\n"
+                f"| SKUs | {_cov_fs['sku_count']} |\n"
+                f"| Forecast Series | {_cov_fs['series_count']} |\n"
+                f"| Total Forecasted Demand | {_dm_fs['total_forecasted_demand']:,.0f} units |\n"
+                f"| Avg Weekly Demand | {_dm_fs['average_weekly_demand']:,.0f} units/week |\n"
+                f"| Planning Horizon | {_forecast_s['planning_horizon_start_date']} → "
+                f"{_forecast_s['planning_horizon_end_date']} ({_forecast_s['horizon_weeks']} wks) |\n"
+                f"| Peak Week | {_dm_fs['peak_week_date']} → {_dm_fs['peak_week_demand']:,.0f} units |\n"
+                f"| Lowest Week | {_dm_fs['lowest_week_date']} → {_dm_fs['lowest_week_demand']:,.0f} units |\n"
+            )
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": combined,
+                "content": _combined_fs,
                 "has_trace": False,
                 "summary": "",
             })
