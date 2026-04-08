@@ -994,6 +994,12 @@ def _store_approved_run(result: dict) -> None:
         "urgency":              recap.get("urgency", False),
         "budget_cap":           recap.get("budget_cap"),
         "facility_id":          recap.get("facility_id"),
+        "compliance_threshold": recap.get("compliance_threshold", 0.5),
+        "exclude_supplier_ids": list(recap.get("exclude_supplier_ids") or []),
+        # Extended cost fields — used by what-if comparison section
+        "avg_unit_cost":        cost_sum.get("avg_landed_unit_cost", 0.0),
+        "avg_risk_penalty":     cost_sum.get("avg_risk_penalty_norm", 0.0),
+        "n_eligible":           pool.get("n_eligible_post_compliance", 0),
         # Geographic context
         "countries":            diag.get("countries_selected", []),
         # Baseline comparison — cost-only unconstrained plan for same demand
@@ -2422,6 +2428,188 @@ def _render_lp_decision_explanation(raw: dict) -> None:
     )
 
 
+def _find_prev_same_product_run(product: str, approved_runs: list) -> dict | None:
+    """Return the most recent approved LP run for the given product, or None."""
+    for entry in reversed(approved_runs):
+        if entry.get("product") == product:
+            return entry
+    return None
+
+
+def _whatif_scenario_label(current_recap: dict, prev_entry: dict) -> str:
+    """
+    Build a short, business-facing description of what changed between
+    the previous approved run and the current what-if scenario.
+    Returns a comma-joined phrase, or 'modified scenario' as fallback.
+    """
+    changes: list[str] = []
+
+    cur_urg  = current_recap.get("urgency", False)
+    prev_urg = prev_entry.get("urgency", False)
+    if cur_urg and not prev_urg:
+        changes.append("expedited supplier timing")
+    elif not cur_urg and prev_urg:
+        changes.append("removed urgency mode")
+
+    cur_lam  = float(current_recap.get("lambda_risk", 0.5))
+    prev_lam = float(prev_entry.get("lambda_risk", 0.5))
+    if abs(cur_lam - prev_lam) > 0.001:
+        changes.append("increased risk aversion" if cur_lam > prev_lam else "reduced risk aversion")
+
+    cur_share  = float(current_recap.get("max_supplier_share", 1.0))
+    prev_share = float(prev_entry.get("max_supplier_share", 1.0))
+    if abs(cur_share - prev_share) > 0.001:
+        if cur_share < prev_share:
+            changes.append(f"reduced per-supplier share cap to {int(cur_share * 100)}%")
+        else:
+            changes.append(f"increased per-supplier share cap to {int(cur_share * 100)}%")
+
+    cur_div  = current_recap.get("diversification_mode", "none")
+    prev_div = prev_entry.get("diversification_mode", "none")
+    if cur_div != prev_div:
+        if cur_div == "country_diversified":
+            changes.append("enforced geographic diversification across countries")
+        elif cur_div == "supplier_share_only":
+            changes.append("added supplier share cap constraint")
+        else:
+            changes.append("removed diversification constraint")
+
+    cur_excl  = set(current_recap.get("exclude_supplier_ids") or [])
+    prev_excl = set(prev_entry.get("exclude_supplier_ids") or [])
+    new_excl  = cur_excl - prev_excl
+    if new_excl:
+        changes.append(f"excluded {', '.join(sorted(new_excl))}")
+
+    cur_thr  = float(current_recap.get("compliance_threshold", 0.5))
+    prev_thr = float(prev_entry.get("compliance_threshold", 0.5))
+    if abs(cur_thr - prev_thr) > 0.001:
+        changes.append(f"adjusted compliance threshold to {int(cur_thr * 100)}%")
+
+    cur_budget  = current_recap.get("budget_cap")
+    prev_budget = prev_entry.get("budget_cap")
+    if cur_budget != prev_budget:
+        if cur_budget:
+            changes.append(f"applied budget cap of ${cur_budget:,.0f}")
+        else:
+            changes.append("removed budget cap")
+
+    return ", ".join(changes) if changes else "modified scenario"
+
+
+def _render_whatif_comparison(current_raw: dict, prev_entry: dict) -> None:
+    """
+    Render the What-If Scenario Impact section comparing current pending result
+    against the most recent approved run for the same product.
+    """
+    import pandas as pd
+
+    current_recap = current_raw.get("params_recap", {})
+    current_cost  = current_raw.get("cost_summary", {})
+    current_pool  = current_raw.get("supplier_pool", {})
+    current_alloc = current_raw.get("allocation", [])
+    current_diag  = current_raw.get("constraint_diagnostics", {})
+
+    product_label = current_recap.get("product", "").replace("_", " ").title()
+    scenario_desc = _whatif_scenario_label(current_recap, prev_entry)
+
+    # Current values
+    cur_units    = sum(r.get("allocated_qty", 0) for r in current_alloc)
+    cur_cost     = current_cost.get("total_cost_usd", 0.0)
+    cur_avg_cost = current_cost.get("avg_landed_unit_cost", 0.0)
+    cur_risk     = current_cost.get("avg_risk_penalty_norm", 0.0)
+    cur_n_sel    = current_pool.get("n_selected_by_lp", len(current_alloc))
+    cur_n_elig   = current_pool.get("n_eligible_post_compliance", 0)
+    cur_ctries   = current_diag.get("countries_selected", [])
+
+    # Previous values
+    prev_units    = prev_entry.get("allocated_qty", 0)
+    prev_cost     = prev_entry.get("total_cost", 0.0)
+    prev_avg_cost = prev_entry.get("avg_unit_cost", 0.0)
+    prev_risk     = prev_entry.get("avg_risk_penalty", 0.0)
+    prev_n_sel    = prev_entry.get("n_suppliers", 0)
+    prev_n_elig   = prev_entry.get("n_eligible", 0)
+    prev_ctries   = prev_entry.get("countries", [])
+
+    def _delta_currency(cur, prev):
+        d = cur - prev
+        return "No change" if abs(d) < 0.01 else f"${d:+,.2f}"
+
+    def _delta_float(cur, prev, decimals=4):
+        d = cur - prev
+        return "No change" if abs(d) < 10 ** (-decimals) else f"{d:+.{decimals}f}"
+
+    def _delta_int(cur, prev):
+        d = cur - prev
+        return "No change" if d == 0 else f"{d:+,}"
+
+    rows = [
+        {
+            "Metric":            "Total Units Procured",
+            "Previous Scenario": f"{prev_units:,}",
+            "What-If Scenario":  f"{cur_units:,}",
+            "Change":            _delta_int(cur_units, prev_units),
+        },
+        {
+            "Metric":            "Total Procurement Cost",
+            "Previous Scenario": f"${prev_cost:,.2f}",
+            "What-If Scenario":  f"${cur_cost:,.2f}",
+            "Change":            _delta_currency(cur_cost, prev_cost),
+        },
+        {
+            "Metric":            "Average Unit Cost",
+            "Previous Scenario": f"${prev_avg_cost:.4f}",
+            "What-If Scenario":  f"${cur_avg_cost:.4f}",
+            "Change":            _delta_currency(cur_avg_cost, prev_avg_cost),
+        },
+        {
+            "Metric":            "Weighted Avg Risk Penalty",
+            "Previous Scenario": f"{prev_risk:.4f}",
+            "What-If Scenario":  f"{cur_risk:.4f}",
+            "Change":            _delta_float(cur_risk, prev_risk),
+        },
+        {
+            "Metric":            "Suppliers Selected / Eligible",
+            "Previous Scenario": f"{prev_n_sel} / {prev_n_elig}",
+            "What-If Scenario":  f"{cur_n_sel} / {cur_n_elig}",
+            "Change":            (
+                "No change"
+                if prev_n_sel == cur_n_sel and prev_n_elig == cur_n_elig
+                else f"{prev_n_sel}/{prev_n_elig} → {cur_n_sel}/{cur_n_elig}"
+            ),
+        },
+        {
+            "Metric":            "Countries Represented",
+            "Previous Scenario": ", ".join(sorted(prev_ctries)) if prev_ctries else "—",
+            "What-If Scenario":  ", ".join(sorted(cur_ctries))  if cur_ctries  else "—",
+            "Change":            (
+                "No change"
+                if sorted(prev_ctries) == sorted(cur_ctries)
+                else f"{len(prev_ctries)} → {len(cur_ctries)} countries"
+            ),
+        },
+    ]
+
+    all_no_change = all(r["Change"] == "No change" for r in rows)
+
+    with st.expander("**What-If Scenario Impact**", expanded=True):
+        st.caption(
+            f"What-if scenario detected: {scenario_desc} for **{product_label}**."
+        )
+        st.caption(
+            "Compared against the previous approved scenario for the same product."
+        )
+        if all_no_change:
+            st.info(
+                "What-if modification did not change the supplier allocation "
+                "or summary economics."
+            )
+        st.dataframe(
+            pd.DataFrame(rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
 def _render_lp_result(raw: dict) -> None:
     """
     Render one LP optimization result dict as structured Streamlit output.
@@ -2430,6 +2618,7 @@ def _render_lp_result(raw: dict) -> None:
       1. Requirement Summary
       2. Supplier Allocation  (DataFrame, top 4 rows, no Top Risk Drivers column)
       3. Procurement & Risk Summary
+      3b. What-If Scenario Impact (only when a prior same-product approved run exists)
       4. Supply Urgency & Lead Time Assessment (only when shortfall detected)
       5. "Tell me more about the selected suppliers" expander
       6. "How was this decision made?" expander
@@ -2554,6 +2743,15 @@ def _render_lp_result(raw: dict) -> None:
         use_container_width=True,
         hide_index=True,
     )
+
+    # ── 3b. What-If Scenario Impact ───────────────────────────────────────────
+    # Only shown when a prior approved LP run exists for the same product.
+    _prev_run = _find_prev_same_product_run(
+        recap.get("product"),
+        st.session_state.get("approved_lp_runs", []),
+    )
+    if _prev_run is not None:
+        _render_whatif_comparison(raw, _prev_run)
 
     # ── 4. Supply Urgency & Lead Time Assessment ──────────────────────────────
     # Source: query_triggered_rows_structured() — weekly-trigger semantics only.
