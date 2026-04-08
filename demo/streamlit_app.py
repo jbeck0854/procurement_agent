@@ -1006,6 +1006,10 @@ if "forecast_expander_cache" not in st.session_state:
 # (filter multiselects, expanders) do NOT trigger an unwanted scroll jump.
 if "_scroll_msg_count" not in st.session_state:
     st.session_state._scroll_msg_count = 0
+# One-time anchor scroll target.  Values: None | "exec_summary" | "lp_result_top"
+# Consumed on the first render after it is set; takes priority over scroll-to-bottom.
+if "_pending_scroll" not in st.session_state:
+    st.session_state._pending_scroll = None
 
 # ── LP approval session state ──────────────────────────────────────────────────
 if "waiting_for_lp_approval" not in st.session_state:
@@ -1989,6 +1993,36 @@ def _inject_scroll_to_bottom() -> None:
     )
 
 
+def _inject_scroll_to_anchor(anchor_id: str) -> None:
+    """
+    Inject a zero-height JS component that scrolls the Streamlit main pane
+    to a named anchor element (identified by id).  Used for section-level
+    anchoring (e.g. Final Executive Summary top, LP result top).
+    """
+    import streamlit.components.v1 as _stcomps
+    _stcomps.html(
+        f"""
+        <script>
+        (function() {{
+            var doc = window.parent.document;
+            var anchor = doc.getElementById('{anchor_id}');
+            if (anchor) {{
+                var mainEl = doc.querySelector('section[data-testid="stMain"]')
+                           || doc.querySelector('.main');
+                if (mainEl) {{
+                    var anchorTop = anchor.getBoundingClientRect().top;
+                    var mainTop   = mainEl.getBoundingClientRect().top;
+                    mainEl.scrollTop += anchorTop - mainTop - 20;
+                }}
+            }}
+        }})();
+        </script>
+        """,
+        height=0,
+        scrolling=False,
+    )
+
+
 def show_trace(trace):
     with st.expander("Execution Trace"):
         # --- Timing breakdown ---
@@ -2346,12 +2380,24 @@ for _msg_loop_idx, msg in enumerate(st.session_state.messages):
         show_trace(st.session_state.traces[assistant_index])
         assistant_index += 1
 
-# ── Scroll to newest content after a new message is rendered ──────────────────
-# Only fires when message count changed (new query/response added).
-# Widget interactions (multiselect filters, expander toggles) do NOT trigger
-# a scroll because the count stays the same between those reruns.
-_cur_msg_count = len(st.session_state.messages)
-if _cur_msg_count != st.session_state._scroll_msg_count:
+# ── Scroll to newest content after a new message / section is rendered ────────
+# Priority order:
+#   1. _pending_scroll — one-time anchor to a specific section (consumed after use)
+#   2. Default scroll-to-bottom — fires when message count increased
+# Widget interactions never trigger a scroll because the count stays constant.
+_cur_msg_count  = len(st.session_state.messages)
+_pending_scroll = st.session_state.get("_pending_scroll")
+
+if _pending_scroll:
+    # Consume the pending anchor immediately so it only fires once.
+    st.session_state._pending_scroll = None
+    # Also sync the count so the default scroll doesn't double-fire on next rerun.
+    st.session_state._scroll_msg_count = _cur_msg_count
+    if _pending_scroll == "exec_summary":
+        _inject_scroll_to_anchor("exec-summary-top")
+    elif _pending_scroll == "lp_result_top":
+        _inject_scroll_to_anchor("lp-result-top")
+elif _cur_msg_count != st.session_state._scroll_msg_count:
     st.session_state._scroll_msg_count = _cur_msg_count
     _inject_scroll_to_bottom()
 
@@ -3861,6 +3907,7 @@ def _render_procurement_status_bar(pending_products: list | None = None) -> None
             help="Generate the final executive summary for all approved runs",
         ):
             st.session_state.show_executive_summary = True
+            st.session_state._pending_scroll = "exec_summary"
             st.rerun()
 
 
@@ -3876,6 +3923,9 @@ def _render_executive_summary() -> None:
         Executive Assessment
     """
     import pandas as _pd
+
+    # Anchor target — JS scrolls here when _pending_scroll == "exec_summary"
+    st.markdown('<div id="exec-summary-top"></div>', unsafe_allow_html=True)
 
     approved = st.session_state.get("approved_lp_runs", [])
     if not approved:
@@ -4523,6 +4573,9 @@ def render_lp_approval():
       Discard  — clears the pending result and all modify state.  The run is never
                  stored and cannot be used as a what-if comparison baseline.
     """
+    # Anchor target — JS scrolls here when _pending_scroll == "lp_result_top"
+    st.markdown('<div id="lp-result-top"></div>', unsafe_allow_html=True)
+
     lp_interrupt = st.session_state.pending_lp_result or {}
     raw          = lp_interrupt.get("raw", {})
     partial      = st.session_state.get("lp_partial_state") or {}
@@ -4649,6 +4702,7 @@ def render_lp_approval():
                     "content":   _modify_prompt,
                     "has_trace": False,
                 })
+                st.session_state._pending_scroll = "lp_result_top"
                 with st.spinner("Rerunning optimization…"):
                     _run_lp_direct(_merged)
                 # _run_lp_direct() calls st.rerun() — unreachable below.
