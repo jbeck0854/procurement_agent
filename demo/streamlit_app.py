@@ -932,6 +932,17 @@ if "lp_partial_state" not in st.session_state:
 if "saved_plan" not in st.session_state:
     st.session_state.saved_plan = {}
 
+# ── Modify mode — explicit in-place LP refinement ──────────────────────────────
+# lp_modify_mode: True when user clicked "Modify" — keeps pending result as the
+#   editable baseline; chat input is exposed inside render_lp_approval().
+# lp_modify_baseline: dict keyed by product → entry-format snapshot of the result
+#   that was displayed when Modify was clicked.  Used by _find_prev_same_product_run()
+#   so the what-if comparison table diffs against the pending (not approved) result.
+if "lp_modify_mode" not in st.session_state:
+    st.session_state.lp_modify_mode = False
+if "lp_modify_baseline" not in st.session_state:
+    st.session_state.lp_modify_baseline = {}
+
 # ── Session-level approved LP runs ─────────────────────────────────────────────
 if "approved_lp_runs" not in st.session_state:
     st.session_state.approved_lp_runs = []
@@ -953,14 +964,12 @@ if "historical_demand_verification_pending" not in st.session_state:
 
 # ── Session-level helpers ──────────────────────────────────────────────────────
 
-def _store_approved_run(result: dict) -> None:
-    """Append one approved LP result dict to the session-level store.
+def _build_run_entry(result: dict) -> dict:
+    """Build the standard entry dict from one LP result dict.
 
-    Persists all data needed for session-level synthesis:
-    - run parameters (lambda, share cap, diversification)
-    - cost and allocation totals
-    - baseline comparison record (for cost-premium reporting)
-    - country and supplier selection
+    Used by both _store_approved_run (Approve path) and the Modify baseline
+    snapshot.  Contains every field needed for session-summary synthesis and
+    what-if comparison rendering.
     """
     recap    = result.get("params_recap") or {}
     cost_sum = result.get("cost_summary") or {}
@@ -969,25 +978,18 @@ def _store_approved_run(result: dict) -> None:
     diag     = result.get("constraint_diagnostics") or {}
     baseline = result.get("baseline") or {}
 
-    # Prefer adjusted_requirement (the actual demand floor used by the LP) over
-    # constraint_diagnostics.total_allocated which may not be present.
     allocated_qty = (
         req.get("adjusted_requirement")
         or diag.get("total_allocated")
         or 0
     )
-
-    entry = {
-        # Core identification
+    return {
         "product":              recap.get("product", "unknown"),
-        # Allocation totals
         "allocated_qty":        allocated_qty,
         "total_cost":           cost_sum.get("total_cost_usd", 0.0),
         "n_suppliers":          pool.get("n_selected_by_lp", 0),
-        # Narrative
         "executive_summary":    result.get("executive_summary", ""),
         "allocation":           result.get("allocation", []),
-        # Run parameters — needed to distinguish runs in the session summary
         "lambda_risk":          recap.get("lambda_risk", 0.5),
         "max_supplier_share":   recap.get("max_supplier_share", 1.0),
         "diversification_mode": recap.get("diversification_mode", "none"),
@@ -996,19 +998,106 @@ def _store_approved_run(result: dict) -> None:
         "facility_id":          recap.get("facility_id"),
         "compliance_threshold": recap.get("compliance_threshold", 0.5),
         "exclude_supplier_ids": list(recap.get("exclude_supplier_ids") or []),
-        # Extended cost fields — used by what-if comparison section
         "avg_unit_cost":        cost_sum.get("avg_landed_unit_cost", 0.0),
         "avg_risk_penalty":     cost_sum.get("avg_risk_penalty_norm", 0.0),
         "n_eligible":           pool.get("n_eligible_post_compliance", 0),
-        # Geographic context
+        "urgency_feasibility":  result.get("urgency_feasibility"),
         "countries":            diag.get("countries_selected", []),
-        # Baseline comparison — cost-only unconstrained plan for same demand
-        # (see optimization/README.md §Session-Level Summary Behavior)
         "baseline_cost":        baseline.get("total_cost_usd"),
         "baseline_n_suppliers": len(baseline.get("baseline_selected_suppliers") or []),
         "baseline_country_count": baseline.get("baseline_country_count", 0),
     }
-    st.session_state.approved_lp_runs.append(entry)
+
+
+def _store_approved_run(result: dict) -> None:
+    """Append one approved LP result dict to the session-level approved_lp_runs store."""
+    st.session_state.approved_lp_runs.append(_build_run_entry(result))
+
+
+def _apply_modify_overrides(prompt: str, base_params: dict) -> dict:
+    """Apply LP parameter overrides from a modify-mode user message.
+
+    Used exclusively in modify mode — Gates 1 and 2 (product detection, prior
+    context) are skipped because base_params come directly from the displayed
+    pending LP result.  Applies any detectable overrides on top of that base.
+
+    Handles the full range of modification intents:
+      - risk level    ("more risk averse", "cost only", …)
+      - supplier cap  ("40% cap", "no supplier should exceed 35%", …)
+      - diversification ("different countries", "diversify portfolio", …)
+      - urgency       ("expedite", "urgent", …)
+      - exclusion     ("SUP_HKG_38 unavailable", "what if SUP_X …", "exclude SUP_Y", …)
+      - compliance    ("lower compliance to 45%", …)
+      - budget cap    ("budget cap of $500,000", …)
+    """
+    t      = prompt.lower()
+    merged = dict(base_params)
+
+    # Override lambda_risk
+    for phrase, value in _LAMBDA_MAP:
+        if phrase in t:
+            merged["lambda_risk"] = value
+            break
+
+    # Override max_supplier_share
+    _cap_m = _re.search(r'(\d+)\s*%\s*(?:supplier\s*)?(?:cap|share|max)', t)
+    if not _cap_m:
+        _cap_m = _re.search(
+            r'(?:max\s*(?:supplier\s*)?share|supplier\s*cap)\s*(?:of\s*)?(\d+)\s*%', t
+        )
+    if not _cap_m:
+        _cap_m = _re.search(
+            r'(?:no\s+supplier\s+should\s+exceed|limit\s+supplier(?:\s+\w+){0,2}\s+to)\s+(\d+)\s*%',
+            t,
+        )
+    if _cap_m:
+        _pct = int(_cap_m.group(1))
+        if 0 < _pct <= 100:
+            merged["max_supplier_share"] = round(_pct / 100, 2)
+
+    # Override diversification_mode
+    _DIV = (
+        "diversif", "different countr", "different country", "3 countries",
+        "three countries", "country diversif", "across countries",
+        "each from a different country", "different country of origin",
+    )
+    if any(p in t for p in _DIV):
+        merged["diversification_mode"] = "country_diversified"
+
+    # Override urgency
+    if any(p in t for p in ("urgent", "urgency", "emergency sourcing", "expedite")):
+        merged["urgency"] = True
+
+    # Override exclude_supplier_ids — expanded exclusion context for modify mode
+    # (includes "unavailable" and "what if" phrasing beyond what _parse_lp_followup handles)
+    _xids = _re.findall(r'\bSUP_[A-Z]{3}_\d+\b', prompt)
+    if _xids and any(
+        p in t for p in (
+            "exclude", "unavailable", "without supplier", "remove supplier",
+            "can't use", "cannot use", "becomes unavailable", "not available",
+            "what if", "if supplier",
+        )
+    ):
+        merged["exclude_supplier_ids"] = _xids
+
+    # Override compliance_threshold
+    _comp_m = _re.search(r'compliance\s*(?:threshold|to|at|=)?\s*(\d+)\s*%', t)
+    if not _comp_m:
+        _comp_m = _re.search(r'(\d+)\s*%\s*compliance', t)
+    if _comp_m:
+        _pct = int(_comp_m.group(1))
+        if 0 < _pct <= 100:
+            merged["compliance_threshold"] = round(_pct / 100, 2)
+
+    # Override budget_cap
+    _budget_m = _re.search(r'budget\s*(?:cap|limit|of)?\s*\$?([\d,]+)', t)
+    if _budget_m:
+        try:
+            merged["budget_cap"] = float(_budget_m.group(1).replace(",", ""))
+        except ValueError:
+            pass
+
+    return merged
 
 
 def _format_session_summary(approved_runs: list) -> str:
@@ -2429,25 +2518,40 @@ def _render_lp_decision_explanation(raw: dict) -> None:
 
 
 def _find_prev_same_product_run(product: str, approved_runs: list) -> dict | None:
-    """Return the most recent approved LP run for the given product, or None."""
+    """Return the most relevant comparison baseline for the what-if section.
+
+    Priority:
+      1. lp_modify_baseline — snapshot of the pending result when user clicked Modify.
+         This ensures the what-if table diffs against the PENDING (not approved) run
+         when the user is iterating through modify cycles.
+      2. Most recent approved run for the same product.
+    Returns None if this is the first run for the product.
+    """
+    modify_baseline = st.session_state.get("lp_modify_baseline", {})
+    if product in modify_baseline:
+        return modify_baseline[product]
     for entry in reversed(approved_runs):
         if entry.get("product") == product:
             return entry
     return None
 
 
-def _whatif_scenario_label(current_recap: dict, prev_entry: dict) -> str:
+def _whatif_scenario_label(current_recap: dict, prev_entry: dict) -> tuple[str, bool]:
     """
     Build a short, business-facing description of what changed between
     the previous approved run and the current what-if scenario.
-    Returns a comma-joined phrase, or 'modified scenario' as fallback.
+
+    Returns (description_str, is_expedite_whatif).
+    is_expedite_whatif is True when urgency was toggled ON in this rerun.
     """
     changes: list[str] = []
+    is_expedite = False
 
     cur_urg  = current_recap.get("urgency", False)
     prev_urg = prev_entry.get("urgency", False)
     if cur_urg and not prev_urg:
-        changes.append("expedited supplier timing")
+        is_expedite = True
+        changes.append("expedited replenishment")
     elif not cur_urg and prev_urg:
         changes.append("removed urgency mode")
 
@@ -2493,13 +2597,101 @@ def _whatif_scenario_label(current_recap: dict, prev_entry: dict) -> str:
         else:
             changes.append("removed budget cap")
 
-    return ", ".join(changes) if changes else "modified scenario"
+    desc = ", ".join(changes) if changes else "modified scenario"
+    return desc, is_expedite
+
+
+def _build_coverage_rows(current_raw: dict, prev_entry: dict) -> list[dict]:
+    """
+    Build coverage-impact rows for expedite what-if comparisons.
+    Uses urgency_feasibility dicts from the current result and the stored previous entry.
+    Omits any row that cannot be cleanly computed from available state.
+    """
+    cur_uf  = current_raw.get("urgency_feasibility") or {}
+    prev_uf = prev_entry.get("urgency_feasibility") or {}
+
+    # If neither run has urgency_feasibility, no coverage rows are possible.
+    if not cur_uf and not prev_uf:
+        return []
+
+    rows: list[dict] = []
+
+    # ── Earliest Replenishment Week ───────────────────────────────────────────
+    # The first week the selected supplier pool can begin delivering.
+    # Available in urgency_feasibility only when a shortfall exists.
+    cur_min_wk  = cur_uf.get("min_selected_lead_weeks")
+    prev_min_wk = prev_uf.get("min_selected_lead_weeks")
+    if cur_min_wk is not None or prev_min_wk is not None:
+        cur_val  = f"Week {cur_min_wk}" if cur_min_wk is not None else "Gap resolved"
+        prev_val = f"Week {prev_min_wk}" if prev_min_wk is not None else "—"
+        if cur_min_wk is not None and prev_min_wk is not None:
+            diff = cur_min_wk - prev_min_wk
+            chg  = "No change" if diff == 0 else f"{diff:+d} weeks"
+        elif cur_min_wk is None and prev_min_wk is not None:
+            chg = "Gap resolved ✓"
+        else:
+            chg = "—"
+        rows.append({
+            "Metric":            "Earliest Replenishment Week",
+            "Previous Scenario": prev_val,
+            "What-If Scenario":  cur_val,
+            "Change":            chg,
+        })
+
+    # ── Immediate Uncovered Weeks ─────────────────────────────────────────────
+    # Weeks where NO eligible supplier can deliver on time.
+    # Current run has no shortfall (urgency_feasibility=None) → 0 uncovered.
+    cur_uncov  = cur_uf.get("uncoverable_weeks", [])
+    prev_uncov = prev_uf.get("uncoverable_weeks", [])
+    # Only show if previous run had coverage data.
+    if prev_uf:
+        cur_uncov_n  = len(cur_uncov)
+        prev_uncov_n = len(prev_uncov)
+        cur_val      = str(cur_uncov_n) if cur_uncov_n > 0 else "None"
+        prev_val     = str(prev_uncov_n) if prev_uncov_n > 0 else "None"
+        diff         = cur_uncov_n - prev_uncov_n
+        chg = (
+            "No change" if diff == 0
+            else ("Gap closed ✓" if cur_uncov_n == 0 and prev_uncov_n > 0
+                  else f"{diff:+d} weeks")
+        )
+        rows.append({
+            "Metric":            "Immediate Uncovered Weeks",
+            "Previous Scenario": prev_val,
+            "What-If Scenario":  cur_val,
+            "Change":            chg,
+        })
+
+    # ── Weeks Now Covered ─────────────────────────────────────────────────────
+    # Gap weeks that were present in the previous run but are gone in the current run.
+    # "Covered" means: selected suppliers in the current run can reach them on time
+    # (i.e., the week is no longer in gap_weeks at all).
+    prev_gap = set(prev_uf.get("gap_weeks", []))
+    cur_gap  = set(cur_uf.get("gap_weeks", []))
+    newly_covered = sorted(prev_gap - cur_gap)
+    # Only show this row when the previous run actually had gap weeks.
+    if prev_gap:
+        n_cov    = len(newly_covered)
+        cur_val  = f"{n_cov} week(s)" if n_cov > 0 else "—"
+        prev_val = "—"
+        chg      = f"+{n_cov} covered" if n_cov > 0 else "No change"
+        rows.append({
+            "Metric":            "Weeks Now Covered by Selection",
+            "Previous Scenario": prev_val,
+            "What-If Scenario":  cur_val,
+            "Change":            chg,
+        })
+
+    return rows
 
 
 def _render_whatif_comparison(current_raw: dict, prev_entry: dict) -> None:
     """
     Render the What-If Scenario Impact section comparing current pending result
     against the most recent approved run for the same product.
+
+    For expedite/urgency what-ifs: coverage-impact rows appear first.
+    For all other what-ifs: standard economics-only comparison.
     """
     import pandas as pd
 
@@ -2509,8 +2701,8 @@ def _render_whatif_comparison(current_raw: dict, prev_entry: dict) -> None:
     current_alloc = current_raw.get("allocation", [])
     current_diag  = current_raw.get("constraint_diagnostics", {})
 
-    product_label = current_recap.get("product", "").replace("_", " ").title()
-    scenario_desc = _whatif_scenario_label(current_recap, prev_entry)
+    product_label             = current_recap.get("product", "").replace("_", " ").title()
+    scenario_desc, is_expedite = _whatif_scenario_label(current_recap, prev_entry)
 
     # Current values
     cur_units    = sum(r.get("allocated_qty", 0) for r in current_alloc)
@@ -2542,7 +2734,8 @@ def _render_whatif_comparison(current_raw: dict, prev_entry: dict) -> None:
         d = cur - prev
         return "No change" if d == 0 else f"{d:+,}"
 
-    rows = [
+    # ── Standard economics rows (always shown) ────────────────────────────────
+    econ_rows = [
         {
             "Metric":            "Total Units Procured",
             "Previous Scenario": f"{prev_units:,}",
@@ -2589,15 +2782,31 @@ def _render_whatif_comparison(current_raw: dict, prev_entry: dict) -> None:
         },
     ]
 
-    all_no_change = all(r["Change"] == "No change" for r in rows)
+    # ── Coverage rows (expedite runs only) ────────────────────────────────────
+    coverage_rows = _build_coverage_rows(current_raw, prev_entry) if is_expedite else []
 
-    with st.expander("**What-If Scenario Impact**", expanded=True):
-        st.caption(
-            f"What-if scenario detected: {scenario_desc} for **{product_label}**."
+    # For expedite runs: coverage rows first, then economics rows
+    rows = coverage_rows + econ_rows
+
+    all_no_change = all(r["Change"] in ("No change", "—") for r in rows)
+
+    # ── Summary caption ────────────────────────────────────────────────────────
+    if is_expedite:
+        primary_caption = (
+            f"What-if scenario detected: {scenario_desc} improves near-term supply coverage "
+            f"for **{product_label}**."
         )
-        st.caption(
+        secondary_caption = (
+            "This rerun reduces the immediate uncovered window and brings replenishment forward. "
             "Compared against the previous approved scenario for the same product."
         )
+    else:
+        primary_caption   = f"What-if scenario detected: {scenario_desc} for **{product_label}**."
+        secondary_caption = "Compared against the previous approved scenario for the same product."
+
+    with st.expander("**What-If Scenario Impact**", expanded=True):
+        st.caption(primary_caption)
+        st.caption(secondary_caption)
         if all_no_change:
             st.info(
                 "What-if modification did not change the supplier allocation "
@@ -3605,20 +3814,35 @@ def _render_executive_summary() -> None:
 
 
 def render_lp_approval():
-    """Show LP results and present an approve / discard decision to the user."""
+    """Show LP results and present Approve / Modify / Discard actions to the user.
+
+    Three distinct actions:
+      Approve  — stores the run in approved_lp_runs; included in session summary.
+      Modify   — sets lp_modify_mode=True and snapshots current result as the
+                 what-if baseline; exposes a chat input so the user can describe
+                 a refinement (e.g. "exclude SUP_HKG_38", "expedite this component").
+                 The next message re-runs LP on the direct fast path and replaces the
+                 pending result.  Does NOT add the current run to approved_lp_runs.
+      Discard  — clears the pending result and all modify state.  The run is never
+                 stored and cannot be used as a what-if comparison baseline.
+    """
     lp_interrupt = st.session_state.pending_lp_result or {}
     raw          = lp_interrupt.get("raw", {})
-    # Kept for _merge_final_states — not displayed (intermediate output suppressed).
     partial      = st.session_state.get("lp_partial_state") or {}
+    is_direct    = lp_interrupt.get("direct_mode", False)
+    in_modify    = st.session_state.get("lp_modify_mode", False)
 
-    # Intermediate pipeline results and chart_agent outputs are intentionally
-    # suppressed — the LP result page is the first and only visible output.
-    # Supplier breakdowns are accessible via the "Tell me more" deep-dive expander.
+    # ── Heading ───────────────────────────────────────────────────────────────
+    if in_modify:
+        st.subheader("LP Optimization Results — Modify Mode")
+        st.info(
+            "✏️ **Modify mode active.** Describe your change in the input below "
+            "and the scenario will rerun immediately. "
+            "Click **Approve** when you are satisfied, or **Discard** to cancel."
+        )
+    else:
+        st.subheader("LP Optimization Results — Pending Your Approval")
 
-    st.subheader("LP Optimization Results — Pending Your Approval")
-
-    # ── Session procurement status — shows previously approved products and
-    # exposes the "Complete Procurement Plan" button.
     _pending_labels = [
         k.replace("lp_", "").replace("_", " ").title() for k in raw.keys()
     ]
@@ -3630,24 +3854,23 @@ def render_lp_approval():
         st.markdown(f"### {product_label}")
         _render_lp_result(result_dict)
 
-    # ── Approve / Discard — at the very bottom, below all content + expanders ──
-    # direct_mode=True means the result came from _run_lp_direct() — no active
-    # LangGraph session exists, so Command(resume=...) must NOT be called.
-    is_direct = lp_interrupt.get("direct_mode", False)
+    # ── Action buttons — Approve | Modify | Discard ───────────────────────────
     st.divider()
-    st.info(
-        "Review the optimization results above. "
-        "**Approve** to include in the session plan, or **Discard** to exclude."
-    )
-    col1, col2 = st.columns(2)
+    if not in_modify:
+        st.info(
+            "Review the optimization results above. "
+            "**Approve** to include in the session plan, "
+            "**Modify** to refine and rerun, or **Discard** to exclude."
+        )
+    col1, col2, col3 = st.columns(3)
 
+    # ── Approve ───────────────────────────────────────────────────────────────
     with col1:
         if st.button("✅ Approve Recommendation", key="approve_lp_btn"):
             for result_dict in raw.values():
                 _store_approved_run(result_dict)
 
             if is_direct:
-                # No graph session — write completion message directly.
                 _approved_products = [
                     k.replace("lp_", "").replace("_", " ").title() for k in raw
                 ]
@@ -3665,12 +3888,30 @@ def render_lp_approval():
                 finalize_execution(merged, fallback_plan=st.session_state.get("saved_plan", {}))
 
             st.session_state.waiting_for_lp_approval = False
-            st.session_state.pending_lp_result = None
-            st.session_state.lp_partial_state = {}
-            st.session_state.saved_plan = {}
+            st.session_state.pending_lp_result       = None
+            st.session_state.lp_partial_state        = {}
+            st.session_state.saved_plan              = {}
+            st.session_state.lp_modify_mode          = False
+            st.session_state.lp_modify_baseline      = {}
             st.rerun()
 
+    # ── Modify ────────────────────────────────────────────────────────────────
     with col2:
+        if st.button("✏️ Modify Recommendation", key="modify_lp_btn"):
+            # Snapshot the CURRENT pending result as the what-if comparison baseline
+            # so the next rerun's What-If Scenario Impact table diffs against THIS run.
+            if "lp_modify_baseline" not in st.session_state:
+                st.session_state.lp_modify_baseline = {}
+            for result_dict in raw.values():
+                entry   = _build_run_entry(result_dict)
+                product = entry["product"]
+                st.session_state.lp_modify_baseline[product] = entry
+
+            st.session_state.lp_modify_mode = True
+            st.rerun()
+
+    # ── Discard ───────────────────────────────────────────────────────────────
+    with col3:
         if st.button("❌ Discard", key="discard_lp_btn"):
             if not is_direct:
                 config = {"configurable": {"thread_id": st.session_state.thread_id}}
@@ -3678,12 +3919,42 @@ def render_lp_approval():
                     second_state = stream_graph(Command(resume="discard"), config=config)
                 merged = _merge_final_states(partial, second_state)
                 finalize_execution(merged, fallback_plan=st.session_state.get("saved_plan", {}))
-            # direct mode: nothing to resume — just clean state.
             st.session_state.waiting_for_lp_approval = False
-            st.session_state.pending_lp_result = None
-            st.session_state.lp_partial_state = {}
-            st.session_state.saved_plan = {}
+            st.session_state.pending_lp_result       = None
+            st.session_state.lp_partial_state        = {}
+            st.session_state.saved_plan              = {}
+            st.session_state.lp_modify_mode          = False
+            st.session_state.lp_modify_baseline      = {}
             st.rerun()
+
+    # ── Modify-mode chat input ────────────────────────────────────────────────
+    # Only shown after user has clicked Modify.  Routes directly to _run_lp_direct()
+    # using the displayed params as the base — no orchestrator or plan-approval page.
+    if in_modify:
+        st.divider()
+        _modify_prompt = st.chat_input(
+            "Describe your modification (e.g. 'exclude SUP_HKG_38', 'expedite this', 'diversify across countries')…",
+            key="lp_modify_chat_input",
+        )
+        if _modify_prompt:
+            # Resolve base params from the currently displayed pending result.
+            # Use the first (and usually only) product in the pending raw payload.
+            _base_params: dict = {}
+            for _rv in raw.values():
+                _base_params = dict(_rv.get("params_recap") or {})
+                break
+
+            if _base_params:
+                _merged = _apply_modify_overrides(_modify_prompt, _base_params)
+                # Record the modify message in chat history for replay.
+                st.session_state.messages.append({
+                    "role":      "user",
+                    "content":   _modify_prompt,
+                    "has_trace": False,
+                })
+                with st.spinner("Rerunning optimization…"):
+                    _run_lp_direct(_merged)
+                # _run_lp_direct() calls st.rerun() — unreachable below.
 
 
 # ── Main rendering logic ───────────────────────────────────────────────────────

@@ -428,11 +428,12 @@ def _build_lead_time_feasibility_note(
     ]
 
     urgency_feasibility = {
-        'earliest_shortfall_week': earliest_week,
-        'gap_weeks':               gap_trigger_weeks,
-        'coverable_weeks':         coverable_weeks,
-        'uncoverable_weeks':       uncoverable_weeks,
-        'fast_suppliers':          fast_suppliers,
+        'earliest_shortfall_week':  earliest_week,
+        'min_selected_lead_weeks':  min_selected_lead_weeks,
+        'gap_weeks':                gap_trigger_weeks,
+        'coverable_weeks':          coverable_weeks,
+        'uncoverable_weeks':        uncoverable_weeks,
+        'fast_suppliers':           fast_suppliers,
     }
 
     # Step 7: Build exec-summary note string (preserves existing Case A / Case B text).
