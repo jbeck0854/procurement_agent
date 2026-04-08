@@ -205,6 +205,85 @@ def _is_ss_policy_request(text: str) -> bool:
     return False
 
 
+# ── Base-stock / safety stock policy content (module-level so helpers can share it) ─
+_SS_FORMULA_TEXT = (
+    "**S = \u03bc\u1d05 (r + \u03bc\u2097) + z \u00b7 "
+    "\u221a((r + \u03bc\u2097) \u03c3\u1d05\u00b2 + \u03bc\u1d05\u00b2 \u03c3\u2097\u00b2)**"
+)
+_SS_TERMS_TEXT = (
+    "| Symbol | Definition |\n"
+    "|---|---|\n"
+    "| \u03bc\u1d05 | Average weekly component demand |\n"
+    "| \u03c3\u1d05 | Demand standard deviation |\n"
+    "| \u03bc\u2097 | Average lead time (weeks) |\n"
+    "| \u03c3\u2097 | Lead time standard deviation |\n"
+    "| r | Review period \u2014 **8 weeks** |\n"
+    "| z | Service level factor \u2014 **\u22481.65** for 95% target |"
+)
+_SS_BUSINESS_TEXT = (
+    "- The formula computes the **base-stock level (S)** \u2014 the total inventory "
+    "required to meet demand across the review period and lead time under uncertainty.\n"
+    "- **Safety stock** is the buffer component embedded within this level, covering "
+    "demand and lead-time variability.\n"
+    "- In this system, safety stock is enforced as a **protected inventory floor** "
+    "per facility \u00d7 component. It is not consumed during planning.\n"
+    "- Only inventory **above** this floor is used to satisfy weekly demand."
+)
+_SS_CYCLE_STOCK_TEXT = (
+    "The base-stock level (S) has two distinct components:\n\n"
+    "**1. Cycle Stock** \u2014 \u03bc\u1d05 \u00d7 (r + \u03bc\u2097)\n"
+    "- Covers **expected demand** over the review period and lead time\n"
+    "- This is the primary driver of inventory volume\n\n"
+    "**2. Safety Stock** \u2014 z \u00b7 \u221a((r + \u03bc\u2097)\u03c3\u1d05\u00b2 "
+    "+ \u03bc\u1d05\u00b2\u03c3\u2097\u00b2)\n"
+    "- Covers **uncertainty** in demand and lead time\n"
+    "- This is a buffer \u2014 NOT intended to cover expected demand\n\n"
+    "On-hand inventory at the start of planning is anchored at "
+    "**S = Cycle Stock + Safety Stock**. "
+    "Safety stock alone will often appear small relative to weekly demand \u2014 "
+    "this is expected and correct."
+)
+_SS_PLANNING_TEXT = (
+    "- Weekly procurement is triggered when **usable inventory** (above the safety "
+    "stock floor) reaches zero.\n"
+    "- Safety stock is already accounted for before any weekly demand calculations "
+    "begin \u2014 it does not appear as a deduction in the weekly trigger table.\n"
+    "- The weekly trigger table reflects how demand consumes usable inventory, "
+    "not safety stock itself."
+)
+
+# ── Weekly trigger column constants ──────────────────────────────────────────────
+_TRIG_COL_ORDER_DISPLAY = [
+    "Forecast Week", "Week", "Component", "Facility",
+    "Gross Requirement", "Usable Inventory Before Demand",
+    "Direct Procurement Needed", "Cumulative Procurement Pressure",
+    "Safety Stock Utilization (%)", "Urgency Level",
+]
+_TRIG_FMT_DISPLAY = {
+    "Gross Requirement":               "{:,.0f}",
+    "Usable Inventory Before Demand":  "{:,.0f}",
+    "Direct Procurement Needed":       "{:,.0f}",
+    "Cumulative Procurement Pressure": "{:,.0f}",
+    "Safety Stock Utilization (%)":    "{:.1f}%",
+    "Forecast Week":                   "{:,.0f}",
+}
+_TRIG_BULLETS_TEXT = (
+    "- **Gross Requirement:** forecast-driven component demand for that week.\n"
+    "- **Usable Inventory Before Demand:** inventory available after preserving "
+    "the safety stock floor.\n"
+    "- **Direct Procurement Needed:** portion of demand not covered by usable "
+    "inventory.\n"
+    "- **Cumulative Procurement Pressure:** total procurement required up to that "
+    "week, per facility \u00d7 component.\n"
+    "- **Safety Stock Utilization (%):** how much of the safety buffer is being "
+    "matched by cumulative procurement demand.\n"
+    "- **Urgency Level:** qualitative indicator \u2014 Low / Medium / High / "
+    "Critical \u2014 based on how close cumulative pressure is to the safety "
+    "buffer.\n"
+    "- Procurement is triggered when usable inventory reaches zero."
+)
+
+
 # Full inventory planning horizon drilldown route — diagnostic / traceability only.
 # Returns ALL horizon rows (triggered + non-triggered) at facility × component × week.
 # Canonical queries: "Show full horizon inventory drilldown",
@@ -1810,6 +1889,78 @@ def _render_bom_translation_body(rows: list) -> None:
     st.markdown(_BOM_XLATE_EXEC_NOTE)
 
 
+def _render_ss_policy_body() -> None:
+    """
+    Render the full base-stock / safety stock policy explanation.
+    Pure text — no DB query. Shared by the direct query handler and the
+    'Detail on Base Stock Policy' expander beneath the inventory summary.
+    """
+    st.subheader("Inventory Policy \u2014 Safety Stock and Base-Stock Logic")
+    st.markdown("**Base-Stock Formula**")
+    st.markdown(_SS_FORMULA_TEXT)
+    st.markdown("**Term Definitions**")
+    st.markdown(_SS_TERMS_TEXT)
+    st.markdown("**How It Works**")
+    st.markdown(_SS_BUSINESS_TEXT)
+    st.markdown("**Cycle Stock vs Safety Stock (Key Distinction)**")
+    st.markdown(_SS_CYCLE_STOCK_TEXT)
+    st.markdown("**Connection to Planning Outputs**")
+    st.markdown(_SS_PLANNING_TEXT)
+
+
+def _prepare_trigger_df_from_raw(trig_data: dict):
+    """
+    Apply all presentation transforms to a query_triggered_rows_structured() result.
+    Returns (df_display, ss_context_records, display_rows).
+    No inventory logic — purely column renames, derived display columns, and ordering.
+    """
+    import pandas as _pd_trig
+
+    _rows = trig_data.get("rows", [])
+    df = _pd_trig.DataFrame(_rows)
+
+    if not df.empty and "Facility" in df.columns:
+        df["Facility"] = df["Facility"].apply(_format_facility_label)
+
+    df = df.rename(columns={
+        "Available Inventory Before Demand": "Usable Inventory Before Demand",
+        "Procurement Need":                  "Direct Procurement Needed",
+    })
+
+    # Extract SS context before column reorder
+    ss_ctx = []
+    if not df.empty and "Safety Stock Reserve" in df.columns:
+        ss_ctx = (
+            df[["Facility", "Component", "Safety Stock Reserve"]]
+            .drop_duplicates()
+            .sort_values(["Facility", "Component"])
+            .rename(columns={"Safety Stock Reserve": "Safety Stock (Protected Floor)"})
+            .to_dict("records")
+        )
+
+    # Derived display columns (no inventory formula change)
+    if not df.empty and "Safety Stock Reserve" in df.columns:
+        df = df.sort_values(["Component", "Facility", "Week"])
+        df["Cumulative Procurement Pressure"] = (
+            df.groupby(["Facility", "Component"])["Direct Procurement Needed"]
+            .cumsum()
+        )
+        df["Safety Stock Utilization (%)"] = (
+            df["Cumulative Procurement Pressure"] / df["Safety Stock Reserve"] * 100
+        ).round(1)
+        df["Urgency Level"] = df["Safety Stock Utilization (%)"].apply(
+            lambda u: "Critical" if u >= 100 else
+                      "High"     if u >= 75  else
+                      "Medium"   if u >= 50  else
+                      "Low"
+        )
+
+    if not df.empty:
+        df = df[[c for c in _TRIG_COL_ORDER_DISPLAY if c in df.columns]]
+
+    return df, ss_ctx, df.to_dict("records")
+
+
 def show_trace(trace):
     with st.expander("Execution Trace"):
         # --- Timing breakdown ---
@@ -2063,6 +2214,95 @@ for _msg_loop_idx, msg in enumerate(st.session_state.messages):
                 hide_index=True,
                 height=600,
             )
+        # ── Inventory expanders beneath proc_summary (replay) ─────────────
+        _inv_trig_exp = msg.get("inv_trig_exp_rows")
+        if _inv_trig_exp:
+            with st.expander(
+                "In which weeks and where is procurement actually triggered "
+                "across the planning horizon?",
+                expanded=False,
+            ):
+                import pandas as _pd_inv_exp
+                _run_id_lbl  = msg.get("inv_trig_run_id", "")
+                _n_trig_lbl  = msg.get("inv_trig_n", "")
+                st.caption(f"Forecast run {_run_id_lbl}  \u00b7  {_n_trig_lbl} triggered rows")
+                _inv_ss_ctx_exp = msg.get("inv_trig_ss_ctx", [])
+                if _inv_ss_ctx_exp:
+                    _ss_ctx_exp_df = _pd_inv_exp.DataFrame(_inv_ss_ctx_exp)
+                    st.dataframe(
+                        _ss_ctx_exp_df.style.format({"Safety Stock (Protected Floor)": "{:,.0f}"}),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    st.caption("Protected floor per facility × component — not consumed by demand.")
+                _inv_trig_exp_df = _pd_inv_exp.DataFrame(_inv_trig_exp)
+                _fac_e = sorted(_inv_trig_exp_df["Facility"].unique().tolist()) if "Facility" in _inv_trig_exp_df.columns else []
+                _cmp_e = sorted(_inv_trig_exp_df["Component"].unique().tolist()) if "Component" in _inv_trig_exp_df.columns else []
+                _e_c1, _e_c2 = st.columns(2)
+                with _e_c1:
+                    _sel_fac_e = st.multiselect("Filter by Facility",  _fac_e, default=_fac_e, key=f"inv_exp_fac_{_msg_loop_idx}")
+                with _e_c2:
+                    _sel_cmp_e = st.multiselect("Filter by Component", _cmp_e, default=_cmp_e, key=f"inv_exp_cmp_{_msg_loop_idx}")
+                if _sel_fac_e and "Facility"  in _inv_trig_exp_df.columns:
+                    _inv_trig_exp_df = _inv_trig_exp_df[_inv_trig_exp_df["Facility"].isin(_sel_fac_e)]
+                if _sel_cmp_e and "Component" in _inv_trig_exp_df.columns:
+                    _inv_trig_exp_df = _inv_trig_exp_df[_inv_trig_exp_df["Component"].isin(_sel_cmp_e)]
+                if not _inv_trig_exp_df.empty:
+                    st.caption(f"{len(_inv_trig_exp_df):,} rows shown")
+                    st.dataframe(
+                        _inv_trig_exp_df.style.format(
+                            {c: v for c, v in _TRIG_FMT_DISPLAY.items() if c in _inv_trig_exp_df.columns}
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                        height=500,
+                    )
+                else:
+                    st.info("No triggered rows — all inventory positions appear sufficient.")
+                st.markdown(_TRIG_BULLETS_TEXT)
+        if msg.get("has_inv_ss_expander"):
+            with st.expander("Detail on Base Stock Policy", expanded=False):
+                _render_ss_policy_body()
+        _inv_fh_exp = msg.get("inv_fh_exp_rows")
+        if _inv_fh_exp:
+            with st.expander(
+                "Show all upcoming demand weeks across each facility for inventory planning",
+                expanded=False,
+            ):
+                import pandas as _pd_fh_exp
+                _fh_meta_exp = msg.get("inv_fh_meta", {})
+                st.caption(
+                    f"Forecast run {_fh_meta_exp.get('run_id')}"
+                    f"  \u00b7  {_fh_meta_exp.get('horizon_start')} \u2192 {_fh_meta_exp.get('horizon_end')}"
+                    f"  \u00b7  {_fh_meta_exp.get('n_weeks')} weeks"
+                    f"  \u00b7  {_fh_meta_exp.get('n_rows', 0):,} rows total"
+                )
+                _df_fh_exp = _pd_fh_exp.DataFrame(_inv_fh_exp)
+                _fh_fac_e  = sorted(_df_fh_exp["Facility"].unique().tolist())  if "Facility"  in _df_fh_exp.columns else []
+                _fh_cmp_e  = sorted(_df_fh_exp["Component"].unique().tolist()) if "Component" in _df_fh_exp.columns else []
+                _fhe_c1, _fhe_c2 = st.columns(2)
+                with _fhe_c1:
+                    _fh_sel_fac_e = st.multiselect("Filter by Facility",  _fh_fac_e, default=_fh_fac_e, key=f"inv_fh_fac_{_msg_loop_idx}")
+                with _fhe_c2:
+                    _fh_sel_cmp_e = st.multiselect("Filter by Component", _fh_cmp_e, default=_fh_cmp_e, key=f"inv_fh_cmp_{_msg_loop_idx}")
+                if _fh_sel_fac_e and "Facility"  in _df_fh_exp.columns:
+                    _df_fh_exp = _df_fh_exp[_df_fh_exp["Facility"].isin(_fh_sel_fac_e)]
+                if _fh_sel_cmp_e and "Component" in _df_fh_exp.columns:
+                    _df_fh_exp = _df_fh_exp[_df_fh_exp["Component"].isin(_fh_sel_cmp_e)]
+                _fh_exp_fmt = {
+                    "Forecast Week":                  "{:,.0f}",
+                    "Gross Requirement":              "{:,.0f}",
+                    "Usable Inventory Before Demand": "{:,.0f}",
+                    "Direct Procurement Needed":      "{:,.0f}",
+                    "Safety Stock (Protected Floor)": "{:,.0f}",
+                }
+                st.caption(f"{len(_df_fh_exp):,} rows shown")
+                st.dataframe(
+                    _df_fh_exp.style.format({c: v for c, v in _fh_exp_fmt.items() if c in _df_fh_exp.columns}),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=600,
+                )
         # ── Forecast expander replay ──────────────────────────────────────
         if msg.get("has_forecast_expanders"):
             _render_forecast_expanders(key_suffix=str(_msg_loop_idx))
@@ -4812,8 +5052,41 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
         # entry point (format_procurement_recommendation / aggregated need).
         elif _is_procurement_summary_request(prompt):
             with st.spinner("Computing inventory-adjusted procurement requirement..."):
-                from tools.pipeline_queries import query_procurement_summary_data
-                data = query_procurement_summary_data()
+                from tools.pipeline_queries import (
+                    query_procurement_summary_data,
+                    query_triggered_rows_structured as _qtr_inv,
+                    query_full_horizon_drilldown    as _qfh_inv,
+                )
+                data          = query_procurement_summary_data()
+                _inv_trig_raw = _qtr_inv()
+                _inv_fh_raw   = _qfh_inv()
+
+            # ── Prepare trigger expander data ───────────────────────────────
+            _inv_trig_df, _inv_trig_ss_ctx, _inv_trig_rows = _prepare_trigger_df_from_raw(_inv_trig_raw)
+            _inv_trig_n = len(_inv_trig_raw.get("rows", []))
+
+            # ── Prepare full horizon expander data ──────────────────────────
+            import pandas as _pd_fh_inv
+            _inv_fh_rows_raw = _inv_fh_raw.get("rows", [])
+            _df_fh_inv = _pd_fh_inv.DataFrame(_inv_fh_rows_raw)
+            if not _df_fh_inv.empty and "Facility" in _df_fh_inv.columns:
+                _df_fh_inv["Facility"] = _df_fh_inv["Facility"].apply(_format_facility_label)
+            _FH_COL_INV = [
+                "Forecast Week", "Week", "Facility", "Component",
+                "Gross Requirement", "Usable Inventory Before Demand",
+                "Direct Procurement Needed", "Triggered?",
+                "Safety Stock (Protected Floor)",
+            ]
+            if not _df_fh_inv.empty:
+                _df_fh_inv = _df_fh_inv[[c for c in _FH_COL_INV if c in _df_fh_inv.columns]]
+            _inv_fh_display_rows = _df_fh_inv.to_dict("records")
+            _inv_fh_meta = {
+                "run_id":       _inv_fh_raw.get("run_id"),
+                "horizon_start": _inv_fh_raw.get("horizon_start"),
+                "horizon_end":   _inv_fh_raw.get("horizon_end"),
+                "n_weeks":       _inv_fh_raw.get("n_weeks"),
+                "n_rows":        len(_inv_fh_rows_raw),
+            }
 
             import pandas as pd
             _proc_rows = data.get("rows", [])
@@ -4901,6 +5174,74 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 with st.expander("Click to view data dictionary"):
                     for col, desc in _DATA_DICT.items():
                         st.markdown(f"**{col}:** {desc}")
+
+                # ── Supporting detail dropdowns ─────────────────────────────
+                with st.expander(
+                    "In which weeks and where is procurement actually triggered "
+                    "across the planning horizon?",
+                    expanded=False,
+                ):
+                    st.caption(
+                        f"Forecast run {_inv_trig_raw.get('run_id')}"
+                        f"  \u00b7  {_inv_trig_n} triggered rows"
+                    )
+                    if _inv_trig_ss_ctx:
+                        import pandas as _pd_trig_live2
+                        _ss_ctx2 = _pd_trig_live2.DataFrame(_inv_trig_ss_ctx)
+                        st.dataframe(
+                            _ss_ctx2.style.format({"Safety Stock (Protected Floor)": "{:,.0f}"}),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+                        st.caption(
+                            "Protected floor per facility × component — "
+                            "not consumed by demand."
+                        )
+                    if not _inv_trig_df.empty:
+                        st.dataframe(
+                            _inv_trig_df.style.format(
+                                {c: v for c, v in _TRIG_FMT_DISPLAY.items() if c in _inv_trig_df.columns}
+                            ),
+                            use_container_width=True,
+                            hide_index=True,
+                            height=500,
+                        )
+                    else:
+                        st.info("No triggered rows — all inventory positions appear sufficient.")
+                    st.markdown(_TRIG_BULLETS_TEXT)
+
+                with st.expander("Detail on Base Stock Policy", expanded=False):
+                    _render_ss_policy_body()
+
+                with st.expander(
+                    "Show all upcoming demand weeks across each facility for inventory planning",
+                    expanded=False,
+                ):
+                    st.caption(
+                        f"Forecast run {_inv_fh_meta['run_id']}"
+                        f"  \u00b7  {_inv_fh_meta['horizon_start']} \u2192 {_inv_fh_meta['horizon_end']}"
+                        f"  \u00b7  {_inv_fh_meta['n_weeks']} weeks"
+                        f"  \u00b7  {_inv_fh_meta['n_rows']:,} rows total"
+                    )
+                    if not _df_fh_inv.empty:
+                        _fh_fmt_inv = {
+                            "Forecast Week":                  "{:,.0f}",
+                            "Gross Requirement":              "{:,.0f}",
+                            "Usable Inventory Before Demand": "{:,.0f}",
+                            "Direct Procurement Needed":      "{:,.0f}",
+                            "Safety Stock (Protected Floor)": "{:,.0f}",
+                        }
+                        st.dataframe(
+                            _df_fh_inv.style.format(
+                                {c: v for c, v in _fh_fmt_inv.items() if c in _df_fh_inv.columns}
+                            ),
+                            use_container_width=True,
+                            hide_index=True,
+                            height=600,
+                        )
+                    else:
+                        st.info("No planning rows found for this forecast run.")
+
             st.session_state.messages.append({
                 "role":           "assistant",
                 "content":        (
@@ -4910,84 +5251,36 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                     "All values are aggregated across the full planning horizon.\n\n"
                     + _PROC_BULLETS
                 ),
-                "has_trace":      False,
-                "summary":        "",
-                "proc_summary_df": _proc_display_rows,
+                "has_trace":          False,
+                "summary":            "",
+                "proc_summary_df":    _proc_display_rows,
+                "inv_trig_exp_rows":  _inv_trig_rows,
+                "inv_trig_ss_ctx":    _inv_trig_ss_ctx,
+                "inv_trig_run_id":    _inv_trig_raw.get("run_id"),
+                "inv_trig_n":         _inv_trig_n,
+                "has_inv_ss_expander": True,
+                "inv_fh_exp_rows":    _inv_fh_display_rows,
+                "inv_fh_meta":        _inv_fh_meta,
             })
             st.rerun()
 
         # ── Safety stock / inventory policy explainability ────────────────
         elif _is_ss_policy_request(prompt):
-            _SS_FORMULA = (
-                "**S = \u03bc\u1d05 (r + \u03bc\u2097) + z \u00b7 "
-                "\u221a((r + \u03bc\u2097) \u03c3\u1d05\u00b2 + \u03bc\u1d05\u00b2 \u03c3\u2097\u00b2)**"
-            )
-            _SS_TERMS = (
-                "| Symbol | Definition |\n"
-                "|---|---|\n"
-                "| \u03bc\u1d05 | Average weekly component demand |\n"
-                "| \u03c3\u1d05 | Demand standard deviation |\n"
-                "| \u03bc\u2097 | Average lead time (weeks) |\n"
-                "| \u03c3\u2097 | Lead time standard deviation |\n"
-                "| r | Review period \u2014 **8 weeks** |\n"
-                "| z | Service level factor \u2014 **\u22481.65** for 95% target |"
-            )
-            _SS_BUSINESS = (
-                "- The formula computes the **base-stock level (S)** \u2014 the total inventory "
-                "required to meet demand across the review period and lead time under uncertainty.\n"
-                "- **Safety stock** is the buffer component embedded within this level, covering "
-                "demand and lead-time variability.\n"
-                "- In this system, safety stock is enforced as a **protected inventory floor** "
-                "per facility \u00d7 component. It is not consumed during planning.\n"
-                "- Only inventory **above** this floor is used to satisfy weekly demand."
-            )
-            _SS_CYCLE_STOCK = (
-                "The base-stock level (S) has two distinct components:\n\n"
-                "**1. Cycle Stock** \u2014 \u03bc\u1d05 \u00d7 (r + \u03bc\u2097)\n"
-                "- Covers **expected demand** over the review period and lead time\n"
-                "- This is the primary driver of inventory volume\n\n"
-                "**2. Safety Stock** \u2014 z \u00b7 \u221a((r + \u03bc\u2097)\u03c3\u1d05\u00b2 "
-                "+ \u03bc\u1d05\u00b2\u03c3\u2097\u00b2)\n"
-                "- Covers **uncertainty** in demand and lead time\n"
-                "- This is a buffer \u2014 NOT intended to cover expected demand\n\n"
-                "On-hand inventory at the start of planning is anchored at "
-                "**S = Cycle Stock + Safety Stock**. "
-                "Safety stock alone will often appear small relative to weekly demand \u2014 "
-                "this is expected and correct."
-            )
-            _SS_PLANNING = (
-                "- Weekly procurement is triggered when **usable inventory** (above the safety "
-                "stock floor) reaches zero.\n"
-                "- Safety stock is already accounted for before any weekly demand calculations "
-                "begin \u2014 it does not appear as a deduction in the weekly trigger table.\n"
-                "- The weekly trigger table reflects how demand consumes usable inventory, "
-                "not safety stock itself."
-            )
             _ss_content = (
                 "**Inventory Policy \u2014 Safety Stock and Base-Stock Logic**\n\n"
                 "**Base-Stock Formula**\n\n"
-                + _SS_FORMULA + "\n\n"
+                + _SS_FORMULA_TEXT + "\n\n"
                 "**Term Definitions**\n\n"
-                + _SS_TERMS + "\n\n"
+                + _SS_TERMS_TEXT + "\n\n"
                 "**How It Works**\n\n"
-                + _SS_BUSINESS + "\n\n"
+                + _SS_BUSINESS_TEXT + "\n\n"
                 "**Cycle Stock vs Safety Stock (Key Distinction)**\n\n"
-                + _SS_CYCLE_STOCK + "\n\n"
+                + _SS_CYCLE_STOCK_TEXT + "\n\n"
                 "**Connection to Planning Outputs**\n\n"
-                + _SS_PLANNING
+                + _SS_PLANNING_TEXT
             )
             with st.chat_message("assistant"):
-                st.subheader("Inventory Policy \u2014 Safety Stock and Base-Stock Logic")
-                st.markdown("**Base-Stock Formula**")
-                st.markdown(_SS_FORMULA)
-                st.markdown("**Term Definitions**")
-                st.markdown(_SS_TERMS)
-                st.markdown("**How It Works**")
-                st.markdown(_SS_BUSINESS)
-                st.markdown("**Cycle Stock vs Safety Stock (Key Distinction)**")
-                st.markdown(_SS_CYCLE_STOCK)
-                st.markdown("**Connection to Planning Outputs**")
-                st.markdown(_SS_PLANNING)
+                _render_ss_policy_body()
             st.session_state.messages.append({
                 "role":      "assistant",
                 "content":   _ss_content,
@@ -5074,91 +5367,8 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 from tools.pipeline_queries import query_triggered_rows_structured
                 trig_data = query_triggered_rows_structured()
 
-            import pandas as pd
+            df_trig, _ss_context, _trig_display_rows = _prepare_trigger_df_from_raw(trig_data)
             _trig_rows = trig_data.get("rows", [])
-            df_trig = pd.DataFrame(_trig_rows)
-
-            # Apply readable facility labels (raw facility_id → label)
-            if not df_trig.empty and "Facility" in df_trig.columns:
-                df_trig["Facility"] = df_trig["Facility"].apply(_format_facility_label)
-
-            # ── Presentation-layer renames ──────────────────────────────────
-            df_trig = df_trig.rename(columns={
-                "Available Inventory Before Demand": "Usable Inventory Before Demand",
-                "Procurement Need":                  "Direct Procurement Needed",
-            })
-
-            # ── Extract SS context BEFORE dropping Safety Stock Reserve ────
-            # Used for the context block — stored separately in the message dict.
-            _ss_context = []
-            if not df_trig.empty and "Safety Stock Reserve" in df_trig.columns:
-                _ss_context = (
-                    df_trig[["Facility", "Component", "Safety Stock Reserve"]]
-                    .drop_duplicates()
-                    .sort_values(["Facility", "Component"])
-                    .rename(columns={"Safety Stock Reserve": "Safety Stock (Protected Floor)"})
-                    .to_dict("records")
-                )
-
-            # ── Presentation-layer derived columns ─────────────────────────
-            # All computed from existing fetched values — no inventory logic change.
-            if not df_trig.empty and "Safety Stock Reserve" in df_trig.columns:
-                # Ensure correct per-series cumsum order (date within each series)
-                df_trig = df_trig.sort_values(["Component", "Facility", "Week"])
-                df_trig["Cumulative Procurement Pressure"] = (
-                    df_trig.groupby(["Facility", "Component"])["Direct Procurement Needed"]
-                    .cumsum()
-                )
-                df_trig["Safety Stock Utilization (%)"] = (
-                    df_trig["Cumulative Procurement Pressure"]
-                    / df_trig["Safety Stock Reserve"]
-                    * 100
-                ).round(1)
-                df_trig["Urgency Level"] = df_trig["Safety Stock Utilization (%)"].apply(
-                    lambda u: "Critical" if u >= 100 else
-                              "High"     if u >= 75  else
-                              "Medium"   if u >= 50  else
-                              "Low"
-                )
-
-            # ── Enforce display column order (Safety Stock Reserve excluded) ─
-            # Forecast Week comes from r.horizon_week (true planning horizon index).
-            _TRIG_COL_ORDER = [
-                "Forecast Week", "Week", "Component", "Facility",
-                "Gross Requirement", "Usable Inventory Before Demand",
-                "Direct Procurement Needed", "Cumulative Procurement Pressure",
-                "Safety Stock Utilization (%)", "Urgency Level",
-            ]
-            if not df_trig.empty:
-                df_trig = df_trig[[c for c in _TRIG_COL_ORDER if c in df_trig.columns]]
-
-            # Store unfiltered rows (Forecast Week = r.horizon_week from DB, not a counter)
-            _trig_display_rows = df_trig.to_dict("records")
-
-            _TRIG_FMT = {
-                "Gross Requirement":              "{:,.0f}",
-                "Usable Inventory Before Demand": "{:,.0f}",
-                "Direct Procurement Needed":      "{:,.0f}",
-                "Cumulative Procurement Pressure":"{:,.0f}",
-                "Safety Stock Utilization (%)":   "{:.1f}%",
-                "Forecast Week":                  "{:,.0f}",
-            }
-
-            _TRIG_BULLETS = (
-                "- **Gross Requirement:** forecast-driven component demand for that week.\n"
-                "- **Usable Inventory Before Demand:** inventory available after preserving "
-                "the safety stock floor.\n"
-                "- **Direct Procurement Needed:** portion of demand not covered by usable "
-                "inventory.\n"
-                "- **Cumulative Procurement Pressure:** total procurement required up to that "
-                "week, per facility \u00d7 component.\n"
-                "- **Safety Stock Utilization (%):** how much of the safety buffer is being "
-                "matched by cumulative procurement demand.\n"
-                "- **Urgency Level:** qualitative indicator \u2014 Low / Medium / High / "
-                "Critical \u2014 based on how close cumulative pressure is to the safety "
-                "buffer.\n"
-                "- Procurement is triggered when usable inventory reaches zero."
-            )
 
             with st.chat_message("assistant"):
                 st.subheader("Weekly Procurement Trigger \u2014 Where and When Procurement Is Required")
@@ -5167,9 +5377,9 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                     f"  \u00b7  {len(_trig_rows)} triggered week\u2013facility\u2013component rows"
                     "  \u00b7  Use filters to drill down by facility or component"
                 )
-                # ── Safety Stock context block ──────────────────────────────
                 if _ss_context:
-                    _ss_ctx_df = pd.DataFrame(_ss_context)
+                    import pandas as _pd_trig_live
+                    _ss_ctx_df = _pd_trig_live.DataFrame(_ss_context)
                     st.dataframe(
                         _ss_ctx_df.style.format({"Safety Stock (Protected Floor)": "{:,.0f}"}),
                         use_container_width=True,
@@ -5181,23 +5391,22 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                         "and not consumed by demand. The table below shows how procurement "
                         "pressure accumulates relative to this buffer."
                     )
-                # ── Primary trigger table ───────────────────────────────────
                 if not df_trig.empty:
                     st.dataframe(
-                        df_trig.style.format(_TRIG_FMT),
+                        df_trig.style.format({c: v for c, v in _TRIG_FMT_DISPLAY.items() if c in df_trig.columns}),
                         use_container_width=True,
                         hide_index=True,
                         height=500,
                     )
                 else:
                     st.info("No triggered procurement rows found \u2014 all inventory positions appear sufficient.")
-                st.markdown(_TRIG_BULLETS)
+                st.markdown(_TRIG_BULLETS_TEXT)
             st.session_state.messages.append({
                 "role":    "assistant",
                 "content": (
                     "**Weekly Procurement Trigger \u2014 Where and When Procurement Is Required**\n\n"
                     f"Forecast run {trig_data['run_id']} \u00b7 {len(_trig_rows)} triggered rows\n\n"
-                    + _TRIG_BULLETS
+                    + _TRIG_BULLETS_TEXT
                 ),
                 "has_trace":         False,
                 "summary":           "",
