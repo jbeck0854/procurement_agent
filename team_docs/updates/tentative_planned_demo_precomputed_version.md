@@ -1,6 +1,6 @@
 # AI Procurement Decision Intelligence Agent — Demo Plan
 
-> **Current as of:** Sprint ending 2026-03-29
+> **Current as of:** Sprint ending 2026-04-08
 > **Status:** All pipeline layers complete and validated. Agent/orchestration integration in progress.
 
 ---
@@ -254,6 +254,11 @@ Shows *where* and *when* procurement is activated across the planning horizon us
 
 --
 
+*optional transparency full-horizon drilldown query*
+**User:** "Show all upcoming demand weeks across each facility for inventory planning"
+
+**Agent:** returns filterable table for inventory planning. All week x facility x component combinations, with trigger indicator.
+
 ---
 
 ### 5:15–6:00 — Side-track: ad hoc supplier comparison (Probably don't need this anymore since these suppliers plot comparison should show for each LP Inventory Optimization run below)
@@ -293,9 +298,9 @@ Shows *where* and *when* procurement is activated across the planning horizon us
 ### 6:00–7:30 — LP optimization: transistors
 
 **User says:**
-> "Optimize transistors procurement with moderate risk and a 40% supplier cap."
+> "From our available suppliers, provide a procurement plan to ensure we have enough integrated circuit components across all facilities to meet our upcoming demand window. Implement a moderate risk aversion supply strategy. No supplier should exceed 40% of total supply volume for this order."
 
-**Agent action:** Runs LP optimization for transistors using the net procurement requirement from the inventory layer and the scored supplier universe.
+**Agent action:** Runs LP optimization for integrated circuit components using the net procurement requirement from the inventory layer and the scored supplier universe.
 
 **Behind the scenes:**
 - Horizon-level aggregated procurement need (computed from full-horizon gross demand with inventory offset applied once) — the LP demand floor
@@ -324,65 +329,15 @@ The LP solves: minimize total cost weighted by risk exposure, subject to demand 
 - Formula description: plain-language explanation of the optimization run
 
 **Agent explanation:**
-> "The LP allocated transistors volume across three suppliers. The 40% cap prevents overconcentration — no single country or supplier absorbs the full order. Two suppliers were excluded by compliance threshold before the LP ran; they were never eligible. The allocation reflects the lowest-cost mix that also meets your risk tolerance."
+> "The LP allocated integrated circuit component volume across three suppliers. The 40% cap prevents overconcentration — no single country or supplier absorbs the full order. X suppliers were excluded by compliance threshold before the LP ran; they were never eligible. The allocation reflects the lowest-cost mix that also meets your risk tolerance."
 
 **Live run:** Yes — CBC solver is sub-second for this problem size.
 
 ---
 
-**Additional user queries the agent handles here (show one or two live):**
+*Users sees that some weeks arent covered*
 
-- > "Optimize for FACILITY_3 only" → reruns LP with `facility_id="FACILITY_3"` scope
-- > "Limit any supplier to 30% of volume" → reruns with `max_supplier_share=0.30`
-- > "Increase risk aversion slightly" → reruns with `lambda_risk=0.70`
-- > "Exclude SUP_HKG_38" → reruns with `exclude_supplier_ids=["SUP_HKG_38"]`
-- > "Diversify across countries" → reruns with `diversification_mode="country_diversified"` (MIP: exactly 3 suppliers, each from a different country, ~33% each)
-
-Each rerun is a one-parameter change — the audience sees that the system is responsive, not a static report.
-
----
-
-**Session-state behavior (important for the transition ahead):**
-
-Each LP run result is stored in the agent session under `approved_lp_runs`. The agent prompts the user to approve or discard each run before it is committed. Only approved runs are carried forward.
-
-This means the demo can now hold:
-- the baseline transistors run (moderate risk, 40% cap)
-- an optional disruption rerun (SUP_HKG_38 excluded)
-- an optional power_devices run
-
-All approved runs will be aggregated in the final session summary — alongside a baseline comparison showing how much additional cost the diversification and risk constraints added over the cheapest feasible unconstrained plan.
-
----
-
-### 7:30–8:00 — Disruption / what-if scenario
-
-**User asks:**
-> "What if SUP_HKG_38 becomes unavailable next quarter?"
-
-**Agent action:** Reruns the transistors LP with `exclude_supplier_ids=["SUP_HKG_38"]`.
-
-**Behind the scenes:**
-- Same LP pipeline as above
-- `LPParams(product="transistors", exclude_supplier_ids=["SUP_HKG_38"], lambda_risk=0.50, max_supplier_share=0.40)`
-
-**On screen:**
-- Updated allocation table (SUP_HKG_38 absent)
-- Change in total cost vs. baseline run
-- Any binding constraint changes (e.g. share constraint now forces different mix)
-- LP executive_summary reflecting exclusion
-
-**Agent explanation:**
-> "With SUP_HKG_38 excluded, volume redistributes to the remaining eligible suppliers. Total cost increases by approximately X%. The plan remains feasible — no stockout risk — but the risk profile shifts slightly."
-
-**Live run:** Yes — fast rerun, CBC solver is sub-second for this problem size.
-
-### 8:00 - 8:30 - Optional: urgency mode
-*Run only if time permits. Can be shown as a quick toggle*
-
-**User asks:**
-
-"What if we need this faster — we're behind schedule on this cycle?"
+**User:** "We need to expedite this component"
 
 **Agent action:** Reruns transistors LP with urgency=True.
 
@@ -405,11 +360,52 @@ All approved runs will be aggregated in the final session summary — alongside 
 
 > "In urgency mode, we apply a delivery-speed premium on top of cost and risk. Faster suppliers are unaffected, while slower suppliers become relatively more expensive — up to about 25% higher for the slowest option. This keeps all suppliers feasible, but makes the tradeoff between cost and speed explicit in the optimization."
 
+This run is a one-parameter (other modifications possible) change — the audience sees that the system is responsive, not a static report.
+
 ---
+
+**Session-state behavior (important for the transition ahead):**
+
+Each LP run result is stored in the agent session under `approved_lp_runs`. The agent prompts the user to approve, modify or discard each run before it is committed. Only approved runs are carried forward towards final executive summary.
+
+This means the demo can now hold:
+- the baseline transistors run (moderate risk, 40% cap)
+- an optional disruption rerun (SUP_HKG_38 excluded)
+- an optional power_devices run
+
+All approved runs will be aggregated in the final session summary — alongside a baseline comparison showing how much additional cost the diversification and risk constraints added over the cheapest feasible unconstrained plan.
+
+---
+
+### 7:30–8:30 — Disruption / what-if scenario
+
+**User first asks:** From our available suppliers, provide a procurement plan to ensure we have enough transistors across all facilities to meet our upcoming demand window. Implement a moderate risk aversion supply strategy. No supplier should exceed 35% of total supply volume for this order
+
+**User then asks:**
+> "What if SUP_HKG_38 becomes unavailable next quarter?"
+
+**Agent action:** Reruns the transistors LP with `exclude_supplier_ids=["SUP_HKG_38"]`.
+
+**Behind the scenes:**
+- Same LP pipeline as above
+- `LPParams(product="transistors", exclude_supplier_ids=["SUP_HKG_38"], lambda_risk=0.50, max_supplier_share=0.35)`
+
+**On screen:**
+- Updated allocation table (SUP_HKG_38 absent)
+- Change in total cost vs. baseline run
+- Any binding constraint changes (e.g. share constraint now forces different mix)
+- LP executive_summary reflecting exclusion
+
+**Agent explanation:**
+> "With SUP_HKG_38 excluded, volume redistributes to the remaining eligible suppliers. Total cost increases by approximately X%. The plan remains feasible — no stockout risk — but the risk profile shifts slightly."
+
+**Live run:** Yes — fast rerun, CBC solver is sub-second for this problem size.
+
+--
 
 ### 8:30–9:30 — Session-level final summary
 
-**Agent action:** After all LP runs are complete (transistors, and optionally power_devices), the synthesizer assembles the session-level summary.
+**Agent action:** After all LP runs are complete (integrated circuit components, transistors, and potentially one other), the synthesizer assembles the session-level summary.
 
 **Behind the scenes:**
 - `demo/graph/synthesizer.py` reads all `agent_results["lp_*"]` entries
@@ -437,7 +433,7 @@ Single-source risk:               0 products (diversification active)
 *Note: unit totals reflect the horizon-level LP demand floor — the full planning period quantity the optimizer allocated across suppliers, not the weekly trigger signal shown in the inventory step.*
 
 **Session narrative (generated by synthesizer LLM):**
-> "We forecast 12–16 weeks of finished-goods demand, translated that into component requirements, and confirmed that transistors and power_devices require procurement action this cycle. The LP optimizer allocated the full horizon procurement need across suppliers under moderate risk weighting with diversification enforced. Total estimated procurement spend is $X,XXX,XXX across X suppliers."
+> "We forecast 20 weeks of finished-goods demand, translated that into component requirements, and confirmed that transistors and power_devices require procurement action this cycle. The LP optimizer allocated the full horizon procurement need across suppliers under moderate risk weighting with diversification enforced. Total estimated procurement spend is $X,XXX,XXX across X suppliers."
 
 **Note:** The LP-level `executive_summary` for each product is passed through as-is into the session summary table. The session narrative is the only new LLM-generated text at this stage. **Also compares a baseline optimization that prioritizes complete cost minimization against a more diversified and risk-minimized run** — showing how much the active constraints added in cost and how many more suppliers or countries they introduced. (see optimization/README.md for this exact augmentation if needed for agent integration)
 
@@ -457,7 +453,7 @@ Single-source risk:               0 products (diversification active)
 NOTE: This section is essentially merged/works in with the final exectuive summary.
 
 **Closing line:**
-> "The system moved from historical demand to an optimized, feasible procurement plan — accounting for inventory, supplier risk, compliance, and resilience constraints — in a single session."
+> "The system moved from historical demand to an optimized, feasible procurement plan — accounting for inventory, supplier risk, compliance, and resilience constraints — in a single session to help guide and steer risk-minimized forward looking procurement decision making."
 
 ---
 
