@@ -921,6 +921,8 @@ if "plan_feedback" not in st.session_state:
 # them after st.rerun(). Charts are stored as base64 PNG in the message dict.
 if "fast_path_dfs" not in st.session_state:
     st.session_state.fast_path_dfs = []
+if "forecast_expander_cache" not in st.session_state:
+    st.session_state.forecast_expander_cache = {}
 
 # ── LP approval session state ──────────────────────────────────────────────────
 if "waiting_for_lp_approval" not in st.session_state:
@@ -1699,6 +1701,115 @@ def _render_forecast_summary_structured(s: dict) -> None:
         )
 
 
+def _render_forecast_expanders(key_suffix: str = "live") -> None:
+    """
+    Render three collapsed expanders below the forecast summary.
+    Reads pre-loaded data from st.session_state.forecast_expander_cache.
+    Safe to call in replay loop (no DB queries).
+    """
+    cache = st.session_state.get("forecast_expander_cache", {})
+    if not cache:
+        return
+
+    # ── Expander 1: Week × facility × SKU detail ──────────────────────────
+    drilldown_df = cache.get("drilldown_df")
+    if drilldown_df is not None:
+        with st.expander("Show forecast detail  (week × facility × SKU)", expanded=False):
+            import pandas as _pd_fe
+            _dd = drilldown_df.copy()
+            _rename_map = {
+                "target_week_date":   "Week",
+                "facility_id":        "Facility",
+                "semiconductor_id":   "SKU",
+                "predicted_demand":   "Forecast",
+                "interval_lower_90":  "Lower 90%",
+                "interval_upper_90":  "Upper 90%",
+                "horizon_weeks":      "Horizon Wks",
+            }
+            _dd = _dd.rename(columns={k: v for k, v in _rename_map.items() if k in _dd.columns})
+            _fac_opts = sorted(_dd["Facility"].unique().tolist()) if "Facility" in _dd.columns else []
+            _sku_opts = sorted(_dd["SKU"].unique().tolist())      if "SKU"      in _dd.columns else []
+            _e1c1, _e1c2 = st.columns(2)
+            with _e1c1:
+                _sel_fac = st.multiselect(
+                    "Filter by Facility", _fac_opts, default=_fac_opts,
+                    key=f"fe_fac_{key_suffix}",
+                )
+            with _e1c2:
+                _sel_sku = st.multiselect(
+                    "Filter by SKU", _sku_opts, default=_sku_opts,
+                    key=f"fe_sku_{key_suffix}",
+                )
+            if _sel_fac and "Facility" in _dd.columns:
+                _dd = _dd[_dd["Facility"].isin(_sel_fac)]
+            if _sel_sku and "SKU" in _dd.columns:
+                _dd = _dd[_dd["SKU"].isin(_sel_sku)]
+            _fmt_fe = {c: "{:,.0f}" for c in ["Forecast", "Lower 90%", "Upper 90%"] if c in _dd.columns}
+            st.caption(f"{len(_dd):,} rows")
+            st.dataframe(
+                _dd.style.format(_fmt_fe),
+                use_container_width=True,
+                hide_index=True,
+                height=500,
+            )
+
+    # ── Expander 2: Model validation & training performance ────────────────
+    val_data = cache.get("validation", {})
+    if val_data:
+        with st.expander("Model detail  (validation & training performance)", expanded=False):
+            if val_data.get("chart_b64"):
+                st.image(base64.b64decode(val_data["chart_b64"]))
+            if val_data.get("content"):
+                st.markdown(val_data["content"])
+
+    # ── Expander 3: Performance versus baselines ───────────────────────────
+    base_data = cache.get("baseline", {})
+    if base_data:
+        with st.expander("Performance versus baselines", expanded=False):
+            if base_data.get("chart_b64"):
+                st.image(base64.b64decode(base_data["chart_b64"]))
+            if base_data.get("content"):
+                st.markdown(base_data["content"])
+
+
+_BOM_XLATE_EXEC_NOTE = (
+    "- This step shows what components are required to build the products "
+    "our customers are expecting.\n"
+    "- Every finished unit requires a specific mix of inputs — the BOM "
+    "defines how many units of each component are needed per SKU.\n"
+    "- Multiplying that recipe by the forecasted demand yields the gross "
+    "component requirements shown below.\n"
+    "- These totals are calculated before any inventory has been considered."
+)
+
+
+def _render_bom_translation_body(rows: list) -> None:
+    """
+    Render the BOM translation dataframe + explanatory bullets.
+    Shared by the direct BOM translation query handler and the
+    collapsible expander beneath component requirements — no logic duplication.
+    """
+    import pandas as _pd_bom
+    st.subheader("BOM Translation — How Finished Demand Becomes Component Demand")
+    st.caption(
+        "How each finished SKU's forecasted demand converts to gross "
+        "component demand across all facilities and forecast weeks"
+    )
+    _df_bom = _pd_bom.DataFrame(rows)
+    if not _df_bom.empty:
+        st.dataframe(
+            _df_bom.style.format({
+                "Units / SKU":            "{:,.2f}",
+                "Forecast (units)":       "{:,.0f}",
+                "Gross Component Demand": "{:,.0f}",
+            }),
+            height=420,
+            use_container_width=True,
+            hide_index=True,
+        )
+    st.markdown(_BOM_XLATE_EXEC_NOTE)
+
+
 def show_trace(trace):
     with st.expander("Execution Trace"):
         # --- Timing breakdown ---
@@ -1826,18 +1937,15 @@ for _msg_loop_idx, msg in enumerate(st.session_state.messages):
         # ── Fast-path BOM translation replay ──────────────────────────────
         _bom_xlate = msg.get("bom_xlate_df")
         if _bom_xlate:
-            import pandas as _pd
-            _bdf = _pd.DataFrame(_bom_xlate)
-            st.dataframe(
-                _bdf.style.format({
-                    "Units / SKU":            "{:,.2f}",
-                    "Forecast (units)":       "{:,.0f}",
-                    "Gross Component Demand": "{:,.0f}",
-                }),
-                height=420,
-                use_container_width=True,
-                hide_index=True,
-            )
+            _render_bom_translation_body(_bom_xlate)
+        # ── BOM translation expander beneath component requirements ────────
+        _bom_xlate_exp = msg.get("bom_xlate_expander")
+        if _bom_xlate_exp:
+            with st.expander(
+                "How forecasted semiconductor SKU demand translates into component demand",
+                expanded=False,
+            ):
+                _render_bom_translation_body(_bom_xlate_exp)
         # ── Fast-path procurement summary replay ──────────────────────────
         _proc_rows = msg.get("proc_summary_df")
         if _proc_rows:
@@ -1955,6 +2063,9 @@ for _msg_loop_idx, msg in enumerate(st.session_state.messages):
                 hide_index=True,
                 height=600,
             )
+        # ── Forecast expander replay ──────────────────────────────────────
+        if msg.get("has_forecast_expanders"):
+            _render_forecast_expanders(key_suffix=str(_msg_loop_idx))
         # ── Trace-backed chart replay (graph execution path) ──────────────
         if msg.get("has_trace") and assistant_index < len(st.session_state.traces):
             chart_results = st.session_state.traces[assistant_index].get("chart_results") or {}
@@ -4319,7 +4430,7 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
             # Direct fast path — bypasses orchestrator AND synthesizer entirely.
             # Calls get_latest_production_forecast_summary() for the structured dict
             # so the render helper can use Streamlit components instead of ASCII text.
-            with st.spinner("Retrieving forecast summary..."):
+            with st.spinner("Retrieving forecast summary and pre-loading detail views..."):
                 import sys as _sys_fs, os as _os_fs
                 _parent_fs = _os_fs.path.join(_os_fs.path.dirname(__file__), "..")
                 if _parent_fs not in _sys_fs.path:
@@ -4333,11 +4444,42 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 finally:
                     _conn_fs.close()
 
+                # Pre-load expander data so expansions are instant (no extra DB round-trips).
+                from tools.pipeline_queries import (
+                    get_forecast_drilldown_df as _get_dd_fe,
+                    query_forecast_model_assessment as _get_ma_fe,
+                )
+                _dd_fe_df      = _get_dd_fe()
+                _val_fe_result = _get_ma_fe(direction="validation")
+                _base_fe_result = _get_ma_fe(direction="baseline")
+
+                def _load_b64_fe(artifact_path):
+                    if artifact_path:
+                        _abs = os.path.join(_ARTIFACTS_BASE, artifact_path)
+                        if os.path.exists(_abs):
+                            with open(_abs, "rb") as _f:
+                                return base64.b64encode(_f.read()).decode()
+                    return ""
+
+                st.session_state.forecast_expander_cache = {
+                    "drilldown_df": _dd_fe_df,
+                    "validation": {
+                        "content":   _val_fe_result.get("content", ""),
+                        "chart_b64": _load_b64_fe(_val_fe_result.get("artifact_path", "")),
+                    },
+                    "baseline": {
+                        "content":   _base_fe_result.get("content", ""),
+                        "chart_b64": _load_b64_fe(_base_fe_result.get("artifact_path", "")),
+                    },
+                }
+
             with st.chat_message("assistant"):
                 st.markdown(_KICKOFF_TRANSITION_SENTENCE)
                 st.divider()
                 st.subheader("📊 Production Demand Forecast")
                 _render_forecast_summary_structured(_forecast_s)
+                st.divider()
+                _render_forecast_expanders(key_suffix="live")
 
             # Build clean markdown for message history replay
             _cov_fs = _forecast_s["coverage"]
@@ -4364,6 +4506,7 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 "content": _combined_fs,
                 "has_trace": False,
                 "summary": "",
+                "has_forecast_expanders": True,
             })
             st.rerun()
 
@@ -4571,42 +4714,14 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 from tools.pipeline_queries import query_bom_translation_explainer
                 result = query_bom_translation_explainer()
 
-            import pandas as pd
             _rows = result.get("rows", [])
-            df_bom = pd.DataFrame(_rows)
-
-            _BOM_EXEC_NOTE = (
-                "- This step shows what components are required to build the products "
-                "our customers are expecting.\n"
-                "- Every finished unit requires a specific mix of inputs — the BOM "
-                "defines how many units of each component are needed per SKU.\n"
-                "- Multiplying that recipe by the forecasted demand yields the gross "
-                "component requirements shown below.\n"
-                "- These totals are calculated before any inventory has been considered."
-            )
             with st.chat_message("assistant"):
-                st.subheader("BOM Translation — How Finished Demand Becomes Component Demand")
-                st.caption(
-                    "How each finished SKU's forecasted demand converts to gross "
-                    "component demand across all facilities and forecast weeks"
-                )
-                if not df_bom.empty:
-                    st.dataframe(
-                        df_bom.style.format({
-                            "Units / SKU":            "{:,.2f}",
-                            "Forecast (units)":       "{:,.0f}",
-                            "Gross Component Demand": "{:,.0f}",
-                        }),
-                        height=420,
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-                st.markdown(_BOM_EXEC_NOTE)
+                _render_bom_translation_body(_rows)
             st.session_state.messages.append({
                 "role":        "assistant",
                 "content":     (
                     "**BOM Translation — How Finished Demand Becomes Component Demand**\n\n"
-                    + _BOM_EXEC_NOTE
+                    + _BOM_XLATE_EXEC_NOTE
                 ),
                 "has_trace":   False,
                 "summary":     "",
@@ -4621,6 +4736,9 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
             logger.debug("[ROUTE ARBITRATION] route_chosen=bom_component_req | lp_intent=False")
             with st.spinner("Retrieving component requirements..."):
                 data = _fetch_component_req_data()
+                from tools.pipeline_queries import query_bom_translation_explainer as _get_bom_xlate
+                _bom_xlate_result = _get_bom_xlate()
+                _bom_xlate_rows = _bom_xlate_result.get("rows", [])
 
             import pandas as pd
             df_window = pd.DataFrame([{
@@ -4670,6 +4788,12 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                     hide_index=True,
                 )
                 st.markdown(_EXEC_NOTE)
+                if _bom_xlate_rows:
+                    with st.expander(
+                        "How forecasted semiconductor SKU demand translates into component demand",
+                        expanded=False,
+                    ):
+                        _render_bom_translation_body(_bom_xlate_rows)
             st.session_state.messages.append({
                 "role":         "assistant",
                 "content":      (
@@ -4678,7 +4802,8 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                 ),
                 "has_trace":    False,
                 "summary":      "",
-                "comp_req_dfs": _dfs_payload,
+                "comp_req_dfs":        _dfs_payload,
+                "bom_xlate_expander":  _bom_xlate_rows,
             })
             st.rerun()
 
