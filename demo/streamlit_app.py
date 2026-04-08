@@ -1002,6 +1002,10 @@ if "fast_path_dfs" not in st.session_state:
     st.session_state.fast_path_dfs = []
 if "forecast_expander_cache" not in st.session_state:
     st.session_state.forecast_expander_cache = {}
+# Tracks message count at last scroll injection so widget interactions
+# (filter multiselects, expanders) do NOT trigger an unwanted scroll jump.
+if "_scroll_msg_count" not in st.session_state:
+    st.session_state._scroll_msg_count = 0
 
 # ── LP approval session state ──────────────────────────────────────────────────
 if "waiting_for_lp_approval" not in st.session_state:
@@ -1961,6 +1965,30 @@ def _prepare_trigger_df_from_raw(trig_data: dict):
     return df, ss_ctx, df.to_dict("records")
 
 
+def _inject_scroll_to_bottom() -> None:
+    """
+    Inject a zero-height JS component that scrolls the Streamlit main pane
+    to the bottom (newest content).  Safe to call on every render — only fired
+    when message count has increased since the last scroll, so widget
+    interactions (filter multiselects, expander toggles) never trigger a jump.
+    """
+    import streamlit.components.v1 as _stcomps
+    _stcomps.html(
+        """
+        <script>
+        (function() {
+            var doc = window.parent.document;
+            var el = doc.querySelector('section[data-testid="stMain"]')
+                  || doc.querySelector('.main');
+            if (el) { el.scrollTop = el.scrollHeight; }
+        })();
+        </script>
+        """,
+        height=0,
+        scrolling=False,
+    )
+
+
 def show_trace(trace):
     with st.expander("Execution Trace"):
         # --- Timing breakdown ---
@@ -2317,6 +2345,15 @@ for _msg_loop_idx, msg in enumerate(st.session_state.messages):
     if msg.get("has_trace") and assistant_index < len(st.session_state.traces):
         show_trace(st.session_state.traces[assistant_index])
         assistant_index += 1
+
+# ── Scroll to newest content after a new message is rendered ──────────────────
+# Only fires when message count changed (new query/response added).
+# Widget interactions (multiselect filters, expander toggles) do NOT trigger
+# a scroll because the count stays the same between those reruns.
+_cur_msg_count = len(st.session_state.messages)
+if _cur_msg_count != st.session_state._scroll_msg_count:
+    st.session_state._scroll_msg_count = _cur_msg_count
+    _inject_scroll_to_bottom()
 
 
 # ── Graph execution helpers ────────────────────────────────────────────────────
