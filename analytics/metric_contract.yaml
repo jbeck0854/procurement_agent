@@ -85,7 +85,7 @@ constraints:
   compliance_gate:
     enabled: true
     field: "compliance_eligibility"
-    threshold: 0.60
+    threshold: 0.50
     rule: ">= threshold"
     rationale: "Exclude suppliers unlikely to meet compliance requirements (governance + customs-derived)."
     runtime_override_allowed: true

@@ -37,18 +37,46 @@ def _format_result(result: dict) -> str:
 
     parts = []
 
-    # Executive summary
+    # ── Semantic alerts (rendered first, before allocation) ─────────────────
+    avoid_warn = result.get("avoid_tier_warning")
+    if avoid_warn:
+        parts.append(f"⚠ AVOID-TIER ALERT: {avoid_warn}")
+
+    div_fallback = result.get("diversification_fallback_note")
+    if div_fallback:
+        parts.append(f"⚠ DIVERSIFICATION ALERT: {div_fallback}")
+
+    compliance_unlock = result.get("compliance_unlocked_note")
+    if compliance_unlock:
+        parts.append(f"ℹ PARAMETER CHANGE NOTE: {compliance_unlock}")
+
+    compliance_excl = result.get("compliance_exclusion_note")
+    if compliance_excl:
+        parts.append(f"ℹ COMPLIANCE NOTE: {compliance_excl}")
+
+    # Executive summary (stripped of embedded alert prefix to avoid duplication)
     exec_summary = result.get("executive_summary", "")
     if exec_summary:
-        parts.append(exec_summary)
+        # The avoid-tier alert is already surfaced above; strip it from exec_summary
+        # to avoid repeating it inline.
+        _stripped = exec_summary
+        if _stripped.startswith("[AVOID-TIER ALERT]"):
+            _prefix_end = _stripped.find("  ", len("[AVOID-TIER ALERT] "))
+            if _prefix_end != -1:
+                _stripped = _stripped[_prefix_end:].strip()
+        parts.append(_stripped)
 
     # Allocation table
     allocation = result.get("allocation", [])
     if allocation:
         parts.append("\nSupplier Allocation:")
         for row in allocation:
+            tier_note = (
+                f" [{row.get('decision_tier', '')}]"
+                if row.get("decision_tier") else ""
+            )
             parts.append(
-                f"  {row['supplier_id']} ({row.get('country_code', '')}) — "
+                f"  {row['supplier_id']} ({row.get('country_code', '')}){tier_note} — "
                 f"{row['allocated_qty']:,} units ({row['share_pct']:.1f}%) "
                 f"@ ${row['landed_unit_cost']:.4f}/unit "
                 f"= ${row['total_cost']:,.2f}"
@@ -150,7 +178,7 @@ def _merge_with_previous_params(params: dict) -> dict:
         "lambda_risk": 0.50,
         "max_supplier_share": 1.00,
         "budget_cap": None,
-        "compliance_threshold": 0.60,
+        "compliance_threshold": 0.50,
         "service_level_target": 1.00,
         "order_quantity": 5_000,
         "urgency": False,

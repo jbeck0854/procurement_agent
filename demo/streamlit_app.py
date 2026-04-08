@@ -515,7 +515,7 @@ def _parse_lp_followup(prompt: str, lp_history: dict) -> dict | None:
         "exclude_supplier_ids": list(prior.get("exclude_supplier_ids") or []),
         "budget_cap":           prior.get("budget_cap"),
         "service_level_target": prior.get("service_level_target", 1.0),
-        "compliance_threshold": prior.get("compliance_threshold", 0.60),
+        "compliance_threshold": prior.get("compliance_threshold", 0.50),
         "facility_id":          prior.get("facility_id"),
     }
 
@@ -676,7 +676,7 @@ def _parse_lp_contextual_followup(
         "exclude_supplier_ids": list(prior.get("exclude_supplier_ids") or []),
         "budget_cap":           prior.get("budget_cap"),
         "service_level_target": prior.get("service_level_target", 1.0),
-        "compliance_threshold": prior.get("compliance_threshold", 0.60),
+        "compliance_threshold": prior.get("compliance_threshold", 0.50),
         "facility_id":          prior.get("facility_id"),
     }
     return merged
@@ -753,7 +753,7 @@ def _run_lp_direct(params: dict) -> None:
     excl_ids    = params.get("exclude_supplier_ids") or []
     budget_cap  = params.get("budget_cap", None)
     svc_level   = params.get("service_level_target", 1.0)
-    compliance  = params.get("compliance_threshold", 0.60)
+    compliance  = params.get("compliance_threshold", 0.50)
     facility_id = params.get("facility_id", None)
 
     t0 = _time.perf_counter()
@@ -2077,7 +2077,7 @@ def _render_lp_decision_explanation(raw: dict) -> None:
     urgency        = recap.get("urgency", False)
     budget_cap     = recap.get("budget_cap")
     excl_ids       = recap.get("exclude_supplier_ids") or []
-    compliance_thr = recap.get("compliance_threshold", 0.6)
+    compliance_thr = recap.get("compliance_threshold", 0.5)
     facility_id    = recap.get("facility_id")
     adj_req        = req.get("adjusted_requirement", 0)
     n_fac          = req.get("n_facilities_included", 0)
@@ -2775,7 +2775,7 @@ def _render_lp_result(raw: dict) -> None:
 
         # Bullet 3 — compliance-excluded suppliers with short enough lead times
         if _excl_compliance_fast:
-            _comp_thr_val = recap.get("compliance_threshold", 0.6)
+            _comp_thr_val = recap.get("compliance_threshold", 0.5)
             _excl_lines = [
                 f"**{sid}** ({wk}w lead, {elig:.0%} compliance eligibility)"
                 for sid, wk, elig in _excl_compliance_fast
@@ -2787,29 +2787,95 @@ def _render_lp_result(raw: dict) -> None:
                 f"Consider relaxing the compliance threshold as a contingency."
             )
 
-        # Bullet 4 — emergency / spot sourcing with explicit uncovered week numbers
-        if _gap_weeks_str:
-            if _no_eligible_in_time:
+        # Bullet 4 — emergency / spot sourcing, split by per-week eligible-pool feasibility.
+        # Uses structured urgency_feasibility from LP result (added in run_lp_optimization.py).
+        # Distinguishes: weeks eligible suppliers CAN cover (expedite first) vs. weeks
+        # nobody in the eligible pool can cover (genuine emergency sourcing needed).
+        def _fmt_wk(weeks: list) -> str:
+            """'week 2'  /  'weeks 2 and 5'  /  'weeks 2, 5, and 8'"""
+            if not weeks:
+                return ""
+            if len(weeks) == 1:
+                return f"week {weeks[0]}"
+            if len(weeks) == 2:
+                return f"weeks {weeks[0]} and {weeks[1]}"
+            return "weeks " + ", ".join(str(w) for w in weeks[:-1]) + f", and {weeks[-1]}"
+
+        _uf            = raw.get("urgency_feasibility") or {}
+        _uf_coverable  = _uf.get("coverable_weeks", [])    # eligible pool CAN cover
+        _uf_uncoverable= _uf.get("uncoverable_weeks", [])  # nobody in eligible pool can cover
+        _uf_fast_sups  = _uf.get("fast_suppliers", [])
+
+        if _uf:
+            # Preferred path: structured per-week data available from LP result.
+            # Only show "eligible suppliers available" if Bullet 2 has NOT already named them.
+            # Bullet 2 fires when _alt_list is set (Case A: earliest week coverable by pool).
+            # If _alt_list is empty but _uf_coverable is non-empty, some LATER gap weeks are
+            # coverable — this is the gap the user observed (eligible sups for weeks 5,8 but
+            # not week 2, causing misleading "no eligible supplier" wording in old code).
+            if _uf_coverable and not _has_alternatives:
+                _cov_str = _fmt_wk(_uf_coverable)
+                if _uf_fast_sups:
+                    _fast_names_str = ", ".join(
+                        f"**{s['supplier_id']}** ({s['lead_time_weeks']}w lead)"
+                        for s in _uf_fast_sups
+                    )
+                    _rec_bullets.append(
+                        f"Eligible suppliers ({_fast_names_str}) are available to cover "
+                        f"{_cov_str} if expedited or reallocated. "
+                        f"Consider expediting these suppliers first before pursuing emergency options."
+                    )
+                else:
+                    _rec_bullets.append(
+                        f"Some eligible suppliers may be able to cover {_cov_str} "
+                        f"if expedited or reallocated. "
+                        f"Consider reviewing supplier lead times before pursuing emergency options."
+                    )
+
+            if _uf_uncoverable:
+                _uncov_str = _fmt_wk(_uf_uncoverable)
+                if _has_alternatives:
+                    _rec_bullets.append(
+                        f"If the alternatives above are not available for spot ordering, "
+                        f"contact sales/sourcing for emergency domestic or spot suppliers "
+                        f"to cover {_uncov_str} at heightened cost."
+                    )
+                else:
+                    _rec_bullets.append(
+                        f"Contact sales/sourcing for emergency domestic or spot suppliers "
+                        f"to cover immediate replenishment needs for {_uncov_str} at heightened cost."
+                    )
+            elif not _uf_coverable:
+                # urgency_feasibility present but both lists empty — safe fallback
+                _wk_ref = _fmt_wk(_gap_weeks) if _gap_weeks else f"week {shortfall_week}"
                 _rec_bullets.append(
-                    f"Contact sales/sourcing for emergency domestic or spot suppliers to cover "
-                    f"immediate replenishment needs for Forecast {_week_plural} {_gap_weeks_str} "
-                    f"at heightened cost — no currently eligible selected supplier can deliver "
-                    f"within this window."
-                )
-            elif _has_alternatives:
-                _rec_bullets.append(
-                    f"If the faster alternatives above are not available for spot ordering, "
-                    f"contact sales/sourcing for emergency domestic suppliers to cover "
-                    f"Forecast {_week_plural} {_gap_weeks_str} at heightened cost."
+                    f"Consider expediting eligible suppliers to cover urgent procurement needs. "
+                    f"Otherwise, contact sales/sourcing for emergency domestic or spot suppliers "
+                    f"to cover immediate replenishment needs for {_wk_ref} at heightened cost."
                 )
         else:
-            # No gap rows from DB — fall back to shortfall_week only
-            if _no_eligible_in_time:
+            # Fallback path: old result format without urgency_feasibility key.
+            # Replaces misleading "no currently eligible selected supplier" wording.
+            if _gap_weeks_str:
+                if _no_eligible_in_time:
+                    _rec_bullets.append(
+                        f"Consider expediting eligible suppliers to cover urgent procurement needs. "
+                        f"Otherwise, contact sales/sourcing for emergency domestic or spot suppliers "
+                        f"to cover immediate replenishment needs for Forecast {_week_plural} "
+                        f"{_gap_weeks_str} at heightened cost."
+                    )
+                elif _has_alternatives:
+                    _rec_bullets.append(
+                        f"If the faster alternatives above are not available for spot ordering, "
+                        f"contact sales/sourcing for emergency domestic suppliers to cover "
+                        f"Forecast {_week_plural} {_gap_weeks_str} at heightened cost."
+                    )
+            elif _no_eligible_in_time:
                 _rec_bullets.append(
-                    f"Contact sales/sourcing for emergency domestic or spot suppliers to cover "
-                    f"immediate replenishment needs for Forecast Week {shortfall_week} "
-                    f"at heightened cost — no currently eligible selected supplier can deliver "
-                    f"within this window."
+                    f"Consider expediting eligible suppliers to cover urgent procurement needs. "
+                    f"Otherwise, contact sales/sourcing for emergency domestic or spot suppliers "
+                    f"to cover immediate replenishment needs for Forecast Week {shortfall_week} "
+                    f"at heightened cost."
                 )
 
         for _rb in _rec_bullets:
@@ -2820,7 +2886,7 @@ def _render_lp_result(raw: dict) -> None:
         _pk        = recap.get("product", "")
         _Q         = int(adj_req) if adj_req else int(req.get("total_net_requirement", 5000))
         _lam       = recap.get("lambda_risk", 0.5)
-        _comp_thr  = recap.get("compliance_threshold", 0.6)
+        _comp_thr  = recap.get("compliance_threshold", 0.5)
         _sup_ids   = [r.get("supplier_id", "") for r in alloc if r.get("supplier_id")]
         _bd_key    = f"_lp_bd_{_pk}_{_Q}_{_lam}"   # session_state cache key
 
@@ -2858,21 +2924,25 @@ def _render_lp_result(raw: dict) -> None:
         _render_lp_decision_explanation(raw)
 
     # ── Excluded Suppliers (expander, shown after explanation) ────────────────
-    excl_compliance = [e for e in excl if "compliance" in e.get("exclusion_reason", "")]
-    excl_zero       = [e for e in excl if e.get("exclusion_reason") == "zero_allocation"]
-    excl_manual     = [e for e in excl if e.get("exclusion_reason") == "excluded_by_user_scenario"]
-
-    if excl_compliance or excl_zero or excl_manual:
+    if excl:
         _excl_label = f"Excluded Suppliers ({len(excl)})"
         with st.expander(_excl_label):
             excl_rows = []
             for e in excl:
-                reason_map = {
-                    "zero_allocation":           "Not selected by LP (zero allocation)",
-                    "excluded_by_user_scenario": "Manually excluded for this scenario",
-                }
                 reason_raw  = e.get("exclusion_reason", "")
-                reason_disp = reason_map.get(reason_raw) or f"Compliance gate ({e.get('compliance_eligibility', 0):.0%} eligibility)"
+                comp_elig   = e.get("compliance_eligibility", 0)
+                if reason_raw == "zero_allocation":
+                    reason_disp = "Eligible — not selected by optimizer"
+                elif reason_raw == "excluded_by_user_scenario":
+                    reason_disp = "Manually excluded for this scenario"
+                elif reason_raw == "gate:compliance_gate":
+                    reason_disp = f"Below compliance threshold ({comp_elig:.0%} eligibility)"
+                elif reason_raw == "null_policy_drop_row":
+                    reason_disp = "Excluded — missing required data fields"
+                elif reason_raw == "avoid_tier_filter":
+                    reason_disp = "Eligible — excluded by Avoid-tier safeguard (non-Avoid suppliers sufficient)"
+                else:
+                    reason_disp = reason_raw or "Excluded (reason unspecified)"
                 excl_rows.append({
                     "Supplier": e.get("supplier_id", ""),
                     "Country":  e.get("country_code", ""),
@@ -4332,7 +4402,7 @@ elif not st.session_state.waiting_for_approval and not st.session_state.waiting_
                             "exclude_supplier_ids": _prior_params.get("exclude_supplier_ids") or [],
                             "budget_cap":           _prior_params.get("budget_cap"),
                             "service_level_target": _prior_params.get("service_level_target", 1.0),
-                            "compliance_threshold": _prior_params.get("compliance_threshold", 0.60),
+                            "compliance_threshold": _prior_params.get("compliance_threshold", 0.50),
                             "facility_id":          _prior_params.get("facility_id"),
                         }
                         for _k, _v in _lp_detected.items():

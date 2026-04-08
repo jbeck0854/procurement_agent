@@ -234,7 +234,7 @@ def plot_supplier_score_breakdown_panel(
     threshold_display = (
         float(compliance_threshold)
         if compliance_threshold is not None
-        else float(contract.constraints.get("compliance_gate", {}).get("threshold", 0.60))
+        else float(contract.constraints.get("compliance_gate", {}).get("threshold", 0.50))
     )
 
     n_suppliers = len(scored)

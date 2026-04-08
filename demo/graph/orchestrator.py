@@ -108,7 +108,7 @@ LP TOOLS (for lp_agent):
            "facility_id": str or null,
            "diversification_mode": str — "none", "supplier_share_only", or "country_diversified"}
   Only "product" is required. Defaults: lambda_risk=0.5, max_supplier_share=1.0,
-  compliance_threshold=0.6, service_level_target=1.0, urgency=false, exclude_supplier_ids=[],
+  compliance_threshold=0.5, service_level_target=1.0, urgency=false, exclude_supplier_ids=[],
   diversification_mode="none".
   - "none": No diversification constraint.
   - "supplier_share_only": Enforce max_supplier_share cap per supplier.
