@@ -2,22 +2,22 @@ MODEL SELECTION SUMMARY
 ==========================================================
   Target                 : customer_orders
   Modeling grain         : (week, facility_id, semiconductor_id)
-  Best CV params         : {'model__l2_regularization': 0.1, 'model__learning_rate': 0.05, 'model__max_depth': 6, 'model__max_iter': 200, 'model__min_samples_leaf': 50}
-  Best CV MAE            :     294.98
+  Best CV params         : {'model__l2_regularization': 0.1, 'model__learning_rate': 0.03, 'model__max_depth': 5, 'model__max_iter': 200, 'model__min_samples_leaf': 50}
+  Best CV MAE            :     295.04
 
 HOLDOUT EVALUATION
 ----------------------------------------------
-  Row-level MAE          :     205.93
-  Row-level RMSE         :     289.37
-  Row-level MAPE         :      23.75%
-  Row-level R²           :     0.7778
+  Row-level MAE          :     203.11
+  Row-level RMSE         :     290.20
+  Row-level MAPE         :      23.02%
+  Row-level R²           :     0.7765
 
 WEEKLY AGGREGATE METRICS
 ----------------------------------------------
-  System SUM  MAE        :   4,012.31
-  System SUM  RMSE       :   5,276.91
-  Series MEAN MAE        :      83.59
-  Series MEAN RMSE       :     109.94
+  System SUM  MAE        :   4,069.74
+  System SUM  RMSE       :   5,467.29
+  Series MEAN MAE        :      84.79
+  Series MEAN RMSE       :     113.90
 
 INTERPRETATION
 ----------------------------------------------
@@ -28,15 +28,15 @@ INTERPRETATION
 
 PER-SERIES HOLDOUT MAE
 ----------------------------------------------
-  Mean   : 205.93
-  Median : 183.78
-  Std    : 92.32
+  Mean   : 203.11
+  Median : 185.61
+  Std    : 95.94
 
 WORST 5 SERIES BY MAE
 ----------------------------------------------
 facility_id semiconductor_id    mae   rmse
- FACILITY_2  SEMICONDUCTOR_1 440.25 525.38
- FACILITY_1  SEMICONDUCTOR_5 432.22 596.97
- FACILITY_2  SEMICONDUCTOR_7 424.24 723.33
- FACILITY_1  SEMICONDUCTOR_2 364.93 520.98
- FACILITY_2  SEMICONDUCTOR_5 317.11 396.00
+ FACILITY_2  SEMICONDUCTOR_1 467.73 556.92
+ FACILITY_1  SEMICONDUCTOR_5 424.74 585.67
+ FACILITY_2  SEMICONDUCTOR_3 364.03 426.60
+ FACILITY_2  SEMICONDUCTOR_7 363.68 617.23
+ FACILITY_1  SEMICONDUCTOR_1 351.51 377.76

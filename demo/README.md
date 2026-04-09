@@ -101,22 +101,22 @@ See `architecture/architecture_flowchart.png` for a visual diagram.
 Run SQL files **in this exact order** from the **project root** (`procurement_agent/`):
 
 ```bash
-psql -U postgres -c "CREATE DATABASE procurement_agent;"
+sudo -u postgres psql -c "CREATE DATABASE procurement_agent;"
 
-psql -U postgres -d procurement_agent -f sql/dimensions.sql
-psql -U postgres -d procurement_agent -f sql/facts.sql
-psql -U postgres -d procurement_agent -f sql/load/stage.sql
-psql -U postgres -d procurement_agent -f sql/load/copy_staging.sql
-psql -U postgres -d procurement_agent -f sql/load/load_dimensions.sql
-psql -U postgres -d procurement_agent -f sql/load/load_facts.sql
-psql -U postgres -d procurement_agent -f sql/load/load_bom.sql
-psql -U postgres -d procurement_agent -f sql/views.sql
+sudo -u postgres psql -d procurement_agent -f sql/dimensions.sql
+sudo -u postgres psql -d procurement_agent -f sql/facts.sql
+sudo -u postgres psql -d procurement_agent -f sql/load/stage.sql
+sudo -u postgres psql -d procurement_agent -f sql/load/copy_staging.sql
+sudo -u postgres psql -d procurement_agent -f sql/load/load_dimensions.sql
+sudo -u postgres psql -d procurement_agent -f sql/load/load_facts.sql
+sudo -u postgres psql -d procurement_agent -f sql/load/load_bom.sql
+sudo -u postgres psql -d procurement_agent -f sql/views.sql
 ```
 
 Verify:
 
 ```bash
-psql -U postgres -d procurement_agent -c "SELECT COUNT(*) FROM vw_supplier_complete_profile;"
+sudo -u postgres psql -d procurement_agent -c "SELECT COUNT(*) FROM vw_supplier_complete_profile;"
 # Expected: 89
 ```
 

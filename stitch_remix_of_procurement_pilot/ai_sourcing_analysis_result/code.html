@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Manrope:wght@300;400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<title>Procurement Pilot | Silicon Intelligence</title>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-panel {
+            background: rgba(36, 57, 48, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(61, 74, 57, 0.15);
+        }
+        .neon-glow {
+            box-shadow: 0 0 40px rgba(90, 235, 86, 0.08);
+        }
+        .cinematic-gradient {
+            background: linear-gradient(180deg, rgba(10, 31, 23, 0) 0%, rgba(10, 31, 23, 1) 100%);
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "on-secondary-fixed-variant": "#00531e",
+                "tertiary-fixed": "#78f5ff",
+                "surface-tint": "#50e24e",
+                "surface-container-low": "#0a1f17",
+                "outline-variant": "#3d4a39",
+                "primary-fixed-dim": "#50e24e",
+                "surface-variant": "#243930",
+                "surface-bright": "#293e34",
+                "inverse-on-surface": "#20352b",
+                "surface-container-lowest": "#00120a",
+                "primary": "#aeffa0",
+                "on-primary-fixed": "#002202",
+                "on-primary": "#003a04",
+                "primary-fixed": "#74ff6b",
+                "secondary-fixed": "#88fb98",
+                "inverse-primary": "#006e10",
+                "error-container": "#93000a",
+                "on-error": "#690005",
+                "on-error-container": "#ffdad6",
+                "tertiary-container": "#1ce4f1",
+                "on-primary-container": "#00670e",
+                "on-primary-fixed-variant": "#005309",
+                "surface-container-high": "#192e25",
+                "surface": "#03170f",
+                "surface-container": "#0f231b",
+                "on-surface-variant": "#bccbb4",
+                "on-surface": "#d0e8da",
+                "on-tertiary-fixed-variant": "#004f54",
+                "on-secondary": "#003912",
+                "on-tertiary-fixed": "#002022",
+                "surface-dim": "#03170f",
+                "secondary": "#6cdd7f",
+                "on-secondary-container": "#00320f",
+                "tertiary-fixed-dim": "#00dbe8",
+                "surface-container-highest": "#243930",
+                "primary-container": "#5aeb56",
+                "on-tertiary": "#00363a",
+                "inverse-surface": "#d0e8da",
+                "on-background": "#d0e8da",
+                "on-tertiary-container": "#006268",
+                "tertiary": "#aaf8ff",
+                "secondary-container": "#30a54e",
+                "on-secondary-fixed": "#002108",
+                "background": "#03170f",
+                "secondary-fixed-dim": "#6cdd7f",
+                "outline": "#879580",
+                "error": "#ffb4ab"
+              },
+              fontFamily: {
+                "headline": ["Space Grotesk"],
+                "body": ["Manrope"],
+                "label": ["Inter"]
+              },
+              borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+            },
+          },
+        }
+      </script>
+</head>
+<body class="bg-background text-on-surface font-body selection:bg-primary selection:text-on-primary">
+<!-- TopNavBar -->
+<nav class="fixed top-0 w-full z-50 bg-[#03170F]/60 backdrop-blur-xl flex justify-between items-center px-8 h-16 w-full shadow-[0_0_40px_rgba(90,235,86,0.08)]">
+<div class="flex items-center gap-8">
+<span class="text-xl font-bold tracking-tighter text-[#5AEB56] uppercase font-headline">SILICON INTELLIGENCE</span>
+<div class="hidden md:flex gap-6 items-center">
+<a class="font-headline tracking-tight text-[#5AEB56] border-b-2 border-[#5AEB56] pb-1 transition-colors duration-300" href="#">Supply</a>
+<a class="font-headline tracking-tight text-[#879580] hover:text-[#5AEB56] transition-colors duration-300" href="#">Logistics</a>
+<a class="font-headline tracking-tight text-[#879580] hover:text-[#5AEB56] transition-colors duration-300" href="#">Yield</a>
+<a class="font-headline tracking-tight text-[#879580] hover:text-[#5AEB56] transition-colors duration-300" href="#">Analysis</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-[#5AEB56] hover:opacity-80 transition-all">account_tree</button>
+<button class="material-symbols-outlined text-[#5AEB56] hover:opacity-80 transition-all">notifications</button>
+<div class="w-8 h-8 rounded-full border border-outline-variant overflow-hidden">
+<img alt="Analyst profile image" data-alt="Professional headshot of a technical analyst in a dark studio setting with subtle green rim lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAx2MYRkc6A_pbdQ-1k5Y-6G_fdH753b0MdKalDj-VpUf7vpr3Si48i5i4q5TUSYN4EMJRkmrbzFbCpGgLvO-V3zfHM8HB2gvOCXMukapvPhRwxaECMPI3Sp20stSCrkWAlRJTPCVX_ugWiFiJnsKeGYls682KHtWcnuKI14SjJetYI2_21H86lPrUKurRGRaSSukmGE8w_9pMLtAHhFOco4I_GhuAL9OCBsJFoa9PqyUB85FumaE1q9dyHB25-u5KkbPM_7DC6GhU"/>
+</div>
+</div>
+</nav>
+<div class="flex min-h-screen pt-16">
+<!-- SideNavBar -->
+<aside class="hidden md:flex flex-col h-[calc(100vh-4rem)] w-72 border-r border-[#3D4A39]/15 bg-[#0A1F17] py-6 sticky top-16">
+<div class="px-6 mb-8">
+<div class="flex items-center gap-3 mb-6">
+<div class="w-10 h-10 rounded bg-surface-container-highest flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">memory</span>
+</div>
+<div>
+<p class="text-lg font-black text-[#5AEB56] font-headline">Logic Interface</p>
+<p class="text-xs text-outline font-label uppercase tracking-widest">Active Sourcing Engine</p>
+</div>
+</div>
+<button class="w-full bg-gradient-to-br from-primary to-primary-container text-on-primary-container font-bold py-3 px-4 rounded-sm hover:shadow-[0_0_15px_rgba(90,235,86,0.4)] transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined">add</span>
+                    New Analysis
+                </button>
+</div>
+<div class="flex-1 px-3 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 bg-[#243930] text-[#5AEB56] border-r-4 border-[#5AEB56] font-medium transition-all" href="#">
+<span class="material-symbols-outlined">memory</span>
+<span>Current Sourcing</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#879580] hover:bg-[#243930] hover:text-white transition-all font-medium" href="#">
+<span class="material-symbols-outlined">history</span>
+<span>Wafer History</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#879580] hover:bg-[#243930] hover:text-white transition-all font-medium" href="#">
+<span class="material-symbols-outlined">grid_view</span>
+<span>Yield Maps</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#879580] hover:bg-[#243930] hover:text-white transition-all font-medium" href="#">
+<span class="material-symbols-outlined">payments</span>
+<span>Cost Models</span>
+</a>
+</div>
+<div class="px-3 border-t border-outline-variant/10 pt-4 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 text-[#879580] hover:bg-[#243930] hover:text-white transition-all font-medium" href="#">
+<span class="material-symbols-outlined">description</span>
+<span>Technical Docs</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-[#879580] hover:bg-[#243930] hover:text-white transition-all font-medium" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span>Settings</span>
+</a>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 p-8 md:p-12 max-w-7xl mx-auto w-full">
+<!-- Header Section -->
+<header class="mb-12">
+<div class="inline-block px-3 py-1 mb-4 rounded-full bg-surface-container-high border border-primary/20">
+<span class="text-xs font-label font-bold tracking-[0.2em] text-primary uppercase">Procurement Pilot v4.2</span>
+</div>
+<h1 class="text-5xl font-headline font-bold tracking-tight text-on-surface mb-4">Component Requirements &amp; Inventory Analysis</h1>
+<p class="text-xl text-outline max-w-3xl font-body leading-relaxed">
+                    Based on your query regarding upcoming wafer production cycles, I have synthesized current on-hand inventory against forecasted gross requirements for Q3.
+                </p>
+</header>
+<!-- AI Response Summary -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+<div class="lg:col-span-2 space-y-8">
+<div class="glass-panel p-8 rounded-lg neon-glow">
+<div class="flex items-center gap-3 mb-6">
+<span class="material-symbols-outlined text-primary">auto_awesome</span>
+<h2 class="text-xl font-headline font-semibold text-on-surface">Intelligence Summary</h2>
+</div>
+<div class="space-y-4 text-on-surface-variant font-body leading-relaxed">
+<p>Analysis of current stock levels reveals a critical <span class="text-tertiary-fixed font-bold">12% shortfall</span> in Logic Gate Array components for the Week 32 production run. Current on-hand inventory is sufficient for Week 30 and 31, but safety stock levels will be breached by <span class="text-secondary font-bold">1,400 units</span> without immediate replenishment.</p>
+<p>Optimization recommendation: Expedite PO-8842 from the regional hub to mitigate lead-time risk. Current yield maps indicate a high probability of 98% pass rate on current batches.</p>
+</div>
+</div>
+<!-- Component Requirements Table -->
+<div class="glass-panel rounded-lg overflow-hidden">
+<div class="p-6 border-b border-outline-variant/15 flex justify-between items-center bg-surface-container-high/50">
+<h3 class="font-headline font-bold text-lg text-primary tracking-tight">Component Requirements</h3>
+<span class="text-xs font-label text-outline uppercase tracking-widest">Real-time Data Stream</span>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left font-label border-collapse">
+<thead>
+<tr class="text-outline border-b border-outline-variant/15 uppercase text-[10px] tracking-[0.15em]">
+<th class="px-6 py-4 font-semibold">Component</th>
+<th class="px-6 py-4 font-semibold">Gross Req</th>
+<th class="px-6 py-4 font-semibold">On-Hand</th>
+<th class="px-6 py-4 font-semibold">Safety Stk</th>
+<th class="px-6 py-4 font-semibold text-right">Net Req</th>
+</tr>
+</thead>
+<tbody class="text-on-surface divide-y divide-outline-variant/10">
+<tr class="hover:bg-primary/5 transition-colors group">
+<td class="px-6 py-5 font-medium flex items-center gap-3">
+<span class="w-2 h-2 rounded-full bg-primary group-hover:animate-pulse"></span>
+                                            Logic-X 400
+                                        </td>
+<td class="px-6 py-5">45,000</td>
+<td class="px-6 py-5">12,500</td>
+<td class="px-6 py-5">5,000</td>
+<td class="px-6 py-5 text-right font-bold text-tertiary-fixed">27,500</td>
+</tr>
+<tr class="hover:bg-primary/5 transition-colors group">
+<td class="px-6 py-5 font-medium flex items-center gap-3">
+<span class="w-2 h-2 rounded-full bg-secondary group-hover:animate-pulse"></span>
+                                            SRAM-Nano 8G
+                                        </td>
+<td class="px-6 py-5">82,000</td>
+<td class="px-6 py-5">85,400</td>
+<td class="px-6 py-5">10,000</td>
+<td class="px-6 py-5 text-right font-bold text-primary">0</td>
+</tr>
+<tr class="hover:bg-primary/5 transition-colors group">
+<td class="px-6 py-5 font-medium flex items-center gap-3">
+<span class="w-2 h-2 rounded-full bg-primary group-hover:animate-pulse"></span>
+                                            Power-Bridge V2
+                                        </td>
+<td class="px-6 py-5">18,500</td>
+<td class="px-6 py-5">4,200</td>
+<td class="px-6 py-5">2,500</td>
+<td class="px-6 py-5 text-right font-bold text-tertiary-fixed">11,800</td>
+</tr>
+<tr class="hover:bg-primary/5 transition-colors group">
+<td class="px-6 py-5 font-medium flex items-center gap-3">
+<span class="w-2 h-2 rounded-full bg-outline group-hover:animate-pulse"></span>
+                                            Thermal Inter-X
+                                        </td>
+<td class="px-6 py-5">120,000</td>
+<td class="px-6 py-5">142,000</td>
+<td class="px-6 py-5–">15,000</td>
+<td class="px-6 py-5 text-right font-bold text-primary">0</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Forecast Summary Sidebar -->
+<div class="space-y-6">
+<div class="glass-panel p-6 rounded-lg">
+<h3 class="font-headline font-bold text-on-surface mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary-fixed">monitoring</span>
+                            Forecast Summary
+                        </h3>
+<div class="space-y-6">
+<div>
+<p class="text-[10px] font-label text-outline uppercase tracking-widest mb-1">Planning Window</p>
+<p class="text-2xl font-headline font-bold text-on-surface">12 Weeks (Q3-Q4)</p>
+</div>
+<div>
+<p class="text-[10px] font-label text-outline uppercase tracking-widest mb-1">Total Gross Requirement</p>
+<div class="flex items-baseline gap-2">
+<p class="text-3xl font-headline font-bold text-primary">265.5K</p>
+<span class="text-xs text-secondary-fixed-dim">↑ 14% vs LY</span>
+</div>
+</div>
+<div class="pt-6 border-t border-outline-variant/20">
+<p class="text-[10px] font-label text-outline uppercase tracking-widest mb-4">Facility Allocation</p>
+<ul class="space-y-4">
+<li class="flex justify-between items-center">
+<span class="text-sm text-on-surface-variant">Austin FAB 4</span>
+<span class="text-sm font-bold text-primary">42.2k units</span>
+</li>
+<li class="flex justify-between items-center">
+<span class="text-sm text-on-surface-variant">Hsinchu Site 12</span>
+<span class="text-sm font-bold text-primary">118.9k units</span>
+</li>
+<li class="flex justify-between items-center">
+<span class="text-sm text-on-surface-variant">Dresden Hub 2</span>
+<span class="text-sm font-bold text-primary">104.4k units</span>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="relative h-64 rounded-lg overflow-hidden glass-panel group">
+<img alt="Silicon Wafer Visualization" class="absolute inset-0 w-full h-full object-cover mix-blend-overlay opacity-40 group-hover:scale-105 transition-transform duration-700" data-alt="Microscopic high-detail view of a circular silicon wafer with shimmering geometric patterns and neon green light reflections" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDTsTL3IbPhU71q-alD1LRGH_VRl47GSu9zn-iFEYXm9o7s2s7W0oCG262N_u8vj0IrJIG0KCchiebuE9iVkoErBwAXbWJiV7MDu1IECzWOGrDRmxJ6OBAfPg_Qf4igonse7J3al9GkUQz9bARuXJAXHHhze_HGwdeHjLhgkxaABvAfz0QD_tfXeEjGKCh3jmMJSCvPHdWusmFPUZ0YC5MB0zBKTZ7oOkrfjnkxA8WHvZwmkGZGBpyFwfqkr6JwhlVqucd_0ybXVlo"/>
+<div class="absolute inset-0 bg-gradient-to-t from-background to-transparent p-6 flex flex-col justify-end">
+<p class="text-xs font-label text-primary font-bold uppercase tracking-widest mb-1">Yield Projection</p>
+<p class="text-xl font-headline font-bold text-on-surface">98.2% Confidence Level</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Follow-up Action Area -->
+<div class="glass-panel p-8 rounded-lg flex flex-col md:flex-row justify-between items-center gap-8 border-l-4 border-primary">
+<div class="flex-1">
+<h4 class="text-lg font-headline font-bold text-on-surface mb-2">Ready to initiate procurement?</h4>
+<p class="text-sm text-outline font-body">The system has prepared the necessary purchase orders for Logic-X 400 components to prevent the Week 32 stockout.</p>
+</div>
+<div class="flex flex-wrap gap-4">
+<button class="bg-surface-container-highest text-white border border-outline-variant/30 px-6 py-3 rounded-sm font-headline font-bold hover:bg-surface-variant transition-all active:scale-95">
+                        Adjust Forecast
+                    </button>
+<button class="bg-surface-container-highest text-white border border-outline-variant/30 px-6 py-3 rounded-sm font-headline font-bold hover:bg-surface-variant transition-all active:scale-95">
+                        View Supplier Details
+                    </button>
+<button class="bg-gradient-to-r from-primary to-primary-container text-on-primary-container px-8 py-3 rounded-sm font-headline font-extrabold shadow-[0_0_20px_rgba(90,235,86,0.2)] hover:shadow-[0_0_30px_rgba(90,235,86,0.4)] transition-all active:scale-95 flex items-center gap-2">
+<span class="material-symbols-outlined font-bold">check_circle</span>
+                        Approve Orders
+                    </button>
+</div>
+</div>
+<!-- Visual Decoration -->
+<div class="mt-12 opacity-10 pointer-events-none">
+<div class="grid grid-cols-12 gap-1 h-2">
+<div class="bg-primary h-full"></div>
+<div class="bg-primary h-full"></div>
+<div class="bg-primary h-full"></div>
+<div class="bg-primary/50 h-full"></div>
+<div class="bg-primary/20 h-full"></div>
+<div class="col-span-7 h-full border-t border-dashed border-primary"></div>
+</div>
+</div>
+</main>
+</div>
+</body></html>
