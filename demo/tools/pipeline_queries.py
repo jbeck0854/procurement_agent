@@ -58,7 +58,21 @@ def query_forecast_summary(**kwargs) -> dict:
     """Business-friendly production demand forecast summary."""
     forecast_run_id = kwargs.get("forecast_run_id", 0)
     result = get_forecast_summary_tool.invoke({"forecast_run_id": forecast_run_id})
-    return {"content": result, "name": "forecast_summary"}
+    # Also fetch structured dict for rich Streamlit rendering (st.metric / st.dataframe
+    # instead of st.code). The text version is kept for trace display and export.
+    # Added 2026-04-10 as part of the rich rendering pipeline.
+    structured = None
+    try:
+        from forecasting.forecast_summary import get_latest_production_forecast_summary
+        conn = _get_conn()
+        try:
+            run_id = forecast_run_id if forecast_run_id > 0 else None
+            structured = get_latest_production_forecast_summary(conn, forecast_run_id=run_id)
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning(f"[PIPELINE] Could not fetch structured forecast summary: {e}")
+    return {"content": result, "name": "forecast_summary", "structured": structured}
 
 
 def query_forecast_drilldown(**kwargs) -> dict:
@@ -279,9 +293,65 @@ def query_forecast_model_assessment(**kwargs) -> dict:
             "content": compact_text,
             "artifact_path": artifact_path,
             "name": "forecast_model_assessment",
+            "structured": {"artifact_path": artifact_path, "direction": direction},
         }
     except (ValueError, FileNotFoundError) as e:
         return {"content": f"Error: {e}", "artifact_path": "", "name": "forecast_model_assessment"}
+
+
+def _fetch_component_req_meta(run_id: int = 0) -> dict:
+    """Fetch planning window metadata + per-component aggregated totals."""
+    import psycopg2
+    from config import DATABASE_URL
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            if not run_id:
+                cur.execute(
+                    "SELECT forecast_run_id FROM dim_forecast_run "
+                    "ORDER BY forecast_run_id DESC LIMIT 1"
+                )
+                row = cur.fetchone()
+                run_id = int(row[0]) if row else 0
+
+            cur.execute(
+                """
+                SELECT MIN(target_week_date), MAX(target_week_date),
+                       COUNT(DISTINCT target_week_date),
+                       COUNT(DISTINCT facility_id),
+                       COUNT(DISTINCT product_key)
+                FROM vw_component_requirement_lp
+                WHERE forecast_run_id = %s
+                """,
+                (run_id,),
+            )
+            start_date, end_date, n_weeks, n_fac, n_comp = cur.fetchone()
+
+            cur.execute(
+                """
+                SELECT p.product, SUM(lp.total_component_requirement) AS total_gross
+                FROM vw_component_requirement_lp lp
+                JOIN dim_product p ON p.product_key = lp.product_key
+                WHERE lp.forecast_run_id = %s
+                GROUP BY p.product
+                ORDER BY total_gross DESC
+                """,
+                (run_id,),
+            )
+            comp_rows = [(str(r[0]), float(r[1])) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+    return {
+        "run_id":       run_id,
+        "start_date":   str(start_date),
+        "end_date":     str(end_date),
+        "n_weeks":      int(n_weeks),
+        "n_facilities": int(n_fac),
+        "n_components": int(n_comp),
+        "rows":         comp_rows,
+    }
 
 
 def query_component_requirements(**kwargs) -> dict:
@@ -290,7 +360,18 @@ def query_component_requirements(**kwargs) -> dict:
     result = get_component_requirements_summary_tool.invoke({
         "forecast_run_id": forecast_run_id,
     })
-    return {"content": result, "name": "component_requirements"}
+    # Structured data for rich Streamlit rendering
+    structured = {}
+    try:
+        structured["horizon_meta"] = _fetch_component_req_meta(forecast_run_id)
+    except Exception as e:
+        logger.warning(f"[PIPELINE] Could not fetch component req meta: {e}")
+    try:
+        bom = query_bom_translation_explainer(forecast_run_id=forecast_run_id)
+        structured["bom_xlate_rows"] = bom.get("rows", []) if isinstance(bom, dict) else []
+    except Exception as e:
+        logger.warning(f"[PIPELINE] Could not fetch BOM translation: {e}")
+    return {"content": result, "name": "component_requirements", "structured": structured}
 
 
 def query_procurement_status(**kwargs) -> dict:
@@ -321,7 +402,13 @@ def query_aggregated_procurement_need(**kwargs) -> dict:
         "product": product,
         "facility_id": facility_id,
     })
-    return {"content": result, "name": "aggregated_procurement_need"}
+    # Structured dict for rich Streamlit rendering (added 2026-04-10)
+    structured = None
+    try:
+        structured = query_procurement_summary_data(forecast_run_id=forecast_run_id)
+    except Exception as e:
+        logger.warning(f"[PIPELINE] Could not fetch structured procurement need: {e}")
+    return {"content": result, "name": "aggregated_procurement_need", "structured": structured}
 
 
 def query_procurement_drilldown(**kwargs) -> dict:
@@ -355,9 +442,17 @@ def query_triggered_procurement_rows(**kwargs) -> dict:
             product=product,
             facility_id=facility_id,
         )
-        return {"content": result, "name": "triggered_procurement_rows"}
     finally:
         conn.close()
+    # Structured dict for rich Streamlit rendering (added 2026-04-10)
+    structured = None
+    try:
+        structured = query_triggered_rows_structured(
+            forecast_run_id=forecast_run_id,
+        )
+    except Exception as e:
+        logger.warning(f"[PIPELINE] Could not fetch structured triggered rows: {e}")
+    return {"content": result, "name": "triggered_procurement_rows", "structured": structured}
 
 
 def query_bom_translation(**kwargs) -> dict:
@@ -577,10 +672,15 @@ def query_triggered_rows_structured(**kwargs) -> dict:
                     r.facility_id,
                     p.product                  AS component,
                     r.gross_requirement,
-                    r.remaining_inventory,
+                    GREATEST(0, r.on_hand_qty + r.scheduled_receipts_qty
+                             - r.backorder_qty - r.safety_stock_qty)
+                                               AS available_inventory,
                     r.net_requirement,
                     r.safety_stock_qty,
-                    r.horizon_week
+                    ROW_NUMBER() OVER (
+                        PARTITION BY r.facility_id, p.product
+                        ORDER BY r.target_week_date
+                    )                          AS horizon_week
                 FROM vw_procurement_requirement r
                 JOIN dim_product p ON p.product_key = r.product_key
                 WHERE r.forecast_run_id = %s
@@ -648,6 +748,8 @@ def query_full_horizon_drilldown(**kwargs) -> dict:
             )
             horizon_start, horizon_end, n_weeks = cur.fetchone()
 
+            # NOTE (2026-04-10): horizon_week and remaining_inventory computed
+            # inline — original columns removed from vw_procurement_requirement.
             cur.execute(
                 """
                 SELECT
@@ -655,16 +757,20 @@ def query_full_horizon_drilldown(**kwargs) -> dict:
                     r.facility_id,
                     p.product                                              AS component,
                     r.gross_requirement,
-                    r.remaining_inventory,
+                    GREATEST(0, r.on_hand_qty + r.scheduled_receipts_qty
+                             - r.backorder_qty - r.safety_stock_qty)       AS remaining_inventory,
                     r.net_requirement,
                     CASE WHEN r.net_requirement > 0 THEN 'Yes' ELSE 'No'
                          END                                               AS triggered,
                     r.safety_stock_qty,
-                    r.horizon_week
+                    ROW_NUMBER() OVER (
+                        PARTITION BY r.facility_id, r.product_key
+                        ORDER BY r.target_week_date
+                    )                                                      AS horizon_week
                 FROM vw_procurement_requirement r
                 JOIN dim_product p ON p.product_key = r.product_key
                 WHERE r.forecast_run_id = %s
-                ORDER BY r.horizon_week, r.facility_id, p.product
+                ORDER BY r.target_week_date, r.facility_id, p.product
                 """,
                 (run_id,),
             )

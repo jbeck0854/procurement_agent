@@ -339,19 +339,27 @@ def _build_lead_time_feasibility_note(
         return "", None
 
     # Step 1: Earliest triggered procurement week for this product / run.
+    # NOTE (2026-04-10): Original SQL used r.horizon_week which does not exist
+    # in vw_procurement_requirement (column removed in schema simplification).
+    # Replaced with ROW_NUMBER() OVER(...) subquery to compute the same value.
     facility_filter = "AND r.facility_id = %(facility_id)s" if params.facility_id else ""
     qparams = {'run_id': resolved_run_id, 'product': params.product}
     if params.facility_id:
         qparams['facility_id'] = params.facility_id
 
     sql_min = f"""
-        SELECT MIN(r.horizon_week)
-        FROM   vw_procurement_requirement r
-        JOIN   dim_product dp ON dp.product_key = r.product_key
-        WHERE  r.forecast_run_id = %(run_id)s
-          AND  dp.product        = %(product)s
-          AND  r.net_requirement > 0
-          {facility_filter}
+        SELECT MIN(hw) FROM (
+            SELECT ROW_NUMBER() OVER (
+                       PARTITION BY r.facility_id, r.product_key
+                       ORDER BY r.target_week_date
+                   ) AS hw
+            FROM   vw_procurement_requirement r
+            JOIN   dim_product dp ON dp.product_key = r.product_key
+            WHERE  r.forecast_run_id = %(run_id)s
+              AND  dp.product        = %(product)s
+              AND  r.net_requirement > 0
+              {facility_filter}
+        ) sub
     """
     with conn.cursor() as cur:
         cur.execute(sql_min, qparams)
@@ -384,14 +392,19 @@ def _build_lead_time_feasibility_note(
 
     # Step 5: Query ALL triggered weeks in the gap (not just earliest).
     sql_all = f"""
-        SELECT DISTINCT r.horizon_week
-        FROM   vw_procurement_requirement r
-        JOIN   dim_product dp ON dp.product_key = r.product_key
-        WHERE  r.forecast_run_id = %(run_id)s
-          AND  dp.product        = %(product)s
-          AND  r.net_requirement > 0
-          {facility_filter}
-        ORDER BY r.horizon_week
+        SELECT DISTINCT hw FROM (
+            SELECT ROW_NUMBER() OVER (
+                       PARTITION BY r.facility_id, r.product_key
+                       ORDER BY r.target_week_date
+                   ) AS hw
+            FROM   vw_procurement_requirement r
+            JOIN   dim_product dp ON dp.product_key = r.product_key
+            WHERE  r.forecast_run_id = %(run_id)s
+              AND  dp.product        = %(product)s
+              AND  r.net_requirement > 0
+              {facility_filter}
+        ) sub
+        ORDER BY hw
     """
     with conn.cursor() as cur:
         cur.execute(sql_all, qparams)

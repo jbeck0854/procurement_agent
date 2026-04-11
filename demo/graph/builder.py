@@ -12,6 +12,8 @@ from graph.synthesizer import synthesizer_node
 
 PHASE1_AGENTS = {"data_agent", "risk_agent", "pipeline_agent"}
 PHASE2_AGENTS = {"chart_agent", "lp_agent"}
+# Agents whose output benefits from LLM summarization (free-form text results).
+_NEEDS_SYNTHESIS = {"data_agent", "risk_agent"}
 
 
 def route_phase1(state: AgentState) -> list[str]:
@@ -27,13 +29,30 @@ def route_phase1(state: AgentState) -> list[str]:
 
 
 def route_phase2(state: AgentState) -> list[str]:
-    """Fan-out to Phase 2 agents, or skip directly to synthesizer."""
+    """Fan-out to Phase 2 agents, or route to synthesizer/END."""
     tasks = state.get("tasks", [])
     agents = {
         task["agent"] for task in tasks
         if task.get("phase") == 2 and task.get("agent") in PHASE2_AGENTS
     }
-    return list(agents) if agents else ["synthesizer"]
+    if agents:
+        return list(agents)
+    # No Phase 2 agents — check if synthesis is needed
+    return _route_post_execution(state)
+
+
+def _route_post_execution(state: AgentState) -> list[str]:
+    """After all agents finish, decide: synthesizer (LLM summary) or END (direct).
+
+    Synthesizer is only needed when data_agent or risk_agent participated,
+    since they return free-form text that benefits from LLM summarization.
+    Pipeline/chart/LP results are already structured — skip synthesizer for speed.
+    """
+    tasks = state.get("tasks", [])
+    all_agents = {task["agent"] for task in tasks}
+    if all_agents & _NEEDS_SYNTHESIS:
+        return ["synthesizer"]
+    return [END]
 
 
 def build_graph() -> StateGraph:
@@ -62,11 +81,12 @@ def build_graph() -> StateGraph:
     graph.add_conditional_edges(
         "phase2_router",
         route_phase2,
-        ["chart_agent", "lp_agent", "synthesizer"],
+        ["chart_agent", "lp_agent", "synthesizer", END],
     )
 
-    graph.add_edge("chart_agent", "synthesizer")
-    graph.add_edge("lp_agent", "synthesizer")
+    # After Phase 2 agents: synthesizer only if data/risk agent participated
+    graph.add_conditional_edges("chart_agent", _route_post_execution, ["synthesizer", END])
+    graph.add_conditional_edges("lp_agent", _route_post_execution, ["synthesizer", END])
     graph.add_edge("synthesizer", END)
 
     return graph.compile(checkpointer=MemorySaver())

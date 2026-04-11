@@ -13,7 +13,7 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 AZURE_ENDPOINT = "https://gw-sb-aoai-01.openai.azure.com/"
 AZURE_API_KEY = os.getenv("AZURE_OPENAI_API_KEY", "")
-AZURE_DEPLOYMENT = "gpt-5-mini"
+AZURE_DEPLOYMENT = "gpt-5.3-chat"
 AZURE_API_VERSION = "2024-12-01-preview"
 
 # ---------------------------------------------------------------------------

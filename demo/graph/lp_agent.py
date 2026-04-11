@@ -122,31 +122,6 @@ def _format_result(result: dict) -> str:
     return "\n".join(parts)
 
 
-def _find_previous_params(product: str) -> dict:
-    """
-    Look up params_recap from the most recent LP run for the same product
-    across all previous traces stored in Streamlit session state.
-    Returns the params_recap dict, or empty dict if not found.
-    """
-    try:
-        import streamlit as st
-        traces = st.session_state.get("traces", [])
-    except Exception:
-        return {}
-
-    # Search traces in reverse (most recent first)
-    for trace in reversed(traces):
-        agent_results = trace.get("agent_results", {})
-        # Check if this trace has raw_data with LP results for this product
-        # raw_data is stored separately, but we can check the timings/agent_results
-        # to confirm LP ran for this product
-        pass
-
-    # Traces don't store raw_data directly. Use a dedicated session store instead.
-    lp_history = st.session_state.get("lp_params_history", {})
-    return lp_history.get(product, {})
-
-
 def _save_params_to_session(product: str, params_recap: dict) -> None:
     """Save LP params_recap to Streamlit session state for carry-forward."""
     try:
@@ -156,52 +131,6 @@ def _save_params_to_session(product: str, params_recap: dict) -> None:
         st.session_state.lp_params_history[product] = params_recap
     except Exception:
         pass
-
-
-def _merge_with_previous_params(params: dict) -> dict:
-    """
-    For what-if / disruption reruns, carry forward parameters from the
-    previous LP run for the same product. Only fill in missing keys —
-    never overwrite what the orchestrator explicitly set.
-    """
-    product = params.get("product")
-    if not product:
-        return params
-
-    prev_recap = _find_previous_params(product)
-    if not prev_recap:
-        return params
-
-    # Default values from run_optimization — if orchestrator passes these,
-    # it likely didn't intentionally set them, so prefer previous run's values.
-    defaults = {
-        "lambda_risk": 0.50,
-        "max_supplier_share": 1.00,
-        "budget_cap": None,
-        "compliance_threshold": 0.50,
-        "service_level_target": 1.00,
-        "order_quantity": 5_000,
-        "urgency": False,
-        "facility_id": None,
-        "diversification_mode": "none",
-        "forecast_run_id": None,
-    }
-
-    merged = dict(params)
-    carried = []
-    for key, default_val in defaults.items():
-        prev_val = prev_recap.get(key)
-        current_val = merged.get(key)
-        # Carry forward if: previous run had a non-default value AND
-        # current params either missing or still at default
-        if prev_val is not None and prev_val != default_val and current_val == default_val:
-            merged[key] = prev_val
-            carried.append(f"{key}={prev_val}")
-
-    if carried:
-        logger.info(f"[LP_AGENT] Carried forward from previous run: {', '.join(carried)}")
-
-    return merged
 
 
 async def lp_agent_node(state: AgentState) -> dict:
@@ -224,7 +153,8 @@ async def lp_agent_node(state: AgentState) -> dict:
     for task in tasks:
         tool_name = task.get("tool", "run_optimization")
         params = task.get("params") or {}
-        params = _merge_with_previous_params(params)
+        # Parameter merging (prior run carry-forward) is handled by the
+        # orchestrator via param_extractor.merge_with_prior(). No double-merge.
         product = params.get("product", "unknown")
         result_key = f"lp_{product}"
         logger.info(f"[LP_AGENT] Task: tool={tool_name}, product={product}, params={params}")

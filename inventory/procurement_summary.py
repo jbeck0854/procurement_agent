@@ -599,6 +599,15 @@ def get_procurement_requirement_drilldown(
         product_key, product_name = row
 
         # Build query — optionally filter by facility_id
+        #
+        # NOTE (2026-04-10): The original SQL referenced r.horizon_week and
+        # r.remaining_inventory, which do not exist in vw_procurement_requirement.
+        # These were columns in an earlier schema that was later simplified.
+        # Fixed by computing them inline:
+        #   horizon_week      → ROW_NUMBER() OVER (PARTITION BY facility, product ORDER BY week)
+        #   remaining_inventory → GREATEST(0, on_hand + SR - BO - SS)
+        # The column positions (indices 3 and 9) are unchanged so downstream
+        # formatting code continues to work without modification.
         if facility_id is not None:
             cur.execute(
                 """
@@ -606,13 +615,18 @@ def get_procurement_requirement_drilldown(
                     r.target_week_date,
                     r.facility_id,
                     p.product                   AS component,
-                    r.horizon_week,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY r.facility_id, r.product_key
+                        ORDER BY r.target_week_date
+                    )                           AS horizon_week,
                     r.gross_requirement,
                     r.on_hand_qty,
                     r.scheduled_receipts_qty,
                     r.backorder_qty,
                     r.safety_stock_qty,
-                    r.remaining_inventory,
+                    GREATEST(0, r.on_hand_qty + r.scheduled_receipts_qty
+                             - r.backorder_qty - r.safety_stock_qty)
+                                                AS remaining_inventory,
                     r.net_requirement
                 FROM vw_procurement_requirement r
                 JOIN dim_product p ON p.product_key = r.product_key
@@ -630,13 +644,18 @@ def get_procurement_requirement_drilldown(
                     r.target_week_date,
                     r.facility_id,
                     p.product                   AS component,
-                    r.horizon_week,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY r.facility_id, r.product_key
+                        ORDER BY r.target_week_date
+                    )                           AS horizon_week,
                     r.gross_requirement,
                     r.on_hand_qty,
                     r.scheduled_receipts_qty,
                     r.backorder_qty,
                     r.safety_stock_qty,
-                    r.remaining_inventory,
+                    GREATEST(0, r.on_hand_qty + r.scheduled_receipts_qty
+                             - r.backorder_qty - r.safety_stock_qty)
+                                                AS remaining_inventory,
                     r.net_requirement
                 FROM vw_procurement_requirement r
                 JOIN dim_product p ON p.product_key = r.product_key
@@ -831,6 +850,8 @@ def get_triggered_procurement_rows(
 
     where = " AND ".join(conditions)
 
+    # NOTE (2026-04-10): horizon_week and remaining_inventory computed inline —
+    # see comment in get_procurement_requirement_drilldown() above for details.
     with conn.cursor() as cur:
         cur.execute(
             f"""
@@ -838,13 +859,18 @@ def get_triggered_procurement_rows(
                 r.target_week_date,
                 r.facility_id,
                 p.product                   AS component,
-                r.horizon_week,
+                ROW_NUMBER() OVER (
+                    PARTITION BY r.facility_id, p.product
+                    ORDER BY r.target_week_date
+                )                           AS horizon_week,
                 r.gross_requirement,
                 r.on_hand_qty,
                 r.scheduled_receipts_qty,
                 r.backorder_qty,
                 r.safety_stock_qty,
-                r.remaining_inventory,
+                GREATEST(0, r.on_hand_qty + r.scheduled_receipts_qty
+                         - r.backorder_qty - r.safety_stock_qty)
+                                            AS remaining_inventory,
                 r.net_requirement
             FROM vw_procurement_requirement r
             JOIN dim_product p ON p.product_key = r.product_key
