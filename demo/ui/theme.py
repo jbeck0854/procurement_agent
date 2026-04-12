@@ -35,7 +35,7 @@ except (FileNotFoundError, Exception):
 SECTION_STYLE = (
     "background:#0A1F17;"
     "border:1px solid #333333; border-radius:2px;"
-    "padding:1.25rem 1.5rem; margin-bottom:0.875rem;"
+    "padding:1.5rem 1.75rem; margin-bottom:0.875rem;"
     "box-shadow:rgba(0,0,0,0.3) 0px 0px 5px;"
 )
 
@@ -704,6 +704,13 @@ var RY = {
   resp: 40 + RG * 7.5,
 };
 
+// Step number badges for each node
+var STEP_BADGES = {
+  user:null, orch_classify:"1a", orch_fewshot:"1b", orch_extract:"1c",
+  pipeline_agent:"2", data_agent:"2", risk_agent:"2", router:"3",
+  chart_agent:"4", lp_agent:"4", synthesizer:"5", end_node:null, response:"6"
+};
+
 var nodes = [
   // Row 0: User
   {id:"user", label:"User Input", cx:cx, cy:RY.user, w:NW, h:NH, key:null},
@@ -773,15 +780,28 @@ var EDGES = [
   ["end_node","response"],
 ];
 
+// Critical path: User → Orchestrator → Pipeline → Router → LP → END → Response
+var CRITICAL_PATH_EDGES = {
+  "user|orch_classify":true,
+  "orch_classify|orch_fewshot":true,
+  "orch_fewshot|orch_extract":true,
+  "orch_extract|pipeline_agent":true,
+  "pipeline_agent|router":true,
+  "router|lp_agent":true,
+  "lp_agent|end_node":true,
+  "end_node|response":true
+};
+
 // For orchestrator internal edges, connect right side → left side (horizontal)
 var edges = EDGES.map(function(e) {
   var a = nodeMap[e[0]], b = nodeMap[e[1]];
   if (!a || !b) return null;
   var isHoriz = (a.cy === b.cy); // same row = horizontal
+  var isCritical = CRITICAL_PATH_EDGES[e[0]+"|"+e[1]] || false;
   if (isHoriz) {
-    return {x1:a.cx+a.w/2, y1:a.cy, x2:b.cx-b.w/2, y2:b.cy, fromRow:rowOf[e[0]]||0, horiz:true};
+    return {x1:a.cx+a.w/2, y1:a.cy, x2:b.cx-b.w/2, y2:b.cy, fromRow:rowOf[e[0]]||0, horiz:true, critical:isCritical};
   }
-  return {x1:a.cx, y1:a.cy+a.h/2, x2:b.cx, y2:b.cy-b.h/2, fromRow:rowOf[e[0]]||0, horiz:false};
+  return {x1:a.cx, y1:a.cy+a.h/2, x2:b.cx, y2:b.cy-b.h/2, fromRow:rowOf[e[0]]||0, horiz:false, critical:isCritical};
 }).filter(Boolean);
 
 // Particles (2 per edge)
@@ -871,8 +891,11 @@ function draw(ts) {
     ctx.restore();
   }
 
-  // Phase labels
-  var phases = [{y:RY.phase1, label:"PHASE 1 — PARALLEL DATA RETRIEVAL"}, {y:RY.phase2, label:"PHASE 2 — ANALYSIS & OPTIMIZATION"}];
+  // Phase labels with business value descriptions
+  var phases = [
+    {y:RY.phase1, label:"PHASE 1 \u2014 PARALLEL DATA RETRIEVAL", biz:"Retrieve demand forecasts, inventory positions, and risk signals"},
+    {y:RY.phase2, label:"PHASE 2 \u2014 ANALYSIS & OPTIMIZATION", biz:"Generate supplier scores, charts, and optimized procurement plans"}
+  ];
   phases.forEach(function(pl) {
     var a = easeOut(clamp((progress-0.15)*3,0,1));
     ctx.save(); ctx.globalAlpha = a*0.4;
@@ -880,7 +903,21 @@ function draw(ts) {
     ctx.textAlign = "center";
     ctx.fillText(pl.label, cx, pl.y - NH/2 - 12);
     ctx.restore();
+    // Business value description below the phase label
+    ctx.save(); ctx.globalAlpha = a*0.3;
+    ctx.font = "400 8px Inter,sans-serif"; ctx.fillStyle = "#888";
+    ctx.textAlign = "center";
+    ctx.fillText(pl.biz, cx, pl.y - NH/2 - 1);
+    ctx.restore();
   });
+
+  // Synthesizer business description
+  var synthA = easeOut(clamp((progress-0.15)*3,0,1));
+  ctx.save(); ctx.globalAlpha = synthA*0.3;
+  ctx.font = "400 8px Inter,sans-serif"; ctx.fillStyle = "#888";
+  ctx.textAlign = "center";
+  ctx.fillText("Consolidate findings into executive-ready insights", cx, RY.synth - NH/2 - 6);
+  ctx.restore();
 
   // Edges
   edges.forEach(function(e) {
@@ -909,8 +946,8 @@ function draw(ts) {
         ctx.bezierCurveTo(e.x1, my, e.x2, my, e.x2, e.y2);
       }
     }
-    ctx.strokeStyle = "rgba(118,185,0,0.3)";
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = e.critical ? "rgba(118,185,0,0.45)" : "rgba(118,185,0,0.3)";
+    ctx.lineWidth = e.critical ? 2.5 : 1.5;
     ctx.stroke();
   });
 
@@ -980,8 +1017,70 @@ function draw(ts) {
     ctx.fillStyle = isTerminal ? "#999" : "#fff";
     ctx.fillText(n.label.toUpperCase(), n.cx, n.cy);
 
+    // Step number badge (top-left corner)
+    var badge = STEP_BADGES[n.id];
+    if (badge) {
+      var bx = n.x + 6;
+      var by = n.y + 6;
+      var br = 8;
+      ctx.beginPath();
+      ctx.arc(bx, by, br, 0, TAU);
+      ctx.fillStyle = "#76b900";
+      ctx.fill();
+      ctx.font = "700 8px Inter,sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "#000";
+      ctx.fillText(badge, bx, by);
+    }
+
     ctx.restore();
   });
+
+  // Legend (bottom-left, above footer)
+  if (progress > 0.7) {
+    var legA = clamp((progress-0.7)/0.2, 0, 1);
+    ctx.save(); ctx.globalAlpha = legA;
+    var legX = 20;
+    var legY = H - 80;
+    var legSpacing = 18;
+    ctx.font = "400 9px Inter,sans-serif";
+    ctx.textBaseline = "middle";
+
+    // Active agent node (green solid border)
+    drawRR(legX, legY - 5, 14, 10, 2);
+    ctx.strokeStyle = "#76b900"; ctx.lineWidth = 2; ctx.setLineDash([]);
+    ctx.stroke();
+    ctx.fillStyle = "#888"; ctx.textAlign = "left";
+    ctx.fillText("Active agent node", legX + 20, legY);
+
+    // Terminal node (gray border)
+    drawRR(legX, legY + legSpacing - 5, 14, 10, 2);
+    ctx.strokeStyle = "#555"; ctx.lineWidth = 1; ctx.setLineDash([]);
+    ctx.stroke();
+    ctx.fillStyle = "#888";
+    ctx.fillText("Terminal node (User / Response)", legX + 20, legY + legSpacing);
+
+    // Dashed green box (orchestrator group)
+    drawRR(legX, legY + legSpacing*2 - 5, 14, 10, 2);
+    ctx.strokeStyle = "#76b900"; ctx.lineWidth = 1; ctx.setLineDash([5,3]);
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = "#888";
+    ctx.fillText("Orchestrator group", legX + 20, legY + legSpacing*2);
+
+    // Green line with dots (data flow)
+    ctx.beginPath();
+    ctx.moveTo(legX, legY + legSpacing*3);
+    ctx.lineTo(legX + 14, legY + legSpacing*3);
+    ctx.strokeStyle = "#76b900"; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(legX + 7, legY + legSpacing*3, 2.5, 0, TAU);
+    ctx.fillStyle = "#76b900"; ctx.fill();
+    ctx.fillStyle = "#888";
+    ctx.fillText("Data flow", legX + 20, legY + legSpacing*3);
+
+    ctx.restore();
+  }
 
   // Footer labels
   if (progress > 0.8) {
@@ -1189,7 +1288,7 @@ def render_history_detail(show_trace_fn):
                 if chart_results:
                     st.markdown(
                         "<div style='margin:0.75rem 0 0.35rem;'>"
-                        + section_header("◎", "Visualizations", "#76b900")
+                        + section_header("·", "03 — Visualizations", "#76b900")
                         + "</div>",
                         unsafe_allow_html=True,
                     )

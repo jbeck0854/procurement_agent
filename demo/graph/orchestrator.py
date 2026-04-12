@@ -194,16 +194,27 @@ async def orchestrator_node(state: AgentState) -> dict:
             "intent": response.intent,
             "tasks": planner_tasks,
             "final_response": (
-                "Understood. We will:\n\n"
-                "1. **Verify your historical demand** across all four facilities and semiconductor SKUs\n"
-                "2. **Translate that demand** into the exact component requirements needed to support production\n"
-                "3. **Assess inventory coverage** and identify where procurement is required\n"
-                "4. **Optimize supplier allocation** to minimize cost while controlling supplier risk and disruption\n\n"
-                "Your objective balances cost efficiency with supply reliability:\n"
-                "- **Lower emphasis** prioritizes cost minimization\n"
-                "- **Higher emphasis** prioritizes more stable, lower-risk suppliers even if slightly more expensive\n\n"
-                "Let's begin by validating the historical demand that drives this entire workflow.\n\n"
-                "Reply **'Yes, proceed'** to continue."
+                '<p style="color:#fff;margin:0 0 1rem;">Understood. We will:</p>'
+                '<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.65rem 1rem;margin:0.4rem 0;">'
+                '<p style="color:#fff;margin:0;font-size:0.88rem;"><span style="color:#76b900;font-weight:300;font-size:1.1rem;margin-right:8px;">01</span>'
+                'Verify your historical demand across all four facilities and semiconductor SKUs</p></div>'
+                '<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.65rem 1rem;margin:0.4rem 0;">'
+                '<p style="color:#fff;margin:0;font-size:0.88rem;"><span style="color:#76b900;font-weight:300;font-size:1.1rem;margin-right:8px;">02</span>'
+                'Translate that demand into the exact component requirements needed to support production</p></div>'
+                '<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.65rem 1rem;margin:0.4rem 0;">'
+                '<p style="color:#fff;margin:0;font-size:0.88rem;"><span style="color:#76b900;font-weight:300;font-size:1.1rem;margin-right:8px;">03</span>'
+                'Assess inventory coverage and identify where procurement is required</p></div>'
+                '<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.65rem 1rem;margin:0.4rem 0;">'
+                '<p style="color:#fff;margin:0;font-size:0.88rem;"><span style="color:#76b900;font-weight:300;font-size:1.1rem;margin-right:8px;">04</span>'
+                'Optimize supplier allocation to minimize cost while controlling supplier risk and disruption</p></div>'
+                '<hr style="border:none;border-top:1px solid #333;margin:1rem 0;">'
+                '<p style="color:#ccc;margin:0 0 0.5rem;font-size:0.85rem;">'
+                'Your objective balances <strong>cost efficiency</strong> with <strong>supply reliability</strong> — '
+                'the risk parameter controls this tradeoff.</p>'
+                '<p style="color:#ccc;margin:0 0 0.5rem;font-size:0.85rem;">'
+                "Let's begin by validating the historical demand that drives this entire workflow.</p>"
+                '<p style="color:#76b900;margin:0;font-size:0.85rem;font-weight:600;">'
+                "Reply 'Yes, proceed' to continue.</p>"
             ),
             "timings": {"orchestrator": round(total_elapsed, 3), "orchestrator.llm": round(llm_elapsed, 3)},
         }
@@ -296,16 +307,27 @@ async def orchestrator_node(state: AgentState) -> dict:
         total_elapsed = time.perf_counter() - start
         if agent_type == "planner":
             resp_text = (
-                "Understood. We will:\n\n"
-                "1. **Verify your historical demand** across all four facilities and semiconductor SKUs\n"
-                "2. **Translate that demand** into the exact component requirements needed to support production\n"
-                "3. **Assess inventory coverage** and identify where procurement is required\n"
-                "4. **Optimize supplier allocation** to minimize cost while controlling supplier risk and disruption\n\n"
-                "Your objective balances cost efficiency with supply reliability:\n"
-                "- **Lower emphasis** prioritizes cost minimization\n"
-                "- **Higher emphasis** prioritizes more stable, lower-risk suppliers even if slightly more expensive\n\n"
-                "Let's begin by validating the historical demand that drives this entire workflow.\n\n"
-                "Reply **'Yes, proceed'** to continue."
+                '<p style="color:#fff;margin:0 0 1rem;">Understood. We will:</p>'
+                '<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.65rem 1rem;margin:0.4rem 0;">'
+                '<p style="color:#fff;margin:0;font-size:0.88rem;"><span style="color:#76b900;font-weight:300;font-size:1.1rem;margin-right:8px;">01</span>'
+                'Verify your historical demand across all four facilities and semiconductor SKUs</p></div>'
+                '<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.65rem 1rem;margin:0.4rem 0;">'
+                '<p style="color:#fff;margin:0;font-size:0.88rem;"><span style="color:#76b900;font-weight:300;font-size:1.1rem;margin-right:8px;">02</span>'
+                'Translate that demand into the exact component requirements needed to support production</p></div>'
+                '<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.65rem 1rem;margin:0.4rem 0;">'
+                '<p style="color:#fff;margin:0;font-size:0.88rem;"><span style="color:#76b900;font-weight:300;font-size:1.1rem;margin-right:8px;">03</span>'
+                'Assess inventory coverage and identify where procurement is required</p></div>'
+                '<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.65rem 1rem;margin:0.4rem 0;">'
+                '<p style="color:#fff;margin:0;font-size:0.88rem;"><span style="color:#76b900;font-weight:300;font-size:1.1rem;margin-right:8px;">04</span>'
+                'Optimize supplier allocation to minimize cost while controlling supplier risk and disruption</p></div>'
+                '<hr style="border:none;border-top:1px solid #333;margin:1rem 0;">'
+                '<p style="color:#ccc;margin:0 0 0.5rem;font-size:0.85rem;">'
+                'Your objective balances <strong>cost efficiency</strong> with <strong>supply reliability</strong> — '
+                'the risk parameter controls this tradeoff.</p>'
+                '<p style="color:#ccc;margin:0 0 0.5rem;font-size:0.85rem;">'
+                "Let's begin by validating the historical demand that drives this entire workflow.</p>"
+                '<p style="color:#76b900;margin:0;font-size:0.85rem;font-weight:600;">'
+                "Reply 'Yes, proceed' to continue.</p>"
             )
         else:
             resp_text = (

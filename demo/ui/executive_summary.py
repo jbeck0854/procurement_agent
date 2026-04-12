@@ -30,6 +30,38 @@ def _render_executive_summary() -> None:
     st.caption("Session-level procurement plan — approved recommendations only")
     st.divider()
 
+    # ── Consulting-grade section header helper (local) ────────────────────────
+    def _section_header(num: str, title: str) -> None:
+        st.markdown(
+            f"<div style='display:flex; align-items:baseline; gap:12px; margin:1.5rem 0 0.75rem;'>"
+            f"<span style='font-family:Inter,sans-serif; font-size:1.8rem; font-weight:300; color:#76b900;'>{num}</span>"
+            f"<span style='font-family:Inter,sans-serif; font-size:1rem; font-weight:600; color:#ffffff; letter-spacing:0.02em;'>{title}</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    def _rec_box(text: str) -> None:
+        st.markdown(
+            f"<div style='background:rgba(118,185,0,0.06); border-left:3px solid #76b900; "
+            f"border-radius:2px; padding:0.75rem 1rem; margin:0.5rem 0;'>"
+            f"<p style='font-family:Inter,sans-serif; font-size:0.75rem; font-weight:600; "
+            f"color:#76b900; text-transform:uppercase; letter-spacing:0.1em; margin:0 0 0.3rem;'>Recommendation</p>"
+            f"<p style='font-family:Inter,sans-serif; font-size:0.85rem; color:#ffffff; margin:0;'>{text}</p>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    def _risk_box(text: str) -> None:
+        st.markdown(
+            f"<div style='background:rgba(223,101,0,0.06); border-left:3px solid #df6500; "
+            f"border-radius:2px; padding:0.75rem 1rem; margin:0.5rem 0;'>"
+            f"<p style='font-family:Inter,sans-serif; font-size:0.75rem; font-weight:600; "
+            f"color:#df6500; text-transform:uppercase; letter-spacing:0.1em; margin:0 0 0.3rem;'>Risk Alert</p>"
+            f"<p style='font-family:Inter,sans-serif; font-size:0.85rem; color:#ffffff; margin:0;'>{text}</p>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
     # ── Session-level metrics ─────────────────────────────────────────────────
     total_cost     = sum(r.get("total_cost") or 0.0 for r in approved)
     total_qty      = sum(r.get("allocated_qty") or 0 for r in approved)
@@ -75,15 +107,15 @@ def _render_executive_summary() -> None:
         pass
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Procurement Overview
+    # 01 — Cost & Allocation Summary
     # ─────────────────────────────────────────────────────────────────────────
-    st.subheader("Procurement Overview")
+    _section_header("01", "Cost & Allocation Summary")
     _ov1, _ov2, _ov3 = st.columns(3)
     _ov1.metric("Products Procured", len(approved))
     _ov2.metric("Total Units", f"{total_qty:,}")
     _ov3.metric("Total Estimated Cost", f"${total_cost:,.2f}")
 
-    st.success(f"**Products Successfully Procured:** {', '.join(approved_product_names)}")
+    _rec_box(f"Products successfully procured: {', '.join(approved_product_names)}")
 
     # Red band — products in planning horizon not yet approved
     try:
@@ -92,8 +124,8 @@ def _render_executive_summary() -> None:
         _remaining  = _universe - set(approved_product_keys)
         if _remaining:
             _rem_labels = [p.replace("_", " ").title() for p in sorted(_remaining)]
-            st.error(
-                f"**Products Still Requiring Procurement:** {', '.join(_rem_labels)}  \n"
+            _risk_box(
+                f"<strong>Products Still Requiring Procurement:</strong> {', '.join(_rem_labels)} — "
                 f"Run LP optimization for these components to complete the procurement plan."
             )
     except Exception:
@@ -102,9 +134,14 @@ def _render_executive_summary() -> None:
     st.divider()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Product-Level Summary
+    # (inline — part of section 01, product detail breakdown)
     # ─────────────────────────────────────────────────────────────────────────
-    st.subheader("Product-Level Summary")
+    st.markdown(
+        "<p style='font-family:Inter,sans-serif; font-size:0.75rem; font-weight:600; "
+        "color:#76b900; text-transform:uppercase; letter-spacing:0.1em; margin:1.5rem 0 0.5rem;'>"
+        "Product Detail</p>",
+        unsafe_allow_html=True,
+    )
     _rows_b = []
     for r in approved:
         alloc         = r.get("allocation") or []
@@ -123,9 +160,14 @@ def _render_executive_summary() -> None:
     st.divider()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Baseline vs Optimized Comparison
+    # Baseline vs Optimized — sub-section of 01, before section 02 divider
     # ─────────────────────────────────────────────────────────────────────────
-    st.subheader("Baseline vs Optimized Comparison")
+    st.markdown(
+        "<p style='font-family:Inter,sans-serif; font-size:0.75rem; font-weight:600; "
+        "color:#76b900; text-transform:uppercase; letter-spacing:0.1em; margin:1.5rem 0 0.5rem;'>"
+        "Baseline vs Optimized Comparison</p>",
+        unsafe_allow_html=True,
+    )
     st.caption(
         "Baseline: λ = 0, no diversification, cheapest compliant suppliers, "
         "uncapped share. Optimized: risk-adjusted, constrained as configured."
@@ -198,15 +240,15 @@ def _render_executive_summary() -> None:
 
     # ── Baseline concentration warnings ───────────────────────────────────────
     if _single_country_prds:
-        st.warning(
-            f"**Single-country sourcing risk (baseline):** For "
+        _risk_box(
+            f"<strong>Single-country sourcing risk (baseline):</strong> For "
             f"{', '.join(_single_country_prds)}, the cost-only baseline routes all procurement "
             f"through a single country — creating full exposure to tariff shocks, port "
             f"disruptions, and geopolitical risk. The optimized plan diversifies this exposure."
         )
     elif _single_supplier_prds:
-        st.warning(
-            f"**Single-supplier concentration (baseline):** For "
+        _risk_box(
+            f"<strong>Single-supplier concentration (baseline):</strong> For "
             f"{', '.join(_single_supplier_prds)}, the cost-only baseline selects a single "
             f"supplier — any disruption halts procurement entirely."
         )
@@ -277,10 +319,10 @@ def _render_executive_summary() -> None:
                 "dependency on any single sourcing channel even within the same geography."
             )
 
-        st.markdown(
-            f"- {_prem_sentence}\n"
-            f"- **Why the baseline is cheaper:** {_baseline_why}\n"
-            f"- **Why the optimized plan is preferable:** {_opt_why} "
+        st.markdown(f"- {_prem_sentence}")
+        _risk_box(f"<strong>Why the baseline is cheaper:</strong> {_baseline_why}")
+        _rec_box(
+            f"<strong>Why the optimized plan is preferable:</strong> {_opt_why} "
             f"The risk premium is the cost of protection against a disruption event that "
             f"could halt production."
         )
@@ -368,9 +410,9 @@ def _render_executive_summary() -> None:
     st.divider()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Supply Coverage & Shortfall Summary
+    # 02 — Supply Coverage & Shortfall
     # ─────────────────────────────────────────────────────────────────────────
-    st.subheader("Supply Coverage & Shortfall Summary")
+    _section_header("02", "Supply Coverage & Shortfall")
     _covered_pct_global: float | None = None
     try:
         from tools.pipeline_queries import query_triggered_rows_structured as _qtr
@@ -438,41 +480,51 @@ def _render_executive_summary() -> None:
                 })
 
             if _covered_pct_global >= 100:
-                st.success(
-                    "**100% of triggered procurement windows are covered** "
+                _rec_box(
+                    "100% of triggered procurement windows are covered "
                     "by selected supplier replenishment timing."
                 )
             elif _covered_pct_global >= 70:
-                st.warning(
-                    f"**{_covered_pct_global:.0f}% of triggered procurement windows are covered.** "
+                _risk_box(
+                    f"<strong>{_covered_pct_global:.0f}% of triggered procurement windows are covered.</strong> "
                     f"{len(_not_covered)} row(s) require expedited or spot sourcing."
                 )
             else:
-                st.error(
-                    f"**{_covered_pct_global:.0f}% of triggered procurement windows are covered.** "
+                _risk_box(
+                    f"<strong>{_covered_pct_global:.0f}% of triggered procurement windows are covered.</strong> "
                     f"{len(_not_covered)} row(s) fall before selected-supplier replenishment — "
                     f"emergency sourcing required."
                 )
             st.dataframe(_pd.DataFrame(_cov_summary), use_container_width=True, hide_index=True)
 
-        st.markdown("##### Uncovered Shortfall — Immediate Procurement Risk")
+        st.markdown(
+            "<p style='font-family:Inter,sans-serif; font-size:0.75rem; font-weight:600; "
+            "color:#df6500; text-transform:uppercase; letter-spacing:0.1em; margin:1.5rem 0 0.4rem;'>"
+            "Uncovered Shortfall — Immediate Procurement Risk</p>",
+            unsafe_allow_html=True,
+        )
         if _not_covered:
-            st.error(
-                f"**{len(_not_covered)} trigger row(s)** fall before selected suppliers are "
+            _risk_box(
+                f"<strong>{len(_not_covered)} trigger row(s)</strong> fall before selected suppliers are "
                 f"expected to begin replenishing inventory. "
                 f"Emergency or spot sourcing is required for these windows."
             )
             st.dataframe(_pd.DataFrame(_not_covered), use_container_width=True, hide_index=True)
         else:
-            st.success(
+            _rec_box(
                 "No uncovered shortfall rows identified. All triggered procurement windows "
                 "fall within or after selected-supplier replenishment timing."
             )
 
-        st.markdown("##### Covered Demand — Expected to be Fulfilled by Selected Suppliers")
+        st.markdown(
+            "<p style='font-family:Inter,sans-serif; font-size:0.75rem; font-weight:600; "
+            "color:#76b900; text-transform:uppercase; letter-spacing:0.1em; margin:1.5rem 0 0.4rem;'>"
+            "Covered Demand — Expected to be Fulfilled by Selected Suppliers</p>",
+            unsafe_allow_html=True,
+        )
         if _covered:
-            st.info(
-                f"**{len(_covered)} trigger row(s)** fall at or after the expected "
+            _rec_box(
+                f"<strong>{len(_covered)} trigger row(s)</strong> fall at or after the expected "
                 f"selected-supplier replenishment window. These weeks are expected to be "
                 f"covered by orders placed in the approved plan."
             )
@@ -485,38 +537,37 @@ def _render_executive_summary() -> None:
     st.divider()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Forward-Looking Outlook
+    # 03 — Strategic Recommendations
     # ─────────────────────────────────────────────────────────────────────────
-    st.subheader("Forward-Looking Outlook")
-    _fwd_lines = []
+    _section_header("03", "Strategic Recommendations")
 
     if _covered_pct_global is not None:
         if _covered_pct_global >= 100:
-            _fwd_lines.append(
-                f"- **Coverage status:** 100% of triggered procurement windows are covered. "
+            _rec_box(
+                f"<strong>Coverage status:</strong> 100% of triggered procurement windows are covered. "
                 f"No immediate sourcing gaps for {', '.join(approved_product_names)}. "
-                f"Issue purchase orders within the next **8–10 weeks** to stay on schedule."
+                f"Issue purchase orders within the next <strong>8–10 weeks</strong> to stay on schedule."
             )
         else:
-            _fwd_lines.append(
-                f"- **Coverage status:** {_covered_pct_global:.0f}% of triggered windows are "
-                f"covered. Uncovered rows require **expedited or spot-market sourcing** — "
+            _risk_box(
+                f"<strong>Coverage status:</strong> {_covered_pct_global:.0f}% of triggered windows are "
+                f"covered. Uncovered rows require <strong>expedited or spot-market sourcing</strong> — "
                 f"initiate emergency sourcing immediately for the windows identified above."
             )
     else:
-        _fwd_lines.append(
-            f"- **Coverage status:** Plan approved for {', '.join(approved_product_names)}. "
-            f"Issue purchase orders within the next **8–10 weeks** to stay on schedule."
+        _rec_box(
+            f"<strong>Coverage status:</strong> Plan approved for {', '.join(approved_product_names)}. "
+            f"Issue purchase orders within the next <strong>8–10 weeks</strong> to stay on schedule."
         )
 
-    _fwd_lines.append(
-        "- **Next-cycle trigger:** Re-run the optimizer when any of the following occur: "
+    _risk_box(
+        "<strong>Next-cycle trigger:</strong> Re-run the optimizer when any of the following occur: "
         "on-hand inventory drops toward safety stock levels, a new demand forecast is "
         "published, or a supplier disruption is detected. Do not wait for the planning "
         "cycle boundary."
     )
-    _fwd_lines.append(
-        "- **Carryover demand:** If procurement volumes persist beyond the current horizon, "
+    _rec_box(
+        "<strong>Carryover demand:</strong> If procurement volumes persist beyond the current horizon, "
         "resubmit with updated net requirements. Do not assume current allocations roll "
         "forward automatically."
     )
@@ -530,23 +581,24 @@ def _render_executive_summary() -> None:
             _mx = r.get("max_supplier_share", 1.0)
             _carryover.append(f"{r.get('product','').replace('_',' ').title()} (share-capped at {_mx:.0%})")
     if _carryover:
-        _fwd_lines.append(
-            f"- **Active constraints to carry forward:** {'; '.join(_carryover)}. "
+        _rec_box(
+            f"<strong>Active constraints to carry forward:</strong> {'; '.join(_carryover)}. "
             f"Re-apply in the next planning run to maintain consistency."
         )
-
-    st.markdown("\n".join(_fwd_lines))
     st.divider()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Executive Assessment
+    # 04 — Next Steps
     # ─────────────────────────────────────────────────────────────────────────
-    st.subheader("Executive Assessment")
+    _section_header("04", "Next Steps")
 
-    st.markdown(
-        f"- **What was done:** Procurement plans approved for **{len(approved)} product(s)** "
+    # What was done
+    _rec_box(
+        f"<strong>What was done:</strong> Procurement plans approved for "
+        f"<strong>{len(approved)} product(s)</strong> "
         f"({', '.join(approved_product_names)}) — "
-        f"**{total_qty:,} units** at an estimated cost of **${total_cost:,.2f}**."
+        f"<strong>{total_qty:,} units</strong> at an estimated cost of "
+        f"<strong>${total_cost:,.2f}</strong>."
     )
 
     if avg_lambda == 0.0:
@@ -572,7 +624,7 @@ def _render_executive_summary() -> None:
             f"supplier risk was the primary decision driver (avg λ = {avg_lambda:.2f}), "
             f"reflecting a risk-first procurement posture"
         )
-    st.markdown(f"- **Why it is optimal:** Under the configured constraints, {_opt_reason}.")
+    _rec_box(f"<strong>Why it is optimal:</strong> Under the configured constraints, {_opt_reason}.")
 
     _constraint_parts = []
     _div_counts: dict[str, int] = {}
@@ -610,9 +662,9 @@ def _render_executive_summary() -> None:
                 "against concentration risk"
             )
     if _tradeoff_parts:
-        st.markdown(f"- **Tradeoffs:** {'; '.join(_tradeoff_parts)}.")
+        _rec_box(f"<strong>Tradeoffs:</strong> {'; '.join(_tradeoff_parts)}.")
     else:
-        st.markdown("- **Tradeoffs:** No significant cost-risk tradeoffs identified for this session.")
+        _rec_box("<strong>Tradeoffs:</strong> No significant cost-risk tradeoffs identified for this session.")
 
     # Country concentration risk — only flag if ≥2/3 of allocated suppliers share one country
     _country_conc_warnings = []
@@ -632,9 +684,9 @@ def _render_executive_summary() -> None:
                 )
 
     if _country_conc_warnings:
-        st.markdown(
-            f"- **Country concentration risk:** {'; '.join(_country_conc_warnings)}. "
-            f"Consider running with `country_diversified` mode to reduce single-country exposure."
+        _risk_box(
+            f"<strong>Country concentration risk:</strong> {'; '.join(_country_conc_warnings)}. "
+            f"Consider running with <code>country_diversified</code> mode to reduce single-country exposure."
         )
 
     _risks = [
@@ -646,7 +698,7 @@ def _render_executive_summary() -> None:
         "Supplier-level disruption risk and price volatility should be reviewed before "
         "the next procurement run."
     )
-    st.markdown(f"- **Risks remaining:** {' '.join(_risks)}")
+    _risk_box(f"<strong>Risks remaining:</strong> {' '.join(_risks)}")
 
     st.divider()
     if st.button("← Back to Procurement Agent", key="exit_exec_summary_btn"):

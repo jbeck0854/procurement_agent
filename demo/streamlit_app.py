@@ -152,76 +152,64 @@ DEMO_FLOW = [
     {
         "tag": "Forecast",
         "label": "Demand Forecasting",
+        "context": "Begin by understanding the demand landscape — what products are needed, where, and when across the planning horizon.",
         "prompts": [
             ("Plan Procurement",
              "Help me plan procurement for the upcoming 20 week planning horizon "
              "with a balance between cost and reliability."),
-        ],
-    },
-    {
-        "tag": "Validation",
-        "label": "Forecast Validation",
-        "prompts": [
-            ("Model Assessment",
-             "Are these forecasts reliable? How was the model trained and validated?"),
-            ("Baseline Comparison",
-             "How does this model stack up against a baseline model?"),
-            ("Detail by Facility",
-             "Show me the forecast detail by facility and SKU."),
+            ("Yes, Proceed",
+             "Yes, proceed"),
         ],
     },
     {
         "tag": "BOM",
         "label": "BOM Requirements",
+        "context": "Translate finished-goods demand into raw component requirements using Bill of Materials recipes.",
         "prompts": [
             ("Component Requirements",
              "Show total component requirements for the upcoming demand window."),
-            ("SKU → Component",
-             "How exactly is forecasted SKU demand translated into component demand?"),
         ],
     },
     {
         "tag": "Inventory",
         "label": "Inventory Planning",
+        "context": "Factor in existing inventory to identify the net procurement gap — where and when orders are actually needed.",
         "prompts": [
             ("Net Procurement Need",
              "After our inventory is factored in, what is the total amount that needs to be "
              "ordered for each component to meet our upcoming demand?"),
             ("Triggered Weeks",
              "In which weeks and where is procurement actually triggered across the planning horizon?"),
-            ("Base Stock Policy",
-             "How does base stock policy work?"),
         ],
     },
     {
         "tag": "LP — IC",
         "label": "LP: IC Components",
+        "context": "Optimize supplier allocation for integrated circuit components, balancing cost against supply risk.",
         "prompts": [
             ("Optimize IC Components",
              "From our available suppliers, provide a procurement plan to ensure we have enough "
              "integrated circuit components across all facilities to meet our upcoming demand window. "
              "Implement a moderate risk aversion supply strategy. "
              "No supplier should exceed 40% of total supply volume for this order."),
-            ("Expedite",
-             "We need to expedite this component"),
         ],
     },
     {
         "tag": "LP — Trans",
         "label": "LP: Transistors",
+        "context": "Run a second optimization round for transistors and explore what-if scenarios for supply disruption.",
         "prompts": [
             ("Optimize Transistors",
              "From our available suppliers, provide a procurement plan to ensure we have enough "
              "transistors across all facilities to meet our upcoming demand window. "
              "Implement a moderate risk aversion supply strategy. "
              "No supplier should exceed 35% of total supply volume for this order."),
-            ("What-if: SUP_HKG_38",
-             "What if SUP_HKG_38 becomes unavailable next quarter?"),
         ],
     },
     {
         "tag": "Summary",
         "label": "Executive Summary",
+        "context": "Consolidate all findings into a board-ready procurement recommendation.",
         "prompts": [
             ("Complete Plan",
              "Complete Procurement Plan"),
@@ -425,23 +413,29 @@ def render_demo_buttons():
         unsafe_allow_html=True,
     )
 
-    # Show buttons: primary (next in sequence) + remaining as secondary
-    cols = st.columns(min(len(remaining), 3))
-    for i, (label, query) in enumerate(remaining):
-        if i >= 3:
-            break
-        with cols[i]:
-            btn_key = f"demo_{sec_idx}_{prompt_idx + i}_{label[:12]}"
-            if st.button(label, key=btn_key, use_container_width=True):
-                # Advance demo pointer past this prompt
-                st.session_state.demo_prompt = prompt_idx + i + 1
-                # Check if section is now complete
-                if st.session_state.demo_prompt >= len(section["prompts"]):
-                    st.session_state.demo_section += 1
-                    st.session_state.demo_prompt = 0
-                # Inject the prompt
-                st.session_state.suggested_query = query
-                st.rerun()
+    # Context card
+    if section.get("context"):
+        st.markdown(
+            f"<div style='background:#0A1F17; border-left:2px solid #76b900; border-radius:2px;"
+            f"padding:0.6rem 1rem; margin:0.3rem 0 0.5rem;'>"
+            f"<p style='font-family:Inter,sans-serif; font-size:0.8rem; color:#cccccc;"
+            f"margin:0; line-height:1.55; font-weight:300; font-style:italic;'>"
+            f"{section['context']}</p></div>",
+            unsafe_allow_html=True,
+        )
+
+    # Show only the NEXT button (one at a time, sequential)
+    label, query = remaining[0]
+    _cols = st.columns([1, 2, 1])
+    with _cols[1]:
+        btn_key = f"demo_{sec_idx}_{prompt_idx}_{label[:12]}"
+        if st.button(label, key=btn_key, use_container_width=True):
+            st.session_state.demo_prompt = prompt_idx + 1
+            if st.session_state.demo_prompt >= len(section["prompts"]):
+                st.session_state.demo_section += 1
+                st.session_state.demo_prompt = 0
+            st.session_state.suggested_query = query
+            st.rerun()
 
 
 # ── Graph execution helpers ──────────────────────────────────────────────────
@@ -630,21 +624,24 @@ const EDGE_DEFS = [
   ["chart_agent","synthesizer"], ["lp_agent","synthesizer"],
   ["synthesizer","response"],
 ];
-// Dynamic shortcut edges: active agents connect directly to response
-// when their downstream path is inactive
+// Dynamic shortcut edges based on which agents actually ran
 const p1ids = ["pipeline_agent","data_agent","risk_agent"];
 const p2ids = ["chart_agent","lp_agent"];
+const p1Active = p1ids.some(id => nodeMap[id].active);
 const p2Active = p2ids.some(id => nodeMap[id].active);
 const synthActive = nodeMap["synthesizer"].active;
-// If Phase 2 not active but Synthesizer IS active, Phase 1 → Synthesizer directly
-if (!p2Active && synthActive) {{
+// Phase 2 active but NO Phase 1: Orchestrator → Phase 2 directly
+if (p2Active && !p1Active) {{
+  p2ids.forEach(id => {{ if (nodeMap[id].active) EDGE_DEFS.push(["orch_extract", id]); }});
+}}
+// Phase 1 active but NO Phase 2: Phase 1 → Synthesizer or Response
+if (p1Active && !p2Active && synthActive) {{
   p1ids.forEach(id => {{ if (nodeMap[id].active) EDGE_DEFS.push([id, "synthesizer"]); }});
 }}
-// If Phase 2 not active AND Synthesizer not active, Phase 1 → Response directly
-if (!p2Active && !synthActive) {{
+if (p1Active && !p2Active && !synthActive) {{
   p1ids.forEach(id => {{ if (nodeMap[id].active) EDGE_DEFS.push([id, "response"]); }});
 }}
-// If Synthesizer not active but Phase 2 is, Phase 2 → Response directly
+// Phase 2 active but Synthesizer not: Phase 2 → Response directly
 if (p2Active && !synthActive) {{
   p2ids.forEach(id => {{ if (nodeMap[id].active) EDGE_DEFS.push([id, "response"]); }});
 }}
@@ -955,7 +952,7 @@ def stream_graph(command, config):
 
             st.markdown(
                 f"<div style='{SECTION_STYLE}'>"
-                + section_header("⬡", "Active Engine Progress", "#76b900")
+                + section_header("—", "Active Engine Progress", "#76b900")
                 + rows
                 + "</div>",
                 unsafe_allow_html=True,
@@ -976,7 +973,7 @@ def stream_graph(command, config):
                 )
                 st.markdown(
                     f"<div style='{SECTION_STYLE}'>"
-                    + section_header("✦", "Pipeline Results", "#76b900")
+                    + section_header("·", "01 — Pipeline Results", "#76b900")
                     + inner
                     + "</div>",
                     unsafe_allow_html=True,
@@ -990,7 +987,7 @@ def stream_graph(command, config):
                 )
                 st.markdown(
                     f"<div style='{SECTION_STYLE}'>"
-                    + section_header("◈", "Data Query", "#76b900")
+                    + section_header("·", "Data Query", "#76b900")
                     + inner
                     + "</div>",
                     unsafe_allow_html=True,
@@ -1004,7 +1001,7 @@ def stream_graph(command, config):
                 )
                 st.markdown(
                     f"<div style='{SECTION_STYLE}'>"
-                    + section_header("⊕", "Geopolitical Risk Analysis", "#76b900")
+                    + section_header("·", "Geopolitical Risk Analysis", "#76b900")
                     + inner
                     + "</div>",
                     unsafe_allow_html=True,
@@ -1025,7 +1022,7 @@ def stream_graph(command, config):
                 )
                 st.markdown(
                     f"<div style='{lp_style}'>"
-                    + section_header("◬", "LP Optimization Results", "#76b900")
+                    + section_header("·", "02 — Optimization Results", "#76b900")
                     + inner
                     + "</div>",
                     unsafe_allow_html=True,
@@ -1036,7 +1033,7 @@ def stream_graph(command, config):
             if charts:
                 st.markdown(
                     f"<div style='{SECTION_STYLE}'>"
-                    + section_header("◎", "Visualizations", "#76b900")
+                    + section_header("·", "03 — Visualizations", "#76b900")
                     + "</div>",
                     unsafe_allow_html=True,
                 )
@@ -1055,7 +1052,7 @@ def stream_graph(command, config):
                 )
                 st.markdown(
                     f"<div style='{summary_style}'>"
-                    + section_header("✦", "Intelligence Summary", "#76b900")
+                    + section_header("·", "04 — Intelligence Summary", "#76b900")
                     + inner
                     + "</div>",
                     unsafe_allow_html=True,
@@ -1614,6 +1611,7 @@ def finalize_execution(final_state, fallback_plan=None):
         "intent": final_state.get("intent") or plan.get("intent", ""),
         "tasks": final_state.get("tasks") or plan.get("tasks", []),
         "agent_results": final_state.get("agent_results", {}),
+        "raw_data": final_state.get("raw_data") or {},
         "chart_results": final_state.get("chart_results") or {},
         "timings": final_state.get("timings") or plan.get("timings", {}),
     }
@@ -1662,7 +1660,7 @@ def finalize_execution(final_state, fallback_plan=None):
             }
             st.markdown(
                 "<p style='font-family:Inter,sans-serif; font-size:0.6rem; letter-spacing:0.12em;"
-                "text-transform:uppercase; color:#888888; margin:0 0 0.4rem;'>Pipeline Results</p>",
+                "color:#888888; margin:0 0 0.4rem;'><span style='color:#76b900; font-weight:300; font-size:1.1rem; margin-right:8px;'>01</span>Pipeline Results</p>",
                 unsafe_allow_html=True,
             )
             for key, content in pipeline_items.items():
@@ -1685,18 +1683,24 @@ def finalize_execution(final_state, fallback_plan=None):
             st.markdown("---")
             st.markdown(
                 "<p style='font-family:Inter,sans-serif; font-size:0.6rem; letter-spacing:0.12em;"
-                "text-transform:uppercase; color:#888888; margin:0 0 0.4rem;'>LP Optimization Results</p>",
+                "color:#888888; margin:0 0 0.4rem;'><span style='color:#76b900; font-weight:300; font-size:1.1rem; margin-right:8px;'>02</span>Optimization Results</p>",
                 unsafe_allow_html=True,
             )
+            _raw = trace.get("raw_data") or {}
             for key, content in lp_items.items():
                 product = key.replace("lp_", "").replace("_", " ").title()
-                with st.expander(f"Product: {product}", expanded=True):
-                    st.code(content, language=None)
+                raw_dict = _raw.get(key)
+                if isinstance(raw_dict, dict):
+                    st.markdown(f"### {product}")
+                    _render_lp_result(raw_dict)
+                elif content:
+                    with st.expander(f"Product: {product}", expanded=True):
+                        st.code(str(content), language=None)
         chart_results = trace.get("chart_results") or {}
         if chart_results:
             st.markdown(
                 f"<div style='margin:0.75rem 0 0.5rem;'>"
-                + section_header("◎", "Visualizations", "#76b900")
+                + section_header("·", "03 — Visualizations", "#76b900")
                 + "</div>",
                 unsafe_allow_html=True,
             )
@@ -1744,7 +1748,7 @@ def render_pending_plan():
         # Compact LP-only header
         st.markdown(
             f"<div style='{SECTION_STYLE}'>"
-            + section_header("◬", "Procurement Optimization — Ready to Run", "#76b900")
+            + section_header("·", "Procurement Optimization — Ready to Run", "#76b900")
             + "</div>",
             unsafe_allow_html=True,
         )
@@ -2219,7 +2223,7 @@ else:
                 if _pip:
                     st.markdown(
                         "<p style='font-family:Inter,sans-serif; font-size:0.6rem; letter-spacing:0.12em;"
-                        "text-transform:uppercase; color:#888888; margin:0 0 0.4rem;'>Pipeline Results</p>",
+                        "color:#888888; margin:0 0 0.4rem;'><span style='color:#76b900; font-weight:300; font-size:1.1rem; margin-right:8px;'>01</span>Pipeline Results</p>",
                         unsafe_allow_html=True,
                     )
                     for _pk, _pv in _pip.items():
@@ -2260,7 +2264,7 @@ else:
                 if chart_results:
                     st.markdown(
                         "<div style='margin:0.75rem 0 0.35rem;'>"
-                        + section_header("◎", "Visualizations", "#76b900")
+                        + section_header("·", "03 — Visualizations", "#76b900")
                         + "</div>",
                         unsafe_allow_html=True,
                     )
@@ -2270,7 +2274,7 @@ else:
             else:
                 # Non-trace messages: render content as-is
                 if msg.get("content"):
-                    st.markdown(msg["content"])
+                    st.markdown(msg["content"], unsafe_allow_html=True)
 
             if _b64 and not msg.get("chart_first"):
                 st.image(base64.b64decode(_b64))
@@ -2366,7 +2370,7 @@ else:
                 # Graph completed (or planner/out_of_scope) — show text directly
                 if final_resp:
                     with st.chat_message("assistant", avatar=CPU_AVATAR):
-                        st.markdown(final_resp)
+                        st.markdown(final_resp, unsafe_allow_html=True)
                     st.session_state.messages.append({
                         "role": "assistant", "content": final_resp,
                         "has_trace": False, "summary": "",
