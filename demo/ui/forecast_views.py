@@ -48,8 +48,9 @@ Understood. We will:
 4. Optimize supplier allocation to minimize cost while controlling supplier risk and disruption
 
 Your objective balances cost efficiency with supply reliability:
-- **Lower emphasis** prioritizes cost minimization
-- **Higher emphasis** prioritizes more stable, lower-risk suppliers even if slightly more expensive
+
+<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px; padding:0.5rem 0.9rem; margin:0.3rem 0;'><p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'><strong>Lower emphasis</strong> prioritizes cost minimization</p></div>
+<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px; padding:0.5rem 0.9rem; margin:0.3rem 0;'><p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'><strong>Higher emphasis</strong> prioritizes more stable, lower-risk suppliers even if slightly more expensive</p></div>
 
 Let's begin by validating the historical demand that drives this entire workflow.
 
@@ -89,7 +90,7 @@ def _render_kickoff_response() -> None:
     """Render the deterministic opening assistant message and CSV button (first turn only)."""
     from ui.theme import CPU_AVATAR
     with st.chat_message("assistant", avatar=CPU_AVATAR):
-        st.markdown(_KICKOFF_OPENING_RESPONSE)
+        st.markdown(_KICKOFF_OPENING_RESPONSE, unsafe_allow_html=True)
         _render_csv_button()
     st.session_state.messages.append({
         "role": "assistant",
@@ -166,11 +167,11 @@ def _plot_facility_faceted(df, facility_id: str):
 
 
 def _narrative_facility_bullets(df, facility_id: str) -> str:
-    """Markdown bullet summary for a single-facility faceted forecast view.
+    """Styled HTML bullet summary for a single-facility faceted forecast view.
 
     Covers: total/avg demand, peak + lowest week, SKU concentration, and a
     cross-SKU comparative insight (highest-volume SKUs + most/least volatile).
-    Returned string is passed directly to st.markdown().
+    Returned string is passed directly to st.markdown(unsafe_allow_html=True).
     """
     import pandas as pd
     fac_df = df[df["facility_id"] == facility_id].copy()
@@ -217,13 +218,28 @@ def _narrative_facility_bullets(df, facility_id: str) -> str:
         f"while **{least_volatile}** is the most stable"
     )
 
-    return "\n".join([
-        f"- **Total horizon demand:** {total:,.0f} units across {n_weeks} weeks",
-        f"- **Average weekly demand:** {avg:,.0f} units/week",
-        f"- **Peak week:** {peak_week} → {peak_val:,.0f} units",
-        f"- **Lowest week:** {low_week} → {low_val:,.0f} units",
-        f"- **SKU concentration:** {concentration}",
-        f"- **Cross-SKU insight:** {cross_sku}",
+    _div_style = (
+        "background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+        "padding:0.5rem 0.9rem; margin:0.3rem 0;"
+    )
+    _p_style = (
+        "font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;"
+    )
+
+    def _bullet(label: str, value: str) -> str:
+        return (
+            f"<div style='{_div_style}'>"
+            f"<p style='{_p_style}'>"
+            f"<strong>{label}:</strong> {value}</p></div>"
+        )
+
+    return "".join([
+        _bullet("Total horizon demand", f"{total:,.0f} units across {n_weeks} weeks"),
+        _bullet("Average weekly demand", f"{avg:,.0f} units/week"),
+        _bullet("Peak week", f"{peak_week} → {peak_val:,.0f} units"),
+        _bullet("Lowest week", f"{low_week} → {low_val:,.0f} units"),
+        _bullet("SKU concentration", concentration),
+        _bullet("Cross-SKU insight", cross_sku),
     ])
 
 
@@ -257,9 +273,19 @@ def _render_forecast_summary_structured(s: dict) -> None:
     with _col_l:
         st.markdown("**Planning Horizon**")
         st.markdown(
-            f"- **Start:** {s['planning_horizon_start_date']}\n"
-            f"- **End:**   {s['planning_horizon_end_date']}\n"
-            f"- **Duration:** {s['horizon_weeks']} weeks"
+            f"<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+            f"padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+            f"<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+            f"<strong>Start:</strong> {s['planning_horizon_start_date']}</p></div>"
+            f"<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+            f"padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+            f"<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+            f"<strong>End:</strong> {s['planning_horizon_end_date']}</p></div>"
+            f"<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+            f"padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+            f"<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+            f"<strong>Duration:</strong> {s['horizon_weeks']} weeks</p></div>",
+            unsafe_allow_html=True,
         )
     with _col_r:
         st.markdown("**Demand Summary**")
@@ -287,10 +313,20 @@ def _render_forecast_summary_structured(s: dict) -> None:
                 f"got {cov['actual_rows']:,}"
             )
         st.markdown(
-            f"- **Coverage:** {cov['facility_count']} facilities × "
-            f"{cov['sku_count']} SKUs = **{cov['series_count']} series**\n"
-            f"- **Weeks per series:** {cov['week_count']}\n"
-            f"- **Total rows validated:** {cov['actual_rows']:,}"
+            f"<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+            f"padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+            f"<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+            f"<strong>Coverage:</strong> {cov['facility_count']} facilities × "
+            f"{cov['sku_count']} SKUs = <strong>{cov['series_count']} series</strong></p></div>"
+            f"<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+            f"padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+            f"<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+            f"<strong>Weeks per series:</strong> {cov['week_count']}</p></div>"
+            f"<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+            f"padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+            f"<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+            f"<strong>Total rows validated:</strong> {cov['actual_rows']:,}</p></div>",
+            unsafe_allow_html=True,
         )
 
 
@@ -353,7 +389,7 @@ def _render_forecast_expanders(key_suffix: str = "live") -> None:
             if val_data.get("chart_b64"):
                 st.image(base64.b64decode(val_data["chart_b64"]))
             if val_data.get("content"):
-                st.markdown(val_data["content"])
+                st.markdown(val_data["content"], unsafe_allow_html=True)
 
     # ── Expander 3: Performance versus baselines ───────────────────────────
     base_data = cache.get("baseline", {})
@@ -362,4 +398,4 @@ def _render_forecast_expanders(key_suffix: str = "live") -> None:
             if base_data.get("chart_b64"):
                 st.image(base64.b64decode(base_data["chart_b64"]))
             if base_data.get("content"):
-                st.markdown(base_data["content"])
+                st.markdown(base_data["content"], unsafe_allow_html=True)

@@ -1087,6 +1087,10 @@ def stream_graph(command, config):
                     final_state.setdefault("agent_results", {}).update(
                         node_output["agent_results"] or {}
                     )
+                if "raw_data" in node_output:
+                    final_state.setdefault("raw_data", {}).update(
+                        node_output["raw_data"] or {}
+                    )
 
                 # Pipeline results — extract for streaming display
                 if node_name == "pipeline_agent" and node_output.get("agent_results"):
@@ -1233,50 +1237,49 @@ _SS_TERMS_TEXT = (
     "| z | Service level factor — **≈1.65** for 95% target |"
 )
 _SS_BUSINESS_TEXT = (
-    "- The formula computes the **base-stock level (S)** — the total inventory "
-    "required to meet demand across the review period and lead time under uncertainty.\n"
-    "- **Safety stock** is the buffer component embedded within this level, covering "
-    "demand and lead-time variability.\n"
-    "- In this system, safety stock is enforced as a **protected inventory floor** "
-    "per facility × component. It is not consumed during planning.\n"
-    "- Only inventory **above** this floor is used to satisfy weekly demand."
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'>The formula computes the <strong>base-stock level (S)</strong> — the total inventory required to meet demand across the review period and lead time under uncertainty.</p></div>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Safety stock</strong> is the buffer component embedded within this level, covering demand and lead-time variability.</p></div>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'>In this system, safety stock is enforced as a <strong>protected inventory floor</strong> per facility × component. It is not consumed during planning.</p></div>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'>Only inventory <strong>above</strong> this floor is used to satisfy weekly demand.</p></div>"
 )
 _SS_CYCLE_STOCK_TEXT = (
-    "The base-stock level (S) has two distinct components:\n\n"
-    "**1. Cycle Stock** — μᴅ × (r + μₗ)\n"
-    "- Covers **expected demand** over the review period and lead time\n"
-    "- This is the primary driver of inventory volume\n\n"
-    "**2. Safety Stock** — z · √((r + μₗ)σᴅ² "
-    "+ μᴅ²σₗ²)\n"
-    "- Covers **uncertainty** in demand and lead time\n"
-    "- This is a buffer — NOT intended to cover expected demand\n\n"
-    "On-hand inventory at the start of planning is anchored at "
-    "**S = Cycle Stock + Safety Stock**. "
-    "Safety stock alone will often appear small relative to weekly demand — "
-    "this is expected and correct."
+    "<p style='color:#fff;margin:0 0 0.6rem;font-size:0.88rem;'>The base-stock level (S) has two distinct components:</p>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#76b900;margin:0 0 0.2rem;font-size:0.78rem;font-weight:600;'>1. Cycle Stock — μᴅ × (r + μₗ)</p>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'>Covers <strong>expected demand</strong> over the review period and lead time. This is the primary driver of inventory volume.</p></div>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#76b900;margin:0 0 0.2rem;font-size:0.78rem;font-weight:600;'>2. Safety Stock — z · √((r + μₗ)σᴅ² + μᴅ²σₗ²)</p>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'>Covers <strong>uncertainty</strong> in demand and lead time. This is a buffer — NOT intended to cover expected demand.</p></div>"
+    "<p style='color:#ccc;margin:0.6rem 0 0;font-size:0.84rem;'>On-hand inventory at the start of planning is anchored at <strong>S = Cycle Stock + Safety Stock</strong>. "
+    "Safety stock alone will often appear small relative to weekly demand — this is expected and correct.</p>"
 )
 _SS_PLANNING_TEXT = (
-    "- Weekly procurement is triggered when **usable inventory** (above the safety "
-    "stock floor) reaches zero.\n"
-    "- Safety stock is already accounted for before any weekly demand calculations "
-    "begin — it does not appear as a deduction in the weekly trigger table.\n"
-    "- The weekly trigger table reflects how demand consumes usable inventory, "
-    "not safety stock itself."
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'>Weekly procurement is triggered when <strong>usable inventory</strong> (above the safety stock floor) reaches zero.</p></div>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'>Safety stock is already accounted for before any weekly demand calculations begin — it does not appear as a deduction in the weekly trigger table.</p></div>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'>The weekly trigger table reflects how demand consumes usable inventory, not safety stock itself.</p></div>"
 )
 _TRIG_BULLETS_TEXT = (
-    "- **Gross Requirement:** forecast-driven component demand for that week.\n"
-    "- **Usable Inventory Before Demand:** inventory available after preserving "
-    "the safety stock floor.\n"
-    "- **Direct Procurement Needed:** portion of demand not covered by usable "
-    "inventory.\n"
-    "- **Cumulative Procurement Pressure:** total procurement required up to that "
-    "week, per facility × component.\n"
-    "- **Safety Stock Utilization (%):** how much of the safety buffer is being "
-    "matched by cumulative procurement demand.\n"
-    "- **Urgency Level:** qualitative indicator — Low / Medium / High / "
-    "Critical — based on how close cumulative pressure is to the safety "
-    "buffer.\n"
-    "- Procurement is triggered when usable inventory reaches zero."
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Gross Requirement:</strong> forecast-driven component demand for that week.</p></div>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Usable Inventory Before Demand:</strong> inventory available after preserving the safety stock floor.</p></div>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Direct Procurement Needed:</strong> portion of demand not covered by usable inventory.</p></div>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Cumulative Procurement Pressure:</strong> total procurement required up to that week, per facility × component.</p></div>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Safety Stock Utilization (%):</strong> how much of the safety buffer is being matched by cumulative procurement demand.</p></div>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Urgency Level:</strong> qualitative indicator — Low / Medium / High / Critical.</p></div>"
+    "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'>Procurement is triggered when usable inventory reaches zero.</p></div>"
 )
 
 
@@ -1364,7 +1367,7 @@ def _render_inventory_expanders():
             )
         else:
             st.info("No triggered rows — all inventory positions appear sufficient.")
-        st.markdown(_TRIG_BULLETS_TEXT)
+        st.markdown(_TRIG_BULLETS_TEXT, unsafe_allow_html=True)
 
     # Expander 2: Base Stock Policy
     with st.expander("Detail on Base Stock Policy", expanded=False):
@@ -1374,11 +1377,11 @@ def _render_inventory_expanders():
         st.markdown("**Term Definitions**")
         st.markdown(_SS_TERMS_TEXT)
         st.markdown("**How It Works**")
-        st.markdown(_SS_BUSINESS_TEXT)
+        st.markdown(_SS_BUSINESS_TEXT, unsafe_allow_html=True)
         st.markdown("**Cycle Stock vs Safety Stock (Key Distinction)**")
-        st.markdown(_SS_CYCLE_STOCK_TEXT)
+        st.markdown(_SS_CYCLE_STOCK_TEXT, unsafe_allow_html=True)
         st.markdown("**Connection to Planning Outputs**")
-        st.markdown(_SS_PLANNING_TEXT)
+        st.markdown(_SS_PLANNING_TEXT, unsafe_allow_html=True)
 
     # Expander 3: Full horizon drilldown
     fh_df = cache.get("full_horizon_df", _pd_inv2.DataFrame())
@@ -1445,13 +1448,14 @@ def _try_rich_render(key: str, content: str, structured) -> bool:
             "Inventory has not yet been netted out."
         )
         _BOM_XLATE_NOTE = (
-            "- This step shows what components are required to build the products "
-            "our customers are expecting.\n"
-            "- Every finished unit requires a specific mix of inputs — the BOM "
-            "defines how many units of each component are needed per SKU.\n"
-            "- Multiplying that recipe by the forecasted demand yields the gross "
-            "component requirements shown below.\n"
-            "- These totals are calculated before any inventory has been considered."
+            "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+            "<p style='color:#fff;margin:0;font-size:0.84rem;'>This step shows what components are required to build the products our customers are expecting.</p></div>"
+            "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+            "<p style='color:#fff;margin:0;font-size:0.84rem;'>Every finished unit requires a specific mix of inputs — the BOM defines how many units of each component are needed per SKU.</p></div>"
+            "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+            "<p style='color:#fff;margin:0;font-size:0.84rem;'>Multiplying that recipe by the forecasted demand yields the gross component requirements shown below.</p></div>"
+            "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+            "<p style='color:#fff;margin:0;font-size:0.84rem;'>These totals are calculated before any inventory has been considered.</p></div>"
         )
         meta = structured.get("horizon_meta", {})
         bom_rows = structured.get("bom_xlate_rows", [])
@@ -1511,7 +1515,7 @@ def _try_rich_render(key: str, content: str, structured) -> bool:
                             df_bom.style.format(fmt),
                             height=420, use_container_width=True, hide_index=True,
                         )
-                    st.markdown(_BOM_XLATE_NOTE)
+                    st.markdown(_BOM_XLATE_NOTE, unsafe_allow_html=True)
             return True
 
         # Fallback: raw rows
@@ -1523,18 +1527,16 @@ def _try_rich_render(key: str, content: str, structured) -> bool:
 
     if key == "aggregated_procurement_need" and structured and structured.get("rows"):
         _PROC_BULLETS = (
-            "- **This table starts from the current inventory position — "
-            "Starting On-Hand — at the beginning of the planning horizon.**\n"
-            "- **Gross Component Demand** represents total required component "
-            "volume based on forecasted production.\n"
-            "- **Starting On-Hand**, **Scheduled Receipts**, and **Backorders** "
-            "adjust available inventory over the planning horizon.\n"
-            "- **Safety Stock Reserve** represents required buffer inventory to "
-            "maintain the target service level and must be procured if not "
-            "already available.\n"
-            "- **Net Procurement Requirement** is the remaining quantity that "
-            "must be ordered after accounting for all inventory and policy "
-            "constraints."
+            "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+            "<p style='color:#fff;margin:0;font-size:0.84rem;'>This table starts from the current inventory position — <strong>Starting On-Hand</strong> — at the beginning of the planning horizon.</p></div>"
+            "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+            "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Gross Component Demand</strong> represents total required component volume based on forecasted production.</p></div>"
+            "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+            "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Starting On-Hand</strong>, <strong>Scheduled Receipts</strong>, and <strong>Backorders</strong> adjust available inventory over the planning horizon.</p></div>"
+            "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+            "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Safety Stock Reserve</strong> represents required buffer inventory to maintain the target service level and must be procured if not already available.</p></div>"
+            "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
+            "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Net Procurement Requirement</strong> is the remaining quantity that must be ordered after accounting for all inventory and policy constraints.</p></div>"
         )
         st.subheader("Net Component Procurement Requirement — Planning Horizon")
         st.caption(
@@ -1542,7 +1544,7 @@ def _try_rich_render(key: str, content: str, structured) -> bool:
             f"{structured.get('horizon_end', '')} ({structured.get('n_weeks', '')} weeks)"
         )
         st.markdown("All values are aggregated across the full planning horizon.")
-        st.markdown(_PROC_BULLETS)
+        st.markdown(_PROC_BULLETS, unsafe_allow_html=True)
         df = pd.DataFrame(structured["rows"])
         fmt_cols = [c for c in df.columns if c != "Component"]
         st.dataframe(
@@ -1587,7 +1589,7 @@ def _try_rich_render(key: str, content: str, structured) -> bool:
                 with open(_try_path, "rb") as f:
                     st.image(f.read())
                 break
-        st.markdown(_text)
+        st.markdown(_text, unsafe_allow_html=True)
         return True
 
     if key == "forecast_drilldown" and content:
@@ -1646,6 +1648,15 @@ def finalize_execution(final_state, fallback_plan=None):
         ]
         parts.append("---\n\n**LP Optimization Results**\n\n" + "\n\n".join(lp_parts))
 
+    # Chart agent — always include output when chart_agent ran
+    chart_results = trace.get("chart_results") or {}
+    chart_summary = agent_results.get("chart_agent", "")
+    timings = trace.get("timings") or {}
+    chart_ran = timings.get("chart_agent") is not None
+    if chart_ran or chart_results or chart_summary:
+        label = chart_summary or ("Generated charts" if chart_results else "Chart agent completed — no charts produced")
+        parts.append(f"**Visualizations** — {label}")
+
     final_response = final_state.get("final_response", "")
     summary_text = ("---\n\n**Intelligence Summary**\n\n" + final_response) if final_response else ""
     combined = "\n\n".join(parts)
@@ -1696,7 +1707,6 @@ def finalize_execution(final_state, fallback_plan=None):
                 elif content:
                     with st.expander(f"Product: {product}", expanded=True):
                         st.code(str(content), language=None)
-        chart_results = trace.get("chart_results") or {}
         if chart_results:
             st.markdown(
                 f"<div style='margin:0.75rem 0 0.5rem;'>"
@@ -2242,9 +2252,15 @@ else:
                 # LP results — render with rich LP views
                 _lp = {k: v for k, v in _ar.items() if k.startswith("lp_")}
                 if _lp:
+                    _raw_replay = _trace.get("raw_data") or {}
                     for _lk, _lv in _lp.items():
                         _product = _lk.replace("lp_", "").replace("_", " ").title()
-                        if isinstance(_lv, dict):
+                        _raw_dict = _raw_replay.get(_lk)
+                        if isinstance(_raw_dict, dict):
+                            st.markdown(f"### {_product}")
+                            _render_lp_result(_raw_dict)
+                        elif isinstance(_lv, dict):
+                            # fallback: agent_results occasionally stores the dict directly
                             st.markdown(f"### {_product}")
                             _render_lp_result(_lv)
                         elif _lv:

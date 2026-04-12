@@ -222,55 +222,43 @@ _ASSESSMENT_COMPACT = {
     "validation": (
         "artifacts/forecasting/system_full_history_holdout.png",
         """\
-**Model:** HistGradientBoosting Regressor (HGB), trained jointly on all 48 facility–SKU \
-series (4 facilities × 12 semiconductor SKUs, weeks 1–145).
-
-**Validation design:**
-- 5-fold time-series cross-validation, 243 hyperparameter configurations tested
-- 10-week holdout (weeks 136–145) held out before any model fitting
-
-**Holdout performance (unseen data):**
-- Row-level MAE: **205.93** units/series/week
-- RMSE: 289.37 &nbsp;|&nbsp; MAPE: 23.75% &nbsp;|&nbsp; R²: **0.778**
-- System-level weekly MAE: ~4,012 units — less than 8% of typical weekly demand
-
-The model explains **~78% of demand variance** on held-out data. \
-The production model retrains on the full 145-week history before generating the planning horizon.\
+<p style="color:#fff;margin:0 0 0.8rem;font-size:0.88rem;"><strong>Model:</strong> HistGradientBoosting Regressor (HGB), trained jointly on all 48 facility–SKU series (4 facilities × 12 semiconductor SKUs, weeks 1–145).</p>\
+<p style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;margin:0 0 0.4rem;">Validation Design</p>\
+<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;"><p style="color:#fff;margin:0;font-size:0.84rem;">5-fold time-series cross-validation, 243 hyperparameter configurations tested</p></div>\
+<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;"><p style="color:#fff;margin:0;font-size:0.84rem;">10-week holdout (weeks 136–145) held out before any model fitting</p></div>\
+<p style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;margin:0.8rem 0 0.4rem;">Holdout Performance (Unseen Data)</p>\
+<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;"><p style="color:#fff;margin:0;font-size:0.84rem;"><strong>Row-level MAE:</strong> 205.93 units/series/week</p></div>\
+<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;"><p style="color:#fff;margin:0;font-size:0.84rem;"><strong>RMSE:</strong> 289.37 &nbsp;|&nbsp; <strong>MAPE:</strong> 23.75% &nbsp;|&nbsp; <strong>R²:</strong> 0.778</p></div>\
+<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;"><p style="color:#fff;margin:0;font-size:0.84rem;"><strong>System-level weekly MAE:</strong> ~4,012 units — less than 8% of typical weekly demand</p></div>\
+<p style="color:#ccc;margin:0.8rem 0 0;font-size:0.85rem;">The model explains <strong>~78% of demand variance</strong> on held-out data. The production model retrains on the full 145-week history before generating the planning horizon.</p>\
 """,
     ),
     "features": (
         "artifacts/forecasting/permutation_importance.png",
         """\
-**Method:** Permutation importance measured on the 10-week held-out validation set. \
-Each feature is shuffled independently; the accuracy drop indicates its contribution.
-
-**Top drivers:**
-- **lag_1** (prior-week demand for same series) — single strongest predictor
-- **roll_mean_4 / roll_mean_8** (near-term demand momentum) — also rank highly
-- **Price & promotional signals** (realized_selling_price, emailer, homepage) — meaningful, secondary to demand history
-- **Cyclical time encodings** (week_sin_52 / week_cos_52) — capture seasonal patterns
-- **global_mean_lag_1** — cross-series shared demand signal
-
-*Correlated features can mutually suppress each other's measured importance.*\
+<p style="color:#fff;margin:0 0 0.8rem;font-size:0.88rem;"><strong>Method:</strong> Permutation importance measured on the 10-week held-out validation set. Each feature is shuffled independently; the accuracy drop indicates its contribution.</p>\
+<p style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;margin:0 0 0.4rem;">Top Drivers</p>\
+<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;"><p style="color:#fff;margin:0;font-size:0.84rem;"><strong>lag_1</strong> (prior-week demand for same series) — single strongest predictor</p></div>\
+<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;"><p style="color:#fff;margin:0;font-size:0.84rem;"><strong>roll_mean_4 / roll_mean_8</strong> (near-term demand momentum) — also rank highly</p></div>\
+<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;"><p style="color:#fff;margin:0;font-size:0.84rem;"><strong>Price &amp; promotional signals</strong> — meaningful, secondary to demand history</p></div>\
+<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;"><p style="color:#fff;margin:0;font-size:0.84rem;"><strong>Cyclical time encodings</strong> (week_sin_52 / week_cos_52) — capture seasonal patterns</p></div>\
+<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;"><p style="color:#fff;margin:0;font-size:0.84rem;"><strong>global_mean_lag_1</strong> — cross-series shared demand signal</p></div>\
+<p style="color:#888;margin:0.5rem 0 0;font-size:0.8rem;font-style:italic;">Correlated features can mutually suppress each other's measured importance.</p>\
 """,
     ),
     "baseline": (
         "artifacts/forecasting/baseline_system_comparison.png",
         """\
-**Baselines evaluated on the same 10-week holdout (weeks 136–145):**
-- **Lag-1:** repeat last week's observed demand
-- **Rolling Mean-4:** 4-week trailing average
-
-| Model | Row-Level MAE |
-|---|---|
-| HGB (production) | 205.93 |
-| Lag-1 baseline | 223.06 |
-| Rolling Mean-4 baseline | 266.42 |
-
-The production model achieves **7.7% lower error than lag-1** and **22.7% lower than rolling mean-4**. \
-Gains are consistent across most of the 48 series. \
-Better demand accuracy translates directly into tighter inventory targets, \
-fewer unnecessary safety stock buffers, and more reliable supplier allocation decisions.\
+<p style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;margin:0 0 0.4rem;">Baselines evaluated on the same 10-week holdout (weeks 136–145)</p>\
+<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;"><p style="color:#fff;margin:0;font-size:0.84rem;"><strong>Lag-1:</strong> repeat last week's observed demand</p></div>\
+<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;"><p style="color:#fff;margin:0;font-size:0.84rem;"><strong>Rolling Mean-4:</strong> 4-week trailing average</p></div>\
+<table style="width:100%;border-collapse:collapse;margin:0.8rem 0;font-family:Inter,sans-serif;font-size:0.84rem;">\
+<tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:0.4rem 0.6rem;color:#888;font-weight:600;">Model</th><th style="text-align:right;padding:0.4rem 0.6rem;color:#888;font-weight:600;">Row-Level MAE</th></tr>\
+<tr style="border-bottom:1px solid #1a1a1a;"><td style="padding:0.4rem 0.6rem;color:#76b900;font-weight:600;">HGB (production)</td><td style="text-align:right;padding:0.4rem 0.6rem;color:#fff;">205.93</td></tr>\
+<tr style="border-bottom:1px solid #1a1a1a;"><td style="padding:0.4rem 0.6rem;color:#ccc;">Lag-1 baseline</td><td style="text-align:right;padding:0.4rem 0.6rem;color:#fff;">223.06</td></tr>\
+<tr><td style="padding:0.4rem 0.6rem;color:#ccc;">Rolling Mean-4 baseline</td><td style="text-align:right;padding:0.4rem 0.6rem;color:#fff;">266.42</td></tr>\
+</table>\
+<p style="color:#ccc;margin:0.5rem 0 0;font-size:0.85rem;">The production model achieves <strong>7.7% lower error than lag-1</strong> and <strong>22.7% lower than rolling mean-4</strong>. Gains are consistent across most of the 48 series. Better demand accuracy translates directly into tighter inventory targets, fewer unnecessary safety stock buffers, and more reliable supplier allocation decisions.</p>\
 """,
     ),
 }

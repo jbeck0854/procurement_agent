@@ -17,36 +17,73 @@ _SS_TERMS_TEXT = (
     "| r | Review period \u2014 **8 weeks** |\n"
     "| z | Service level factor \u2014 **\u22481.65** for 95% target |"
 )
-_SS_BUSINESS_TEXT = (
-    "- The formula computes the **base-stock level (S)** \u2014 the total inventory "
-    "required to meet demand across the review period and lead time under uncertainty.\n"
-    "- **Safety stock** is the buffer component embedded within this level, covering "
-    "demand and lead-time variability.\n"
-    "- In this system, safety stock is enforced as a **protected inventory floor** "
-    "per facility \u00d7 component. It is not consumed during planning.\n"
-    "- Only inventory **above** this floor is used to satisfy weekly demand."
+_SS_BUSINESS_HTML = (
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "The formula computes the <strong>base-stock level (S)</strong> \u2014 the total inventory "
+    "required to meet demand across the review period and lead time under uncertainty.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "<strong>Safety stock</strong> is the buffer component embedded within this level, covering "
+    "demand and lead-time variability.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "In this system, safety stock is enforced as a <strong>protected inventory floor</strong> "
+    "per facility \u00d7 component. It is not consumed during planning.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "Only inventory <strong>above</strong> this floor is used to satisfy weekly demand.</p></div>"
 )
-_SS_CYCLE_STOCK_TEXT = (
-    "The base-stock level (S) has two distinct components:\n\n"
-    "**1. Cycle Stock** \u2014 \u03bc\u1d05 \u00d7 (r + \u03bc\u2097)\n"
-    "- Covers **expected demand** over the review period and lead time\n"
-    "- This is the primary driver of inventory volume\n\n"
-    "**2. Safety Stock** \u2014 z \u00b7 \u221a((r + \u03bc\u2097)\u03c3\u1d05\u00b2 "
-    "+ \u03bc\u1d05\u00b2\u03c3\u2097\u00b2)\n"
-    "- Covers **uncertainty** in demand and lead time\n"
-    "- This is a buffer \u2014 NOT intended to cover expected demand\n\n"
+_SS_CYCLE_STOCK_HTML = (
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; line-height:1.55;'>"
+    "The base-stock level (S) has two distinct components:</p>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; line-height:1.55;'>"
+    "<strong>1. Cycle Stock</strong> \u2014 \u03bc\u1d05 \u00d7 (r + \u03bc\u2097)</p>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "Covers <strong>expected demand</strong> over the review period and lead time</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "This is the primary driver of inventory volume</p></div>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; line-height:1.55; margin-top:0.6rem;'>"
+    "<strong>2. Safety Stock</strong> \u2014 z \u00b7 \u221a((r + \u03bc\u2097)\u03c3\u1d05\u00b2 "
+    "+ \u03bc\u1d05\u00b2\u03c3\u2097\u00b2)</p>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "Covers <strong>uncertainty</strong> in demand and lead time</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "This is a buffer \u2014 NOT intended to cover expected demand</p></div>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; line-height:1.55; margin-top:0.6rem;'>"
     "On-hand inventory at the start of planning is anchored at "
-    "**S = Cycle Stock + Safety Stock**. "
+    "<strong>S = Cycle Stock + Safety Stock</strong>. "
     "Safety stock alone will often appear small relative to weekly demand \u2014 "
-    "this is expected and correct."
+    "this is expected and correct.</p>"
 )
-_SS_PLANNING_TEXT = (
-    "- Weekly procurement is triggered when **usable inventory** (above the safety "
-    "stock floor) reaches zero.\n"
-    "- Safety stock is already accounted for before any weekly demand calculations "
-    "begin \u2014 it does not appear as a deduction in the weekly trigger table.\n"
-    "- The weekly trigger table reflects how demand consumes usable inventory, "
-    "not safety stock itself."
+_SS_PLANNING_HTML = (
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "Weekly procurement is triggered when <strong>usable inventory</strong> (above the safety "
+    "stock floor) reaches zero.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "Safety stock is already accounted for before any weekly demand calculations "
+    "begin \u2014 it does not appear as a deduction in the weekly trigger table.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "The weekly trigger table reflects how demand consumes usable inventory, "
+    "not safety stock itself.</p></div>"
 )
 
 # ── Weekly trigger column constants ──────────────────────────────────────────
@@ -64,30 +101,63 @@ _TRIG_FMT_DISPLAY = {
     "Safety Stock Utilization (%)":    "{:.1f}%",
     "Forecast Week":                   "{:,.0f}",
 }
-_TRIG_BULLETS_TEXT = (
-    "- **Gross Requirement:** forecast-driven component demand for that week.\n"
-    "- **Usable Inventory Before Demand:** inventory available after preserving "
-    "the safety stock floor.\n"
-    "- **Direct Procurement Needed:** portion of demand not covered by usable "
-    "inventory.\n"
-    "- **Cumulative Procurement Pressure:** total procurement required up to that "
-    "week, per facility \u00d7 component.\n"
-    "- **Safety Stock Utilization (%):** how much of the safety buffer is being "
-    "matched by cumulative procurement demand.\n"
-    "- **Urgency Level:** qualitative indicator \u2014 Low / Medium / High / "
+_TRIG_BULLETS_HTML = (
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "<strong>Gross Requirement:</strong> forecast-driven component demand for that week.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "<strong>Usable Inventory Before Demand:</strong> inventory available after preserving "
+    "the safety stock floor.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "<strong>Direct Procurement Needed:</strong> portion of demand not covered by usable "
+    "inventory.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "<strong>Cumulative Procurement Pressure:</strong> total procurement required up to that "
+    "week, per facility \u00d7 component.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "<strong>Safety Stock Utilization (%):</strong> how much of the safety buffer is being "
+    "matched by cumulative procurement demand.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "<strong>Urgency Level:</strong> qualitative indicator \u2014 Low / Medium / High / "
     "Critical \u2014 based on how close cumulative pressure is to the safety "
-    "buffer.\n"
-    "- Procurement is triggered when usable inventory reaches zero."
+    "buffer.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "Procurement is triggered when usable inventory reaches zero.</p></div>"
 )
 
-_BOM_XLATE_EXEC_NOTE = (
-    "- This step shows what components are required to build the products "
-    "our customers are expecting.\n"
-    "- Every finished unit requires a specific mix of inputs — the BOM "
-    "defines how many units of each component are needed per SKU.\n"
-    "- Multiplying that recipe by the forecasted demand yields the gross "
-    "component requirements shown below.\n"
-    "- These totals are calculated before any inventory has been considered."
+_BOM_XLATE_EXEC_NOTE_HTML = (
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "This step shows what components are required to build the products "
+    "our customers are expecting.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "Every finished unit requires a specific mix of inputs \u2014 the BOM "
+    "defines how many units of each component are needed per SKU.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "Multiplying that recipe by the forecasted demand yields the gross "
+    "component requirements shown below.</p></div>"
+    "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
+    "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
+    "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
+    "These totals are calculated before any inventory has been considered.</p></div>"
 )
 
 
@@ -180,7 +250,7 @@ def _render_bom_translation_body(rows: list) -> None:
             use_container_width=True,
             hide_index=True,
         )
-    st.markdown(_BOM_XLATE_EXEC_NOTE)
+    st.markdown(_BOM_XLATE_EXEC_NOTE_HTML, unsafe_allow_html=True)
 
 
 def _render_ss_policy_body() -> None:
@@ -195,11 +265,11 @@ def _render_ss_policy_body() -> None:
     st.markdown("**Term Definitions**")
     st.markdown(_SS_TERMS_TEXT)
     st.markdown("**How It Works**")
-    st.markdown(_SS_BUSINESS_TEXT)
+    st.markdown(_SS_BUSINESS_HTML, unsafe_allow_html=True)
     st.markdown("**Cycle Stock vs Safety Stock (Key Distinction)**")
-    st.markdown(_SS_CYCLE_STOCK_TEXT)
+    st.markdown(_SS_CYCLE_STOCK_HTML, unsafe_allow_html=True)
     st.markdown("**Connection to Planning Outputs**")
-    st.markdown(_SS_PLANNING_TEXT)
+    st.markdown(_SS_PLANNING_HTML, unsafe_allow_html=True)
 
 
 def _prepare_trigger_df_from_raw(trig_data: dict):
