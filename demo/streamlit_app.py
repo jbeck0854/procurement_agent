@@ -37,7 +37,7 @@ from ui.session_helpers import _store_approved_run, _merge_final_states
 from ui.theme import (
     inject_css, FAVICON, LOGO_B64, USER_AVATAR, CPU_AVATAR,
     SECTION_STYLE, section_header, render_charts,
-    render_header, render_sidebar, render_landing,
+    render_header, render_sidebar, render_landing, render_architecture,
     render_history_list, render_history_detail,
 )
 
@@ -143,6 +143,92 @@ TOOL_PLAN_INFO = {
     },
 }
 
+# ── Demo Flow — pre-packaged prompts for end-to-end business cycle demo ────
+# Each section has a label, short tag (for flowchart), and ordered prompt list.
+# Prompts are consumed in order; once all prompts in a section are used,
+# the flow advances to the next section.
+
+DEMO_FLOW = [
+    {
+        "tag": "Forecast",
+        "label": "Demand Forecasting",
+        "prompts": [
+            ("Plan Procurement",
+             "Help me plan procurement for the upcoming 20 week planning horizon "
+             "with a balance between cost and reliability."),
+        ],
+    },
+    {
+        "tag": "Validation",
+        "label": "Forecast Validation",
+        "prompts": [
+            ("Model Assessment",
+             "Are these forecasts reliable? How was the model trained and validated?"),
+            ("Baseline Comparison",
+             "How does this model stack up against a baseline model?"),
+            ("Detail by Facility",
+             "Show me the forecast detail by facility and SKU."),
+        ],
+    },
+    {
+        "tag": "BOM",
+        "label": "BOM Requirements",
+        "prompts": [
+            ("Component Requirements",
+             "Show total component requirements for the upcoming demand window."),
+            ("SKU → Component",
+             "How exactly is forecasted SKU demand translated into component demand?"),
+        ],
+    },
+    {
+        "tag": "Inventory",
+        "label": "Inventory Planning",
+        "prompts": [
+            ("Net Procurement Need",
+             "After our inventory is factored in, what is the total amount that needs to be "
+             "ordered for each component to meet our upcoming demand?"),
+            ("Triggered Weeks",
+             "In which weeks and where is procurement actually triggered across the planning horizon?"),
+            ("Base Stock Policy",
+             "How does base stock policy work?"),
+        ],
+    },
+    {
+        "tag": "LP — IC",
+        "label": "LP: IC Components",
+        "prompts": [
+            ("Optimize IC Components",
+             "From our available suppliers, provide a procurement plan to ensure we have enough "
+             "integrated circuit components across all facilities to meet our upcoming demand window. "
+             "Implement a moderate risk aversion supply strategy. "
+             "No supplier should exceed 40% of total supply volume for this order."),
+            ("Expedite",
+             "We need to expedite this component"),
+        ],
+    },
+    {
+        "tag": "LP — Trans",
+        "label": "LP: Transistors",
+        "prompts": [
+            ("Optimize Transistors",
+             "From our available suppliers, provide a procurement plan to ensure we have enough "
+             "transistors across all facilities to meet our upcoming demand window. "
+             "Implement a moderate risk aversion supply strategy. "
+             "No supplier should exceed 35% of total supply volume for this order."),
+            ("What-if: SUP_HKG_38",
+             "What if SUP_HKG_38 becomes unavailable next quarter?"),
+        ],
+    },
+    {
+        "tag": "Summary",
+        "label": "Executive Summary",
+        "prompts": [
+            ("Complete Plan",
+             "Complete Procurement Plan"),
+        ],
+    },
+]
+
 # Fallback descriptions for ReAct agents (no specific tool — agent decides autonomously)
 _AGENT_PLAN_INFO = {
     "data_agent": {
@@ -239,96 +325,578 @@ if "viewing_session" not in st.session_state:
 if "suggested_query" not in st.session_state:
     st.session_state.suggested_query = ""
 
+# Demo flow progress: tracks which section/prompt we're at
+if "demo_section" not in st.session_state:
+    st.session_state.demo_section = 0
+if "demo_prompt" not in st.session_state:
+    st.session_state.demo_prompt = 0
+
+
+# ── Demo flow rendering ─────────────────────────────────────────────────────
+
+def render_demo_flowchart():
+    """Render horizontal business-cycle flowchart showing current position."""
+    sec = st.session_state.demo_section
+    tags = [s["tag"] for s in DEMO_FLOW]
+
+    nodes = ""
+    for i, tag in enumerate(tags):
+        if i < sec:
+            # Completed
+            border = "#76b900"
+            text_color = "#76b900"
+            bg = "#0A1F17"
+            icon = "✓ "
+            opacity = "0.5"
+        elif i == sec:
+            # Current
+            border = "#76b900"
+            text_color = "#ffffff"
+            bg = "rgba(118,185,0,0.12)"
+            icon = "● "
+            opacity = "1"
+        else:
+            # Upcoming
+            border = "#333333"
+            text_color = "#555555"
+            bg = "transparent"
+            icon = ""
+            opacity = "0.6"
+
+        # Current step gets a subtle glow border
+        border_w = "2px" if i == sec else "1px"
+        shadow = "box-shadow:0 0 12px rgba(118,185,0,0.25);" if i == sec else ""
+
+        node = (
+            f"<div style='display:flex; flex-direction:column; align-items:center;"
+            f"opacity:{opacity};'>"
+            f"<div style='background:{bg}; border:{border_w} solid {border}; border-radius:2px;"
+            f"padding:0.45rem 1rem; white-space:nowrap; {shadow}'>"
+            f"<span style='font-family:Inter,sans-serif; font-size:0.78rem; font-weight:700;"
+            f"color:{text_color}; text-transform:uppercase; letter-spacing:0.08em;'>"
+            f"{icon}{tag}</span>"
+            f"</div></div>"
+        )
+        if i > 0:
+            arrow_color = "#76b900" if i <= sec else "#333333"
+            arrow = (
+                f"<span style='color:{arrow_color}; font-size:1.1rem; margin:0 6px;"
+                f"align-self:center;'>→</span>"
+            )
+            nodes += arrow
+        nodes += node
+
+    st.markdown(
+        f"<div style='display:flex; align-items:center; justify-content:center;"
+        f"gap:0; padding:0.75rem 0 1rem; overflow-x:auto;'>{nodes}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_demo_buttons():
+    """Render prompt buttons for the current demo section."""
+    sec_idx = st.session_state.demo_section
+    prompt_idx = st.session_state.demo_prompt
+
+    if sec_idx >= len(DEMO_FLOW):
+        st.markdown(
+            "<p style='text-align:center; font-family:Inter,sans-serif; font-size:0.7rem;"
+            "color:#76b900; text-transform:uppercase; letter-spacing:0.1em; margin:0.5rem 0;'>"
+            "✓ Demo Complete</p>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    section = DEMO_FLOW[sec_idx]
+    remaining = section["prompts"][prompt_idx:]
+
+    if not remaining:
+        # All prompts in this section used — advance to next
+        st.session_state.demo_section += 1
+        st.session_state.demo_prompt = 0
+        st.rerun()
+        return
+
+    # Section label
+    st.markdown(
+        f"<p style='font-family:Inter,sans-serif; font-size:0.58rem; letter-spacing:0.15em;"
+        f"text-transform:uppercase; color:#888888; margin:0.4rem 0 0.3rem; text-align:center;'>"
+        f"{section['label']} — Step {prompt_idx + 1} of {len(section['prompts'])}</p>",
+        unsafe_allow_html=True,
+    )
+
+    # Show buttons: primary (next in sequence) + remaining as secondary
+    cols = st.columns(min(len(remaining), 3))
+    for i, (label, query) in enumerate(remaining):
+        if i >= 3:
+            break
+        with cols[i]:
+            btn_key = f"demo_{sec_idx}_{prompt_idx + i}_{label[:12]}"
+            if st.button(label, key=btn_key, use_container_width=True):
+                # Advance demo pointer past this prompt
+                st.session_state.demo_prompt = prompt_idx + i + 1
+                # Check if section is now complete
+                if st.session_state.demo_prompt >= len(section["prompts"]):
+                    st.session_state.demo_section += 1
+                    st.session_state.demo_prompt = 0
+                # Inject the prompt
+                st.session_state.suggested_query = query
+                st.rerun()
+
 
 # ── Graph execution helpers ──────────────────────────────────────────────────
 
 def show_trace(trace):
-    with st.expander("◈  Execution Trace"):
-        timings = trace.get("timings") or {}
-        if timings:
-            st.markdown("""
-            <p style="font-family:'Inter',sans-serif; font-size:0.58rem; letter-spacing:0.15em;
-               text-transform:uppercase; color:#879580; margin-bottom:0.5rem;">Performance</p>
-            """, unsafe_allow_html=True)
-            top_level = ["orchestrator", "data_agent", "risk_agent", "pipeline_agent",
-                         "chart_agent", "lp_agent", "synthesizer"]
-            active_agents = [n for n in top_level if timings.get(n) is not None]
-            if active_agents:
-                cols = st.columns(len(active_agents))
-                for col, name in zip(cols, active_agents):
-                    col.metric(name.replace("_", " ").title(), f"{timings[name]:.2f}s")
-            total = sum(timings.get(k, 0) for k in top_level)
-            st.caption(f"Total pipeline time: {total:.2f}s")
-            sub_steps = {k: v for k, v in timings.items() if "." in k}
-            if sub_steps:
-                st.markdown("**Step breakdown:**\n" + "\n".join(
-                    f"- {k}: {v:.3f}s" for k, v in sub_steps.items()
-                ))
-            st.divider()
+    """Render an expandable Execution Trace — vertical animated architecture flowchart."""
+    import json as _json
+    import streamlit.components.v1 as components
+    from collections import OrderedDict
 
-        st.markdown("""
-        <p style="font-family:'Inter',sans-serif; font-size:0.58rem; letter-spacing:0.15em;
-           text-transform:uppercase; color:#879580; margin-bottom:0.5rem;">Orchestrator</p>
-        """, unsafe_allow_html=True)
-        st.markdown(
-            f"<span style='color:#AEFFA0; font-family:Manrope,sans-serif; font-weight:600;'>"
-            f"{trace.get('intent', '')}</span>",
-            unsafe_allow_html=True,
-        )
-        for i, task in enumerate(trace.get("tasks", [])):
-            agent = task.get("agent", "")
-            st.markdown(f"""
-            <div style="background:rgba(25,46,37,0.5); border:1px solid rgba(61,74,57,0.15);
-                        border-radius:0.25rem; padding:0.7rem 1rem; margin:0.35rem 0;">
-              <p style="font-family:'Inter',sans-serif; font-size:0.58rem; letter-spacing:0.12em;
-                        text-transform:uppercase; color:#5AEB56; margin-bottom:0.3rem;">
-                Task {i+1} — {agent}
-              </p>
-              <p style="font-family:'Manrope',sans-serif; font-size:0.85rem; color:#D0E8DA; margin:0;">
-                {task.get('tool', 'auto')}
-              </p>
-            </div>""", unsafe_allow_html=True)
+    timings = trace.get("timings") or {}
+    tasks = trace.get("tasks") or []
 
-        if trace.get("tasks"):
-            routed = list({t["agent"] for t in trace["tasks"]})
-            st.caption("Routed to: " + ", ".join(routed))
+    # All possible agents in execution order
+    all_agents = ["orchestrator", "pipeline_agent", "data_agent", "risk_agent",
+                  "chart_agent", "lp_agent", "synthesizer"]
+    ran = set(a for a in all_agents if timings.get(a) is not None)
+    total_time = sum(timings.get(a, 0) for a in all_agents)
 
-        pipeline_results = {k: v for k, v in trace.get("agent_results", {}).items()
-                           if k not in _NON_PIPELINE_KEYS and not k.startswith("lp_")
-                           and not k.endswith("__structured")}
-        if pipeline_results:
-            st.divider()
-            st.caption("Pipeline Agent")
-            for key, content in pipeline_results.items():
-                st.caption(key.replace("_", " ").title())
-                st.code(content[:500] if len(str(content)) > 500 else content)
+    agent_labels = {
+        "orchestrator": "Orchestrator", "pipeline_agent": "Pipeline",
+        "data_agent": "Data", "risk_agent": "Risk",
+        "chart_agent": "Chart", "lp_agent": "LP Optimizer",
+        "synthesizer": "Synthesizer",
+    }
 
-        for agent_name, label in [("data_agent", "Data Agent"), ("risk_agent", "Risk Agent")]:
-            raw = trace.get("agent_results", {}).get(agent_name)
-            if raw:
-                st.divider()
-                st.caption(label)
-                st.code(raw[:500] + ("..." if len(raw) > 500 else ""))
+    # Group tasks by agent
+    agent_tasks = OrderedDict()
+    for t in tasks:
+        ag = t.get("agent", "unknown")
+        agent_tasks.setdefault(ag, []).append(t)
 
-        lp_results = {k: v for k, v in trace.get("agent_results", {}).items() if k.startswith("lp_")}
-        if lp_results:
-            st.divider()
-            st.caption("LP Optimization")
-            for key, content in lp_results.items():
-                product = key.replace("lp_", "").replace("_", " ").title()
-                st.caption(f"Product: {product}")
-                st.code(content)
+    # Build tool/param info per agent
+    agent_tool_info = {}
+    for agent_key in all_agents:
+        tools_list = []
+        for t in agent_tasks.get(agent_key, []):
+            tool_name = t.get("tool", "")
+            if not tool_name:
+                continue
+            tool_dur = timings.get(f"{agent_key}.{tool_name}")
+            params_raw = t.get("params") or t.get("params_json")
+            param_str = ""
+            if params_raw and agent_key == "lp_agent":
+                if isinstance(params_raw, str):
+                    try:
+                        params_raw = _json.loads(params_raw)
+                    except Exception:
+                        params_raw = {}
+                if isinstance(params_raw, dict):
+                    parts = []
+                    for pk in ["product", "lambda_risk", "max_supplier_share",
+                               "diversification_mode", "urgency"]:
+                        if pk in params_raw and params_raw[pk] is not None:
+                            parts.append(f"{pk}={params_raw[pk]}")
+                    param_str = ", ".join(parts)
+            tools_list.append({
+                "name": tool_name,
+                "dur": round(tool_dur, 2) if tool_dur is not None else None,
+                "params": param_str,
+            })
+        if agent_key == "synthesizer" and not tools_list and agent_key in ran:
+            tools_list.append({"name": "generate_summary", "dur": None, "params": ""})
+        agent_tool_info[agent_key] = tools_list
 
-        chart_results = trace.get("chart_results") or {}
-        if chart_results:
-            st.divider()
-            st.caption("Charts")
-            for chart_name, b64_img in chart_results.items():
-                st.caption(chart_name)
-                st.image(base64.b64decode(b64_img))
+    # Build JSON data for the canvas
+    trace_data = {
+        "intent": trace.get("intent", ""),
+        "totalTime": round(total_time, 2),
+        "agents": {},
+    }
+    for a in all_agents:
+        trace_data["agents"][a] = {
+            "label": agent_labels.get(a, a),
+            "active": a in ran,
+            "time": round(timings.get(a, 0), 2),
+            "tools": agent_tool_info.get(a, []),
+        }
 
-        st.divider()
-        st.caption("Synthesizer — final response generated")
+    trace_json = _json.dumps(trace_data)
+
+    count = len([a for a in ran if a != "orchestrator"])
+    title = f"Execution Trace ({count} agent{'s' if count != 1 else ''}, {total_time:.1f}s)"
+
+    html_string = f'''<!DOCTYPE html>
+<html><head><style>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ background:#0A1F17; overflow:hidden; font-family:Inter,system-ui,-apple-system,sans-serif; }}
+canvas {{ display:block; }}
+#tooltip {{
+  position:absolute; display:none; pointer-events:none;
+  background:rgba(10,31,23,0.95); border:1px solid #76b900; border-radius:3px;
+  padding:8px 12px; font-size:11px; color:#ccc; max-width:240px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.5); z-index:10;
+}}
+#tooltip .tt-label {{ color:#fff; font-weight:700; font-size:12px; text-transform:uppercase;
+  letter-spacing:0.06em; margin-bottom:4px; }}
+#tooltip .tt-time {{ color:#76b900; font-size:11px; margin-bottom:4px; }}
+#tooltip .tt-tool {{ color:#aaa; font-size:10px; margin-top:2px; }}
+#tooltip .tt-param {{ color:#888; font-size:9px; margin-left:8px; }}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="tooltip"></div>
+<script>
+const DATA = {trace_json};
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const tooltip = document.getElementById("tooltip");
+const DPR = window.devicePixelRatio || 1;
+const ACCENT = "118,185,0";
+const TAU = Math.PI * 2;
+
+let W, H;
+function resize() {{
+  W = canvas.parentElement.clientWidth || 800;
+  H = 520;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + "px";
+  canvas.style.height = H + "px";
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}}
+resize();
+
+// ── Layout: VERTICAL top-to-bottom ──
+const NODE_W = 110, NODE_H = 36, NODE_R = 3;
+const ORCH_SUB_W = 90, ORCH_SUB_H = 30;
+const ROW_GAP = 70;
+const COL_GAP = 20;
+const centerX = W / 2;
+
+// Row Y positions
+const R = {{
+  user: 30,
+  orch: 30 + ROW_GAP,
+  phase1: 30 + ROW_GAP * 2,
+  phase2: 30 + ROW_GAP * 3,
+  synth: 30 + ROW_GAP * 4,
+  resp: 30 + ROW_GAP * 5,
+}};
+
+// Node definitions: id, label, cx, cy, w, h, agentKey
+const nodes = [
+  // Row 0: User
+  {{ id:"user", label:"User Input", cx:centerX, cy:R.user, w:NODE_W, h:NODE_H, agentKey:null }},
+  // Row 1: Orchestrator (3 sub-nodes horizontal)
+  {{ id:"orch_classify", label:"LLM Classify", cx:centerX-ORCH_SUB_W-COL_GAP, cy:R.orch, w:ORCH_SUB_W, h:ORCH_SUB_H, agentKey:"orchestrator" }},
+  {{ id:"orch_fewshot",  label:"Few-Shot", cx:centerX, cy:R.orch, w:ORCH_SUB_W, h:ORCH_SUB_H, agentKey:"orchestrator" }},
+  {{ id:"orch_extract",  label:"Param Extract", cx:centerX+ORCH_SUB_W+COL_GAP, cy:R.orch, w:ORCH_SUB_W, h:ORCH_SUB_H, agentKey:"orchestrator" }},
+  // Row 2: Phase 1 (3 parallel)
+  {{ id:"pipeline_agent", label:"Pipeline", cx:centerX-(NODE_W+COL_GAP), cy:R.phase1, w:NODE_W, h:NODE_H, agentKey:"pipeline_agent" }},
+  {{ id:"data_agent",     label:"Data Agent", cx:centerX, cy:R.phase1, w:NODE_W, h:NODE_H, agentKey:"data_agent" }},
+  {{ id:"risk_agent",     label:"Risk Agent", cx:centerX+(NODE_W+COL_GAP), cy:R.phase1, w:NODE_W, h:NODE_H, agentKey:"risk_agent" }},
+  // Row 3: Phase 2 (2 parallel)
+  {{ id:"chart_agent", label:"Chart Agent", cx:centerX-(NODE_W/2+COL_GAP/2), cy:R.phase2, w:NODE_W, h:NODE_H, agentKey:"chart_agent" }},
+  {{ id:"lp_agent",    label:"LP Optimizer", cx:centerX+(NODE_W/2+COL_GAP/2), cy:R.phase2, w:NODE_W, h:NODE_H, agentKey:"lp_agent" }},
+  // Row 4: Synthesizer
+  {{ id:"synthesizer", label:"Synthesizer", cx:centerX, cy:R.synth, w:NODE_W, h:NODE_H, agentKey:"synthesizer" }},
+  // Row 5: Response
+  {{ id:"response", label:"Response", cx:centerX, cy:R.resp, w:NODE_W, h:NODE_H, agentKey:null }},
+];
+
+// Add x, y computed from cx, cy
+nodes.forEach(n => {{
+  n.x = n.cx - n.w / 2;
+  n.y = n.cy - n.h / 2;
+  n.active = (n.agentKey === null) || (DATA.agents[n.agentKey] && DATA.agents[n.agentKey].active);
+}});
+
+const nodeMap = {{}};
+nodes.forEach(n => nodeMap[n.id] = n);
+
+// Row index for animation stagger
+const rowOf = {{ user:0, orch_classify:1, orch_fewshot:1, orch_extract:1,
+  pipeline_agent:2, data_agent:2, risk_agent:2,
+  chart_agent:3, lp_agent:3, synthesizer:4, response:5 }};
+
+// Edges: dynamically built based on which agents actually ran
+// Static structure edges
+const EDGE_DEFS = [
+  ["user","orch_classify"], ["user","orch_fewshot"], ["user","orch_extract"],
+  ["orch_classify","pipeline_agent"], ["orch_fewshot","data_agent"], ["orch_extract","risk_agent"],
+  ["pipeline_agent","chart_agent"], ["pipeline_agent","lp_agent"],
+  ["data_agent","chart_agent"], ["data_agent","lp_agent"],
+  ["risk_agent","chart_agent"], ["risk_agent","lp_agent"],
+  ["chart_agent","synthesizer"], ["lp_agent","synthesizer"],
+  ["synthesizer","response"],
+];
+// Dynamic shortcut edges: active agents connect directly to response
+// when their downstream path is inactive
+const p1ids = ["pipeline_agent","data_agent","risk_agent"];
+const p2ids = ["chart_agent","lp_agent"];
+const p2Active = p2ids.some(id => nodeMap[id].active);
+const synthActive = nodeMap["synthesizer"].active;
+// If Phase 2 not active but Synthesizer IS active, Phase 1 → Synthesizer directly
+if (!p2Active && synthActive) {{
+  p1ids.forEach(id => {{ if (nodeMap[id].active) EDGE_DEFS.push([id, "synthesizer"]); }});
+}}
+// If Phase 2 not active AND Synthesizer not active, Phase 1 → Response directly
+if (!p2Active && !synthActive) {{
+  p1ids.forEach(id => {{ if (nodeMap[id].active) EDGE_DEFS.push([id, "response"]); }});
+}}
+// If Synthesizer not active but Phase 2 is, Phase 2 → Response directly
+if (p2Active && !synthActive) {{
+  p2ids.forEach(id => {{ if (nodeMap[id].active) EDGE_DEFS.push([id, "response"]); }});
+}}
+
+const edges = EDGE_DEFS.map(([fid, tid]) => {{
+  const a = nodeMap[fid], b = nodeMap[tid];
+  if (!a || !b) return null;
+  return {{
+    x1: a.cx, y1: a.cy + a.h / 2,
+    x2: b.cx, y2: b.cy - b.h / 2,
+    active: a.active && b.active,
+    fromRow: rowOf[fid] || 0,
+  }};
+}}).filter(Boolean);
+
+// Flowing particles
+const particles = [];
+edges.forEach(e => {{
+  if (!e.active) return;
+  for (let i = 0; i < 2; i++) {{
+    particles.push({{ edge:e, offset:i/2, speed:0.35+Math.random()*0.3 }});
+  }}
+}});
+
+// ── Orchestrator group box ──
+const orchActive = DATA.agents.orchestrator && DATA.agents.orchestrator.active;
+const orchTime = orchActive ? DATA.agents.orchestrator.time : 0;
+
+// ── Drawing ──
+function drawRR(x,y,w,h,r) {{
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+}}
+function clamp(v,lo,hi) {{ return Math.max(lo,Math.min(hi,v)); }}
+function easeOut(t) {{ return 1-Math.pow(1-t,3); }}
+
+// ── Hover ──
+let hoverNode = null;
+canvas.addEventListener("mousemove", function(evt) {{
+  const rect = canvas.getBoundingClientRect();
+  const mx = evt.clientX - rect.left, my = evt.clientY - rect.top;
+  hoverNode = null;
+  for (const n of nodes) {{
+    if (mx >= n.x && mx <= n.x+n.w && my >= n.y && my <= n.y+n.h) {{ hoverNode = n; break; }}
+  }}
+  if (hoverNode) {{
+    let html = '<div class="tt-label">' + hoverNode.label + '</div>';
+    const key = hoverNode.agentKey;
+    if (key && DATA.agents[key]) {{
+      const ag = DATA.agents[key];
+      if (ag.time > 0) html += '<div class="tt-time">' + ag.time.toFixed(2) + 's</div>';
+      ag.tools.forEach(t => {{
+        let line = t.name + '()';
+        if (t.dur !== null) line += ' ✓ ' + t.dur.toFixed(2) + 's';
+        html += '<div class="tt-tool">' + line + '</div>';
+        if (t.params) html += '<div class="tt-param">' + t.params + '</div>';
+      }});
+      if (!ag.active) html += '<div class="tt-tool" style="color:#555">— not invoked —</div>';
+    }}
+    if (hoverNode.id === "user") html += '<div class="tt-tool">Intent: ' + (DATA.intent||"—") + '</div>';
+    if (hoverNode.id === "response") html += '<div class="tt-time">Total: ' + DATA.totalTime.toFixed(2) + 's</div>';
+    tooltip.innerHTML = html;
+    tooltip.style.display = "block";
+    let tx = mx + 14, ty = my - 10;
+    if (tx + 240 > W) tx = mx - 250;
+    if (ty + 100 > H) ty = my - 100;
+    tooltip.style.left = tx + "px";
+    tooltip.style.top = ty + "px";
+  }} else {{ tooltip.style.display = "none"; }}
+}});
+canvas.addEventListener("mouseleave", () => {{ tooltip.style.display = "none"; }});
+
+// ── Main loop ──
+const ANIM_DUR = 2800;
+let startTime = null;
+
+function draw(ts) {{
+  if (!startTime) startTime = ts;
+  const elapsed = ts - startTime;
+  const progress = clamp(elapsed / ANIM_DUR, 0, 1);
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#0A1F17";
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Orchestrator group box (dashed) ──
+  const orchNs = nodes.filter(n => n.agentKey === "orchestrator");
+  if (orchNs.length) {{
+    const pad = 12;
+    const gx = Math.min(...orchNs.map(n=>n.x)) - pad;
+    const gy = Math.min(...orchNs.map(n=>n.y)) - 22;
+    const gw = Math.max(...orchNs.map(n=>n.x+n.w)) - gx + pad;
+    const gh = Math.max(...orchNs.map(n=>n.y+n.h)) - gy + pad;
+    const gAlpha = easeOut(clamp(progress*3,0,1));
+    ctx.save();
+    ctx.globalAlpha = gAlpha * (orchActive ? 0.12 : 0.04);
+    drawRR(gx, gy, gw, gh, 4);
+    ctx.fillStyle = orchActive ? "#76b900" : "#333";
+    ctx.fill();
+    ctx.globalAlpha = gAlpha * (orchActive ? 0.45 : 0.12);
+    ctx.setLineDash([5,3]); ctx.strokeStyle = orchActive ? "#76b900" : "#333"; ctx.lineWidth = 1;
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.globalAlpha = gAlpha * (orchActive ? 0.65 : 0.25);
+    ctx.font = "700 9px Inter,sans-serif"; ctx.fillStyle = orchActive ? "#76b900" : "#555";
+    ctx.textAlign = "left";
+    ctx.fillText("ORCHESTRATOR" + (orchActive ? "  " + orchTime.toFixed(2) + "s" : ""), gx+6, gy+12);
+    ctx.restore();
+  }}
+
+  // ── Phase labels ──
+  const phases = [
+    {{ y:R.phase1, label:"PHASE 1 — PARALLEL" }},
+    {{ y:R.phase2, label:"PHASE 2 — PARALLEL" }},
+  ];
+  phases.forEach(pl => {{
+    const a = easeOut(clamp((progress-0.15)*3,0,1));
+    ctx.save(); ctx.globalAlpha = a*0.35;
+    ctx.font = "700 8px Inter,sans-serif"; ctx.fillStyle = "#76b900";
+    ctx.textAlign = "center";
+    ctx.fillText(pl.label, centerX, pl.y - NODE_H/2 - 10);
+    ctx.restore();
+  }});
+
+  // ── Draw edges ──
+  edges.forEach(e => {{
+    const delay = e.fromRow * 0.12;
+    const ep = easeOut(clamp((progress - delay) / 0.25, 0, 1));
+    if (ep <= 0) return;
+
+    const mx = (e.x1 + e.x2) / 2;
+    const my = (e.y1 + e.y2) / 2;
+
+    ctx.beginPath();
+    ctx.moveTo(e.x1, e.y1);
+    if (ep < 1) {{
+      const steps = 20;
+      for (let i = 1; i <= Math.floor(steps*ep); i++) {{
+        const t = i/steps, u = 1-t;
+        const px = u*u*u*e.x1 + 3*u*u*t*e.x1 + 3*u*t*t*e.x2 + t*t*t*e.x2;
+        const py = u*u*u*e.y1 + 3*u*u*t*my + 3*u*t*t*my + t*t*t*e.y2;
+        ctx.lineTo(px, py);
+      }}
+    }} else {{
+      ctx.bezierCurveTo(e.x1, my, e.x2, my, e.x2, e.y2);
+    }}
+    ctx.strokeStyle = e.active ? "rgba("+ACCENT+",0.3)" : "rgba(51,51,51,0.2)";
+    ctx.lineWidth = e.active ? 1.5 : 0.7;
+    ctx.stroke();
+  }});
+
+  // ── Flowing particles ──
+  if (progress > 0.25) {{
+    const pAlpha = clamp((progress-0.25)/0.15, 0, 1);
+    particles.forEach(p => {{
+      const e = p.edge;
+      const cycle = 2200 / p.speed;
+      const t = ((elapsed + p.offset*cycle) % cycle) / cycle;
+      const mx = (e.x1+e.x2)/2, my = (e.y1+e.y2)/2;
+      const u = 1-t;
+      const px = u*u*u*e.x1 + 3*u*u*t*e.x1 + 3*u*t*t*e.x2 + t*t*t*e.x2;
+      const py = u*u*u*e.y1 + 3*u*u*t*my + 3*u*t*t*my + t*t*t*e.y2;
+
+      const grad = ctx.createRadialGradient(px,py,0, px,py,7);
+      grad.addColorStop(0, "rgba("+ACCENT+","+(0.5*pAlpha)+")");
+      grad.addColorStop(1, "rgba("+ACCENT+",0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(px-7, py-7, 14, 14);
+
+      ctx.beginPath();
+      ctx.arc(px, py, 2, 0, TAU);
+      ctx.fillStyle = "rgba("+ACCENT+","+(0.85*pAlpha)+")";
+      ctx.fill();
+    }});
+  }}
+
+  // ── Draw nodes ──
+  nodes.forEach(n => {{
+    const row = rowOf[n.id] || 0;
+    const delay = row * 0.1;
+    const np = easeOut(clamp((progress - delay) / 0.2, 0, 1));
+    if (np <= 0) return;
+
+    const scale = 0.75 + 0.25 * np;
+    ctx.save();
+    ctx.globalAlpha = np;
+    ctx.translate(n.cx, n.cy);
+    ctx.scale(scale, scale);
+    ctx.translate(-n.cx, -n.cy);
+
+    const isTerminal = !n.agentKey;
+
+    // Glow for active nodes
+    if (n.active && !isTerminal && progress > 0.5) {{
+      const pulse = 0.5 + 0.5 * Math.sin(elapsed/400);
+      const gs = 10 + pulse*5;
+      const grad = ctx.createRadialGradient(n.cx,n.cy,0, n.cx,n.cy,n.w/2+gs);
+      grad.addColorStop(0, "rgba("+ACCENT+","+(0.07+pulse*0.03)+")");
+      grad.addColorStop(1, "rgba("+ACCENT+",0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(n.x-gs, n.y-gs, n.w+gs*2, n.h+gs*2);
+    }}
+
+    // Node box
+    drawRR(n.x, n.y, n.w, n.h, NODE_R);
+    ctx.fillStyle = n.active ? "rgba(10,31,23,0.9)" : "rgba(10,31,23,0.4)";
+    ctx.fill();
+    ctx.strokeStyle = n.active ? (isTerminal ? "#555" : "#76b900") : "#333";
+    ctx.lineWidth = n.active && !isTerminal ? 2 : 1;
+    ctx.stroke();
+
+    // Label
+    ctx.font = "700 " + (n.h < 34 ? "9" : "10") + "px Inter,sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = n.active ? (isTerminal ? "#999" : "#fff") : "#555";
+    const hasTime = n.agentKey && DATA.agents[n.agentKey] && DATA.agents[n.agentKey].time > 0 && n.active && !n.id.startsWith("orch_");
+    ctx.fillText(n.label.toUpperCase(), n.cx, n.cy - (hasTime ? 4 : 0));
+
+    // Time
+    if (hasTime) {{
+      ctx.font = "600 8px Inter,sans-serif";
+      ctx.fillStyle = "#76b900";
+      ctx.fillText(DATA.agents[n.agentKey].time.toFixed(2) + "s", n.cx, n.cy + 10);
+    }}
+
+    ctx.restore();
+  }});
+
+  // ── Footer badges ──
+  if (progress > 0.8) {{
+    const ba = clamp((progress-0.8)/0.2, 0, 1);
+    ctx.save(); ctx.globalAlpha = ba;
+    ctx.font = "600 9px Inter,sans-serif";
+    ctx.textAlign = "right"; ctx.fillStyle = "#888";
+    ctx.fillText("TOTAL PIPELINE: " + DATA.totalTime.toFixed(2) + "s", W-20, H-8);
+    if (DATA.intent) {{
+      ctx.textAlign = "left"; ctx.fillStyle = "#555";
+      const intentStr = DATA.intent.length > 60 ? DATA.intent.substring(0,57)+"..." : DATA.intent;
+      ctx.fillText("INTENT: " + intentStr.toUpperCase(), 20, H-8);
+    }}
+    ctx.restore();
+  }}
+
+  requestAnimationFrame(draw);
+}}
+requestAnimationFrame(draw);
+</script></body></html>'''
+
+    with st.expander(f"◈  {title}"):
+        components.html(html_string, height=530)
 
 
 def extract_plan(state):
@@ -364,30 +932,30 @@ def stream_graph(command, config):
                     rows += (
                         f"<div style='display:flex; align-items:center; gap:0.75rem;"
                         f"padding:0.35rem 0; opacity:0.6;'>"
-                        f"<span style='color:#5AEB56; flex-shrink:0;'>✓</span>"
+                        f"<span style='color:#76b900; flex-shrink:0;'>✓</span>"
                         f"<span style='font-family:Manrope,sans-serif; font-size:0.85rem;"
-                        f"color:#D0E8DA;'>{label}</span></div>"
+                        f"color:#FFFFFF;'>{label}</span></div>"
                     )
                 elif agent_key == active:
                     rows += (
                         f"<div style='display:flex; align-items:center; gap:0.75rem;"
                         f"padding:0.35rem 0;'>"
-                        f"<span style='color:#5AEB56; flex-shrink:0;'>◌</span>"
+                        f"<span style='color:#76b900; flex-shrink:0;'>◌</span>"
                         f"<span style='font-family:Manrope,sans-serif; font-size:0.85rem;"
-                        f"color:#5AEB56; font-weight:700;'>{label}</span></div>"
+                        f"color:#76b900; font-weight:700;'>{label}</span></div>"
                     )
                 else:
                     rows += (
                         f"<div style='display:flex; align-items:center; gap:0.75rem;"
                         f"padding:0.35rem 0; opacity:0.55;'>"
-                        f"<span style='color:#BCCBB4; flex-shrink:0;'>○</span>"
+                        f"<span style='color:#555555; flex-shrink:0;'>○</span>"
                         f"<span style='font-family:Manrope,sans-serif; font-size:0.85rem;"
-                        f"color:#BCCBB4;'>{label}</span></div>"
+                        f"color:#555555;'>{label}</span></div>"
                     )
 
             st.markdown(
                 f"<div style='{SECTION_STYLE}'>"
-                + section_header("⬡", "Active Engine Progress", "#5AEB56")
+                + section_header("⬡", "Active Engine Progress", "#76b900")
                 + rows
                 + "</div>",
                 unsafe_allow_html=True,
@@ -408,7 +976,7 @@ def stream_graph(command, config):
                 )
                 st.markdown(
                     f"<div style='{SECTION_STYLE}'>"
-                    + section_header("✦", "Pipeline Results", "#AEFFA0")
+                    + section_header("✦", "Pipeline Results", "#76b900")
                     + inner
                     + "</div>",
                     unsafe_allow_html=True,
@@ -417,12 +985,12 @@ def stream_graph(command, config):
             # Data agent glass card
             if final_state.get("latest_data_agent"):
                 inner = (
-                    f"<div class='summary-body' style='font-size:0.88rem; color:#D0E8DA; line-height:1.65;'>"
+                    f"<div class='summary-body' style='font-size:0.88rem; color:#FFFFFF; line-height:1.65;'>"
                     f"{final_state['latest_data_agent']}</div>"
                 )
                 st.markdown(
                     f"<div style='{SECTION_STYLE}'>"
-                    + section_header("◈", "Data Query", "#AAF8FF")
+                    + section_header("◈", "Data Query", "#76b900")
                     + inner
                     + "</div>",
                     unsafe_allow_html=True,
@@ -431,12 +999,12 @@ def stream_graph(command, config):
             # Risk agent glass card
             if final_state.get("latest_risk_agent"):
                 inner = (
-                    f"<div class='summary-body' style='font-size:0.88rem; color:#D0E8DA; line-height:1.65;'>"
+                    f"<div class='summary-body' style='font-size:0.88rem; color:#FFFFFF; line-height:1.65;'>"
                     f"{final_state['latest_risk_agent']}</div>"
                 )
                 st.markdown(
                     f"<div style='{SECTION_STYLE}'>"
-                    + section_header("⊕", "Geopolitical Risk Analysis", "#78F5FF")
+                    + section_header("⊕", "Geopolitical Risk Analysis", "#76b900")
                     + inner
                     + "</div>",
                     unsafe_allow_html=True,
@@ -446,9 +1014,9 @@ def stream_graph(command, config):
             lp_results = final_state.get("lp_results") or {}
             if lp_results:
                 lp_style = (
-                    "background:rgba(36,57,48,0.6); backdrop-filter:blur(20px);"
-                    "border:1px solid rgba(61,74,57,0.15); border-left:3px solid #5AEB56;"
-                    "border-radius:0.5rem; padding:1.25rem 1.5rem; margin-bottom:0.875rem;"
+                    "background:#0A1F17;"
+                    "border:1px solid #333333; border-left:3px solid #76b900;"
+                    "border-radius:2px; padding:1.25rem 1.5rem; margin-bottom:0.875rem;"
                 )
                 inner = "".join(
                     f"<p class='result-label'>Product: {k.replace('lp_','').replace('_',' ').title()}</p>"
@@ -457,7 +1025,7 @@ def stream_graph(command, config):
                 )
                 st.markdown(
                     f"<div style='{lp_style}'>"
-                    + section_header("◬", "LP Optimization Results", "#5AEB56")
+                    + section_header("◬", "LP Optimization Results", "#76b900")
                     + inner
                     + "</div>",
                     unsafe_allow_html=True,
@@ -468,7 +1036,7 @@ def stream_graph(command, config):
             if charts:
                 st.markdown(
                     f"<div style='{SECTION_STYLE}'>"
-                    + section_header("◎", "Visualizations", "#6CDD7F")
+                    + section_header("◎", "Visualizations", "#76b900")
                     + "</div>",
                     unsafe_allow_html=True,
                 )
@@ -477,17 +1045,17 @@ def stream_graph(command, config):
             # Summary glass card
             if final_state.get("final_response"):
                 summary_style = (
-                    "background:rgba(36,57,48,0.6); backdrop-filter:blur(20px);"
-                    "border:1px solid rgba(90,235,86,0.18); border-radius:0.5rem;"
+                    "background:#0A1F17;"
+                    "border:1px solid #76b900; border-radius:2px;"
                     "padding:1.25rem 1.5rem; margin-bottom:0.875rem;"
-                    "box-shadow:0 0 40px rgba(90,235,86,0.08);"
+                    "box-shadow:rgba(0,0,0,0.3) 0px 0px 5px;"
                 )
                 inner = (
                     f"<div class='summary-body'>{final_state['final_response']}</div>"
                 )
                 st.markdown(
                     f"<div style='{summary_style}'>"
-                    + section_header("✦", "Intelligence Summary", "#AEFFA0")
+                    + section_header("✦", "Intelligence Summary", "#76b900")
                     + inner
                     + "</div>",
                     unsafe_allow_html=True,
@@ -1094,7 +1662,7 @@ def finalize_execution(final_state, fallback_plan=None):
             }
             st.markdown(
                 "<p style='font-family:Inter,sans-serif; font-size:0.6rem; letter-spacing:0.12em;"
-                "text-transform:uppercase; color:#879580; margin:0 0 0.4rem;'>Pipeline Results</p>",
+                "text-transform:uppercase; color:#888888; margin:0 0 0.4rem;'>Pipeline Results</p>",
                 unsafe_allow_html=True,
             )
             for key, content in pipeline_items.items():
@@ -1117,7 +1685,7 @@ def finalize_execution(final_state, fallback_plan=None):
             st.markdown("---")
             st.markdown(
                 "<p style='font-family:Inter,sans-serif; font-size:0.6rem; letter-spacing:0.12em;"
-                "text-transform:uppercase; color:#879580; margin:0 0 0.4rem;'>LP Optimization Results</p>",
+                "text-transform:uppercase; color:#888888; margin:0 0 0.4rem;'>LP Optimization Results</p>",
                 unsafe_allow_html=True,
             )
             for key, content in lp_items.items():
@@ -1128,7 +1696,7 @@ def finalize_execution(final_state, fallback_plan=None):
         if chart_results:
             st.markdown(
                 f"<div style='margin:0.75rem 0 0.5rem;'>"
-                + section_header("◎", "Visualizations", "#6CDD7F")
+                + section_header("◎", "Visualizations", "#76b900")
                 + "</div>",
                 unsafe_allow_html=True,
             )
@@ -1176,7 +1744,7 @@ def render_pending_plan():
         # Compact LP-only header
         st.markdown(
             f"<div style='{SECTION_STYLE}'>"
-            + section_header("◬", "Procurement Optimization — Ready to Run", "#5AEB56")
+            + section_header("◬", "Procurement Optimization — Ready to Run", "#76b900")
             + "</div>",
             unsafe_allow_html=True,
         )
@@ -1191,29 +1759,29 @@ def render_pending_plan():
         question_html = ""
         if plan.get("question"):
             question_html = (
-                "<div style='background:rgba(170,248,255,0.05); border:1px solid rgba(170,248,255,0.15);"
-                "border-radius:0.25rem; padding:0.75rem 1rem; margin-bottom:1.25rem;'>"
-                f"<p style='font-family:Manrope,sans-serif; font-size:0.875rem; color:#AAF8FF; margin:0;'>"
+                "<div style='background:#0A1F17; border:1px solid #333333;"
+                "border-radius:2px; padding:0.75rem 1rem; margin-bottom:1.25rem;'>"
+                f"<p style='font-family:Manrope,sans-serif; font-size:0.875rem; color:#76b900; margin:0;'>"
                 f"{plan['question']}</p></div>"
             )
 
         st.markdown(
             f"<div style='{SECTION_STYLE}'>"
             "<div style='display:flex; align-items:center; gap:0.55rem; margin-bottom:1.25rem;'>"
-            "<span style='font-size:1rem; color:#5AEB56;'>✦</span>"
+            "<span style='font-size:1rem; color:#76b900;'>✦</span>"
             "<h2 style='font-family:Space Grotesk,sans-serif; font-size:1.2rem; font-weight:700;"
-            "letter-spacing:-0.02em; color:#D0E8DA; margin:0;'>Intelligence Plan Ready</h2>"
+            "letter-spacing:-0.02em; color:#FFFFFF; margin:0;'>Intelligence Plan Ready</h2>"
             "</div>"
-            "<div style='background:rgba(90,235,86,0.06); border:1px solid rgba(90,235,86,0.14);"
-            "border-radius:0.25rem; padding:0.75rem 1rem; margin-bottom:1.25rem;'>"
+            "<div style='background:#0A1F17; border:1px solid #333333;"
+            "border-radius:2px; padding:0.75rem 1rem; margin-bottom:1.25rem;'>"
             "<p style='font-family:Inter,sans-serif; font-size:0.58rem; letter-spacing:0.15em;"
-            "text-transform:uppercase; color:#879580; margin-bottom:0.3rem;'>Intent</p>"
-            f"<p style='font-family:Manrope,sans-serif; font-size:0.9rem; color:#AEFFA0; margin:0;"
+            "text-transform:uppercase; color:#888888; margin-bottom:0.3rem;'>Intent</p>"
+            f"<p style='font-family:Manrope,sans-serif; font-size:0.9rem; color:#76b900; margin:0;"
             f"font-weight:600;'>{plan.get('intent', '')}</p>"
             "</div>"
             + question_html
             + f"<p style='font-family:Inter,sans-serif; font-size:0.58rem; letter-spacing:0.15em;"
-            f"text-transform:uppercase; color:#879580; margin-bottom:0.75rem;'>"
+            f"text-transform:uppercase; color:#888888; margin-bottom:0.75rem;'>"
             f"Work Orders — {len(tasks)} task{'s' if len(tasks) != 1 else ''}</p>"
             "</div>",
             unsafe_allow_html=True,
@@ -1221,11 +1789,11 @@ def render_pending_plan():
 
         # Task cards with agent-colored accents + business descriptions
         agent_accent = {
-            "pipeline_agent": "#AEFFA0",
-            "data_agent":     "#AAF8FF",
-            "risk_agent":     "#78F5FF",
-            "chart_agent":    "#6CDD7F",
-            "lp_agent":       "#AEFFA0",
+            "pipeline_agent": "#76b900",
+            "data_agent":     "#76b900",
+            "risk_agent":     "#76b900",
+            "chart_agent":    "#76b900",
+            "lp_agent":       "#76b900",
         }
         agent_label = {
             "pipeline_agent": "Pipeline",
@@ -1236,7 +1804,7 @@ def render_pending_plan():
         }
         for i, task in enumerate(tasks):
             agent = task.get("agent", "")
-            accent = agent_accent.get(agent, "#BCCBB4")
+            accent = agent_accent.get(agent, "#555555")
             tool_name = task.get("tool", "auto")
             display_label = agent_label.get(agent, agent)
 
@@ -1251,22 +1819,22 @@ def render_pending_plan():
             if desc:
                 desc_html = (
                     f"<p style='font-family:Manrope,sans-serif; font-size:0.8rem;"
-                    f"color:#A0B89A; margin:0.35rem 0 0 0; line-height:1.4;'>{desc}</p>"
+                    f"color:#888888; margin:0.35rem 0 0 0; line-height:1.4;'>{desc}</p>"
                 )
 
             st.markdown(
-                "<div style='background:rgba(25,46,37,0.7); border:1px solid rgba(61,74,57,0.2);"
-                "border-radius:0.25rem; padding:0.875rem 1.25rem; margin-bottom:0.4rem;'>"
+                "<div style='background:#0A1F17; border:1px solid #333333;"
+                "border-radius:2px; padding:0.875rem 1.25rem; margin-bottom:0.4rem;'>"
                 "<div style='display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;'>"
                 f"<span style='font-family:Inter,sans-serif; font-size:0.55rem; letter-spacing:0.12em;"
-                f"text-transform:uppercase; color:#879580;'>Task {i+1}</span>"
+                f"text-transform:uppercase; color:#888888;'>Task {i+1}</span>"
                 f"<span style='font-family:Inter,sans-serif; font-size:0.55rem; font-weight:600;"
                 f"letter-spacing:0.1em; text-transform:uppercase; color:{accent};"
-                f"background:rgba(90,235,86,0.07); border:1px solid rgba(90,235,86,0.14);"
-                f"padding:0.1rem 0.45rem; border-radius:0.125rem;'>{display_label}</span>"
+                f"background:transparent; border:1px solid #76b900;"
+                f"padding:0.1rem 0.45rem; border-radius:2px;'>{display_label}</span>"
                 "</div>"
                 f"<p style='font-family:Manrope,sans-serif; font-size:0.925rem; font-weight:600;"
-                f"color:#D0E8DA; margin:0;'>{title}</p>"
+                f"color:#FFFFFF; margin:0;'>{title}</p>"
                 + desc_html
                 + "</div>",
                 unsafe_allow_html=True,
@@ -1282,6 +1850,9 @@ def render_pending_plan():
             placeholder="Leave blank to approve as-is...",
         )
         if st.button("Approve & Execute", key="approve_plan", use_container_width=True):
+            # Immediately hide the plan card to prevent duplicate rendering
+            st.session_state.waiting_for_approval = False
+            st.session_state.pending_plan = None
             with st.spinner("Executing approved plan..."):
                 feedback = st.session_state.plan_feedback.strip() or "ok"
                 config = {"configurable": {"thread_id": st.session_state.thread_id}}
@@ -1479,6 +2050,131 @@ def render_lp_approval():
                 st.warning("Unable to apply modifications — no parameter baseline found for this run.")
 
 
+# ── Intro animation gate ────────────────────────────────────────────────────
+
+if "intro_done" not in st.session_state:
+    st.session_state.intro_done = False
+
+# Pick up query-param signal from the animation's LAUNCH button
+if st.query_params.get("launched") == "1":
+    st.session_state.intro_done = True
+    st.query_params.clear()
+
+if not st.session_state.intro_done:
+    # Hide ALL Streamlit chrome for a clean full-screen animation
+    st.markdown(
+        "<style>"
+        "header[data-testid='stHeader'],"
+        "[data-testid='stSidebar'],"
+        "[data-testid='stSidebarNav'],"
+        "footer,.stDeployButton{display:none!important}"
+        ".stApp{background:#000!important}"
+        "section.main>div,.block-container"
+        "{padding:0!important;max-width:100vw!important}"
+        "div[data-testid='stVerticalBlock']{gap:0!important}"
+        ".stButton>button{"
+        "background:#f5f5f5!important;color:#0a0a0a!important;"
+        "-webkit-text-fill-color:#0a0a0a!important;"
+        "border:none!important;border-radius:999px!important;"
+        "font-family:'Inter',sans-serif!important;font-weight:500!important;"
+        "font-size:0.82rem!important;letter-spacing:0.02em!important;"
+        "padding:0.75rem 2.2rem!important;"
+        "margin:0 auto!important;display:block!important;"
+        "transition:all 0.3s ease!important}"
+        ".stButton>button:hover{"
+        "background:transparent!important;color:#f5f5f5!important;"
+        "-webkit-text-fill-color:#f5f5f5!important;"
+        "box-shadow:0 0 0 2px #76b900!important;"
+        "transform:scale(1.04)!important}"
+        ".stButton>button p,.stButton>button span{"
+        "color:inherit!important;-webkit-text-fill-color:inherit!important}"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+
+    # Build self-contained animation HTML (inline CSS + JS)
+    _anim_dir = os.path.join(os.path.dirname(__file__), "intro_animation")
+    with open(os.path.join(_anim_dir, "style.css")) as _f:
+        _css = _f.read()
+    with open(os.path.join(_anim_dir, "script.js")) as _f:
+        _js = _f.read()
+
+    # Remove the in-animation button (we use a native Streamlit button instead)
+    _js = _js.replace(
+        "window.location.href = 'http://localhost:8501/';",
+        "// handled by Streamlit button",
+    )
+
+    _animation_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Instrument+Serif:ital@1&display=swap" rel="stylesheet">
+<style>{_css}
+#launch-chatbot-btn {{display:none!important}}
+</style>
+</head>
+<body>
+<canvas id="anim-canvas"></canvas>
+<div id="loading-screen">
+  <div class="load-top-left"><span class="load-label">Procurement Pilot v1.0</span></div>
+  <div class="load-center">
+    <div id="cycling-word" class="cycling-word">Initializing</div>
+    <div class="load-sub">Multi-Agent Orchestration Engine</div>
+  </div>
+  <div class="load-bottom-right">
+    <span id="counter" class="counter">000</span>
+    <span class="counter-label">System Boot</span>
+  </div>
+  <div class="load-boot" id="boot-log">
+    <div class="boot-line" id="boot-0">[SYS] Connecting to database ... <span class="ok">OK</span></div>
+    <div class="boot-line" id="boot-1">[LLM] Loading orchestrator model ... <span class="ok">OK</span></div>
+    <div class="boot-line" id="boot-2">[MCP] Initializing tool servers ... <span class="ok">OK</span></div>
+    <div class="boot-line" id="boot-3">[AGT] Pipeline / Data / Risk / Chart / LP ... <span class="ok">READY</span></div>
+    <div class="boot-line" id="boot-4">[OPT] PuLP/CBC solver loaded ... <span class="ok">OK</span></div>
+  </div>
+  <div class="load-progress"><div class="progress-track"><div id="progress-bar" class="progress-fill"></div></div></div>
+</div>
+<div id="main-content" class="main-content hidden">
+  <nav class="nav-pill">
+    <div class="nav-logo"><span class="nav-logo-text">PP</span></div>
+    <div class="nav-divider"></div>
+    <span class="nav-link active">Home</span>
+    <span class="nav-link">Agents</span>
+    <span class="nav-link">Data</span>
+  </nav>
+  <div class="hero">
+    <p class="eyebrow blur-in">Multi-Agent Intelligence System</p>
+    <h1 class="hero-title name-reveal">Procurement<br><em>Pilot</em></h1>
+    <p class="hero-role blur-in">A <span id="role-word" class="role-word">Forecasting</span> engine for global supply chains.</p>
+    <p class="hero-desc blur-in">Orchestrating 5 specialized AI agents across 89 suppliers and 21 countries to optimize semiconductor procurement in real-time.</p>
+  </div>
+  <div class="stats-row blur-in">
+    <div class="stat"><span class="stat-value">89</span><span class="stat-label">Suppliers</span></div>
+    <div class="stat-divider"></div>
+    <div class="stat"><span class="stat-value">21</span><span class="stat-label">Countries</span></div>
+    <div class="stat-divider"></div>
+    <div class="stat"><span class="stat-value">20<small>wk</small></span><span class="stat-label">Horizon</span></div>
+    <div class="stat-divider"></div>
+    <div class="stat"><span class="stat-value">90<small>%+</small></span><span class="stat-label">Accuracy</span></div>
+  </div>
+</div>
+<script>{_js}</script>
+</body></html>"""
+
+    import streamlit.components.v1 as components
+    components.html(_animation_html, height=900, scrolling=False)
+
+    # Native Streamlit button — centered
+    _cols = st.columns([1, 1, 1])
+    with _cols[1]:
+        if st.button("LAUNCH CHATBOT", use_container_width=True, key="intro_launch"):
+            st.session_state.intro_done = True
+            st.rerun()
+    st.stop()
+
+
 # ── Theme injection ──────────────────────────────────────────────────────────
 inject_css()
 render_header()
@@ -1489,7 +2185,10 @@ with st.sidebar:
 
 # ── View routing ─────────────────────────────────────────────────────────────
 
-if st.session_state.current_view == "history":
+if st.session_state.current_view == "architecture":
+    render_architecture()
+
+elif st.session_state.current_view == "history":
     render_history_list()
 
 elif st.session_state.current_view == "history_detail":
@@ -1520,7 +2219,7 @@ else:
                 if _pip:
                     st.markdown(
                         "<p style='font-family:Inter,sans-serif; font-size:0.6rem; letter-spacing:0.12em;"
-                        "text-transform:uppercase; color:#879580; margin:0 0 0.4rem;'>Pipeline Results</p>",
+                        "text-transform:uppercase; color:#888888; margin:0 0 0.4rem;'>Pipeline Results</p>",
                         unsafe_allow_html=True,
                     )
                     for _pk, _pv in _pip.items():
@@ -1561,7 +2260,7 @@ else:
                 if chart_results:
                     st.markdown(
                         "<div style='margin:0.75rem 0 0.35rem;'>"
-                        + section_header("◎", "Visualizations", "#6CDD7F")
+                        + section_header("◎", "Visualizations", "#76b900")
                         + "</div>",
                         unsafe_allow_html=True,
                     )
@@ -1595,6 +2294,9 @@ else:
 
     # ── Main rendering logic ─────────────────────────────────────────────
 
+    # Horizontal business-cycle flowchart (always visible)
+    render_demo_flowchart()
+
     if not st.session_state.messages:
         render_landing()
 
@@ -1610,6 +2312,9 @@ else:
     elif not st.session_state.waiting_for_approval and not st.session_state.waiting_for_lp_approval:
         # Persistent procurement status bar
         _render_procurement_status_bar()
+
+        # Demo flow buttons — show next available prompts
+        render_demo_buttons()
 
         # Check for suggestion chip click, then fall back to typed input
         _suggested = st.session_state.pop("suggested_query", "") or ""

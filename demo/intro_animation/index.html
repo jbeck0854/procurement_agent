@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procurement Pilot</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Instrument+Serif:ital@1&display=swap" rel="stylesheet">
+</head>
+<body>
+    <canvas id="anim-canvas"></canvas>
+
+    <!-- Loading Screen Overlay -->
+    <div id="loading-screen">
+        <div class="load-top-left">
+            <span class="load-label">Procurement Pilot v1.0</span>
+        </div>
+        <div class="load-center">
+            <div id="cycling-word" class="cycling-word">Initializing</div>
+            <div class="load-sub">Multi-Agent Orchestration Engine</div>
+        </div>
+        <div class="load-bottom-right">
+            <span id="counter" class="counter">000</span>
+            <span class="counter-label">System Boot</span>
+        </div>
+        <div class="load-boot" id="boot-log">
+            <div class="boot-line" id="boot-0">[SYS] Connecting to database ··· <span class="ok">OK</span></div>
+            <div class="boot-line" id="boot-1">[LLM] Loading orchestrator model ··· <span class="ok">OK</span></div>
+            <div class="boot-line" id="boot-2">[MCP] Initializing tool servers ··· <span class="ok">OK</span></div>
+            <div class="boot-line" id="boot-3">[AGT] Pipeline · Data · Risk · Chart · LP ··· <span class="ok">READY</span></div>
+            <div class="boot-line" id="boot-4">[OPT] PuLP/CBC solver loaded ··· <span class="ok">OK</span></div>
+        </div>
+        <div class="load-progress">
+            <div class="progress-track">
+                <div id="progress-bar" class="progress-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content (revealed after loading) -->
+    <div id="main-content" class="main-content hidden">
+        <!-- Floating Nav Pill -->
+        <nav class="nav-pill">
+            <div class="nav-logo">
+                <span class="nav-logo-text">PP</span>
+            </div>
+            <div class="nav-divider"></div>
+            <span class="nav-link active">Home</span>
+            <span class="nav-link">Agents</span>
+            <span class="nav-link">Data</span>
+            <div class="nav-divider"></div>
+            <span class="nav-link nav-cta">Launch <span class="arrow">&#x2197;</span></span>
+        </nav>
+
+        <!-- Hero Content -->
+        <div class="hero">
+            <p class="eyebrow blur-in">Multi-Agent Intelligence System</p>
+            <h1 class="hero-title name-reveal">Procurement<br><em>Pilot</em></h1>
+            <p class="hero-role blur-in">
+                A <span id="role-word" class="role-word">Forecasting</span> engine for global supply chains.
+            </p>
+            <p class="hero-desc blur-in">
+                Orchestrating 5 specialized AI agents across 89 suppliers and 21 countries
+                to optimize semiconductor procurement in real-time.
+            </p>
+            <div class="hero-buttons blur-in">
+                <button id="launch-chatbot-btn" class="btn-primary" onclick="launchChatbot()">
+                    Launch Chatbot
+                </button>
+                <button class="btn-outline" onclick="launchChatbot()">
+                    View Architecture <span class="arrow">&#x2197;</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="stats-row blur-in">
+            <div class="stat">
+                <span class="stat-value" id="stat-suppliers">89</span>
+                <span class="stat-label">Suppliers</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat">
+                <span class="stat-value" id="stat-countries">21</span>
+                <span class="stat-label">Countries</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat">
+                <span class="stat-value" id="stat-horizon">20<small>wk</small></span>
+                <span class="stat-label">Horizon</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat">
+                <span class="stat-value" id="stat-accuracy">90<small>%+</small></span>
+                <span class="stat-label">Accuracy</span>
+            </div>
+        </div>
+
+        <!-- Scroll Indicator -->
+        <div class="scroll-indicator">
+            <span class="scroll-text">SCROLL</span>
+            <div class="scroll-line">
+                <div class="scroll-dot"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
