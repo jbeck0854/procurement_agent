@@ -148,11 +148,11 @@ Returns only the weeks where procurement is actually required (`net_requirement 
 | Component | Procurement component |
 | Facility | Facility ID |
 | Gross Requirement | BOM-translated demand for this week |
-| Usable Inventory Before Demand | `remaining_inventory` — how much usable stock was left at the start of this week |
+| Available Inventory Before Demand | `remaining_inventory` — how much usable stock was left at the start of this week (rolling: decreases each week as prior demand is consumed) |
 | Direct Procurement Needed | `net_requirement` — demand that exceeded remaining usable stock |
 | Cumulative Procurement Pressure | Running sum of Direct Procurement Needed per facility × component |
 | Safety Stock Utilization (%) | Cumulative Procurement Pressure ÷ Safety Stock Reserve × 100 |
-| Urgency Level | Critical (≥100%) / High (≥75%) / Medium (≥50%) / Low |
+| Urgency Level | Critical (≥100%) / High (≥75%) / Moderate (≥50%) / Low (<50%) |
 
 A companion safety stock context block shows the protected SS floor per facility × component.
 

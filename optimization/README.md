@@ -176,6 +176,14 @@ The baseline comparison makes it straightforward to justify a risk-adjusted or d
 
 **The baseline comparison appears only in the final session summary, not in individual run output.**
 
+### Sourcing Recommendation Logic
+
+The Final Executive Summary includes targeted sourcing recommendations when inventory pressure is elevated. Two behaviors are worth noting:
+
+**Emergency sourcing weeks.** "Contact sales/sourcing immediately" guidance cites only the weeks where Safety Stock Utilization reaches **Moderate or higher (≥50%)**. Low-urgency triggered weeks — where cumulative procurement pressure is below 50% of the SS reserve — are not included. The threshold corresponds to urgency bands `Moderate` (≥50%), `High` (≥75%), and `Critical` (≥100%) in the weekly trigger view.
+
+**Carryover demand.** The allocations approved in a session cover only the current planning horizon. If component demand continues beyond that window — which is likely for multi-quarter production programs — a new optimization must be run against an updated or extended forecast. Current supplier allocations do **not** roll forward automatically. Rerun with refreshed net requirements before the next procurement cycle begins.
+
 ---
 
 ## Session Behavior
