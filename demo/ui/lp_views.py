@@ -1042,8 +1042,19 @@ def _render_lp_result(raw: dict) -> None:
                     _fac_seen.append(_f)
         _fac_str = ", ".join(_fac_seen) if _fac_seen else "all affected facilities"
 
-        # Explicit uncovered forecast weeks for emergency bullet
-        _gap_weeks = sorted({r["Forecast Week"] for r in _gap_rows}) if _gap_rows else []
+        # Emergency forecast weeks — only weeks where SS utilization ≥ 50%
+        # (Moderate, High, or Critical band). Low-urgency weeks with minor
+        # procurement need are excluded from emergency sourcing recommendations.
+        _emergency_weeks = sorted({
+            r["Forecast Week"]
+            for _bname in ("Moderate", "High", "Critical")
+            for r in _urgency_bands[_bname]
+        })
+        # Fallback: if no week reaches Moderate threshold, use all triggered weeks
+        # so the recommendation is never silently empty when gap rows exist.
+        _gap_weeks = _emergency_weeks if _emergency_weeks else (
+            sorted({r["Forecast Week"] for r in _gap_rows}) if _gap_rows else []
+        )
         _gap_weeks_str = ", ".join(str(w) for w in _gap_weeks)
         _week_plural = "Weeks" if len(_gap_weeks) != 1 else "Week"
 
