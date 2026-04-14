@@ -480,18 +480,24 @@ def run() -> None:
         # by vw_procurement_requirement.  We replace that single week's inventory
         # state with a controlled benchmark:
         #
-        #   on_hand            = SS + 0.5 × μ_D  (SS floor + minimal buffer)
-        #   scheduled_receipts = 0               (conservative — no open orders)
+        #   on_hand            = SS + 8 × μ_D   (steady-state near base-stock target)
+        #   scheduled_receipts = 0              (conservative — no open orders)
         #
-        # CHANGED 2026-04-10: multiplier reduced from 8.0 to 0.5.
-        # Reason: vw_procurement_requirement computes net_requirement per week
-        # using the SAME decision-point on_hand snapshot for every week (no
-        # rolling depletion). With 8×μ_D buffer, on_hand far exceeds any single
-        # week's gross_requirement, so net_requirement = 0 for ALL weeks —
-        # producing zero trigger rows and an empty Supply Coverage section in
-        # the executive summary. 0.5×μ_D produces realistic trigger rows where
-        # most horizon weeks show positive net procurement need, matching the
-        # expected demo behavior (see Supply Coverage & Shortfall Summary).
+        # RATIONALE: vw_procurement_requirement uses rolling window depletion —
+        # available_above_ss = max(0, on_hand + SR − BO − SS) is computed once
+        # per facility × product series, then cumulative_gross_prior is subtracted
+        # week by week to derive remaining_inventory.  With on_hand = SS + 8×μ_D:
+        #   available_above_ss  = 8×μ_D
+        #   horizon gross total ≈ 20×μ_D  (20-week planning window)
+        # The usable pool is exhausted around week 8-9, triggering procurement
+        # for the remaining ~12 horizon weeks per series.  This produces a
+        # realistic, business-meaningful procurement picture: enough on-hand to
+        # cover the near term, but clear procurement need for the second half of
+        # the horizon.
+        #
+        # A multiplier of 0.5 exhausts the pool in <1 week, making virtually
+        # every horizon week a trigger week — overstating urgency and offering
+        # less decision-support value.
         #
         # Weeks 1–144 are untouched and preserve full simulation history.
 
@@ -508,7 +514,7 @@ def run() -> None:
             key    = (row['facility_id'], row['product_key'])
             mu_d   = mu_d_lookup[key]
             ss     = ss_lookup[key]
-            dp_oh  = ss + 0.5 * mu_d    # SS floor + minimal buffer
+            dp_oh  = ss + 8.0 * mu_d    # SS floor + 8-week demand buffer (near base-stock target)
             row['on_hand_qty']            = round(dp_oh, 4)
             row['scheduled_receipts_qty'] = 0.0
             row['backorder_qty']          = 0.0
@@ -518,7 +524,7 @@ def run() -> None:
             n_overridden += 1
 
         print(f'  Decision-point override applied: {n_overridden} rows '
-              f'(week {decision_wk})  on_hand = SS + 0.5×μ_D, scheduled_receipts = 0')
+              f'(week {decision_wk})  on_hand = SS + 8×μ_D, scheduled_receipts = 0')
 
         # ── Step 4: Write to database ──────────────────────────────────────────
         print('\n[4/5] Writing to database ...')

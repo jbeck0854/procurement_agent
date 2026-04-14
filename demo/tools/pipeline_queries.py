@@ -555,11 +555,11 @@ def query_procurement_summary_data(**kwargs) -> dict:
         "rows": [
             {
                 "Component":                   r[0],
-                "Starting On-Hand":            float(r[1]),
-                "Scheduled Receipts (+)":      float(r[2]),
-                "Backorders (\u2212)":         float(r[3]),
-                "Safety Stock Reserve (\u2212)": float(r[4]),
                 "Gross Component Demand":      float(r[5]),
+                "Starting On-Hand (-)":        float(r[1]),
+                "Scheduled Receipts (+)":      float(r[2]),
+                "Backorders (-)":              float(r[3]),
+                "Safety Stock Reserve (+)":    float(r[4]),
                 "Net Procurement Requirement": float(r[6]),
             }
             for r in rows
@@ -660,15 +660,10 @@ def query_triggered_rows_structured(**kwargs) -> dict:
                     r.facility_id,
                     p.product                  AS component,
                     r.gross_requirement,
-                    GREATEST(0, r.on_hand_qty + r.scheduled_receipts_qty
-                             - r.backorder_qty - r.safety_stock_qty)
-                                               AS available_inventory,
+                    r.remaining_inventory      AS available_inventory,
                     r.net_requirement,
                     r.safety_stock_qty,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY r.facility_id, p.product
-                        ORDER BY r.target_week_date
-                    )                          AS horizon_week
+                    r.horizon_week
                 FROM vw_procurement_requirement r
                 JOIN dim_product p ON p.product_key = r.product_key
                 WHERE r.forecast_run_id = %s

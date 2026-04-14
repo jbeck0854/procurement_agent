@@ -1269,7 +1269,7 @@ _TRIG_BULLETS_TEXT = (
     "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
     "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Gross Requirement:</strong> forecast-driven component demand for that week.</p></div>"
     "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
-    "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Usable Inventory Before Demand:</strong> inventory available after preserving the safety stock floor.</p></div>"
+    "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Available Inventory Before Demand:</strong> usable inventory remaining above the safety stock floor at the start of this week (rolling — decreases each week as prior demand is consumed).</p></div>"
     "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
     "<p style='color:#fff;margin:0;font-size:0.84rem;'><strong>Direct Procurement Needed:</strong> portion of demand not covered by usable inventory.</p></div>"
     "<div style='background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.5rem 0.9rem;margin:0.3rem 0;'>"
@@ -1290,14 +1290,21 @@ def _populate_inventory_expander_cache():
         query_triggered_rows_structured,
         query_full_horizon_drilldown,
     )
+    from ui.inventory_views import _prepare_trigger_df_from_raw
 
     cache = {}
 
-    # 1. Triggered procurement rows
+    # 1. Triggered procurement rows — apply full presentation transforms
     try:
         raw = query_triggered_rows_structured()
         rows = raw.get("rows", [])
-        cache["triggered_df"] = _pd_inv.DataFrame(rows) if rows else _pd_inv.DataFrame()
+        if rows:
+            df_display, ss_ctx, _ = _prepare_trigger_df_from_raw(raw)
+        else:
+            df_display = _pd_inv.DataFrame()
+            ss_ctx = []
+        cache["triggered_df"] = df_display
+        cache["triggered_ss_ctx"] = ss_ctx
         cache["triggered_meta"] = {
             "run_id": raw.get("run_id", ""),
             "n_rows": len(rows),
@@ -1334,7 +1341,10 @@ def _render_inventory_expanders():
         return
 
     # Expander 1: Triggered procurement rows
-    trig_df = cache.get("triggered_df", _pd_inv2.DataFrame())
+    from ui.inventory_views import _TRIG_COL_ORDER_DISPLAY, _TRIG_FMT_DISPLAY
+    import pandas as _pd_trig_render
+    trig_df = cache.get("triggered_df", _pd_trig_render.DataFrame())
+    trig_ss_ctx = cache.get("triggered_ss_ctx", [])
     trig_meta = cache.get("triggered_meta", {})
     with st.expander(
         "In which weeks and where is procurement actually triggered "
@@ -1344,6 +1354,15 @@ def _render_inventory_expanders():
         if trig_meta:
             st.caption(f"Forecast run {trig_meta.get('run_id', '')}  ·  "
                        f"{trig_meta.get('n_rows', 0)} triggered rows")
+        # Safety stock floor table
+        if trig_ss_ctx:
+            st.markdown("**Safety Stock Floor by Facility × Component**")
+            st.caption("Protected inventory floor — demand is only drawn from inventory above this level.")
+            _ss_df = _pd_trig_render.DataFrame(trig_ss_ctx)
+            st.dataframe(
+                _ss_df.style.format({"Safety Stock (Protected Floor)": "{:,.0f}"}),
+                use_container_width=True, hide_index=True,
+            )
         if not trig_df.empty:
             _df_t = trig_df.copy()
             # Filters
@@ -1358,11 +1377,11 @@ def _render_inventory_expanders():
                 _df_t = _df_t[_df_t["Facility"].isin(_sel_fac_t)]
             if _sel_comp_t and "Component" in _df_t.columns:
                 _df_t = _df_t[_df_t["Component"].isin(_sel_comp_t)]
+            # Apply column ordering
+            _df_t = _df_t[[c for c in _TRIG_COL_ORDER_DISPLAY if c in _df_t.columns]]
             st.caption(f"{len(_df_t)} rows shown")
-            _fmt = {c: "{:,.0f}" for c in _df_t.columns
-                    if c not in ("Week", "Component", "Facility", "Triggered?")}
             st.dataframe(
-                _df_t.style.format({c: v for c, v in _fmt.items() if c in _df_t.columns}),
+                _df_t.style.format({c: v for c, v in _TRIG_FMT_DISPLAY.items() if c in _df_t.columns}),
                 use_container_width=True, hide_index=True, height=500,
             )
         else:

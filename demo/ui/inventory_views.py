@@ -89,17 +89,17 @@ _SS_PLANNING_HTML = (
 # ── Weekly trigger column constants ──────────────────────────────────────────
 _TRIG_COL_ORDER_DISPLAY = [
     "Forecast Week", "Week", "Component", "Facility",
-    "Gross Requirement", "Usable Inventory Before Demand",
+    "Gross Requirement", "Available Inventory Before Demand",
     "Direct Procurement Needed", "Cumulative Procurement Pressure",
     "Safety Stock Utilization (%)", "Urgency Level",
 ]
 _TRIG_FMT_DISPLAY = {
-    "Gross Requirement":               "{:,.0f}",
-    "Usable Inventory Before Demand":  "{:,.0f}",
-    "Direct Procurement Needed":       "{:,.0f}",
-    "Cumulative Procurement Pressure": "{:,.0f}",
-    "Safety Stock Utilization (%)":    "{:.1f}%",
-    "Forecast Week":                   "{:,.0f}",
+    "Gross Requirement":                  "{:,.0f}",
+    "Available Inventory Before Demand":  "{:,.0f}",
+    "Direct Procurement Needed":          "{:,.0f}",
+    "Cumulative Procurement Pressure":    "{:,.0f}",
+    "Safety Stock Utilization (%)":       "{:.1f}%",
+    "Forecast Week":                      "{:,.0f}",
 }
 _TRIG_BULLETS_HTML = (
     "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
@@ -109,8 +109,9 @@ _TRIG_BULLETS_HTML = (
     "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
     "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
     "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
-    "<strong>Usable Inventory Before Demand:</strong> inventory available after preserving "
-    "the safety stock floor.</p></div>"
+    "<strong>Available Inventory Before Demand:</strong> usable inventory remaining above the "
+    "safety stock floor at the start of this week (rolling — decreases each week as prior "
+    "demand is consumed).</p></div>"
     "<div style='background:#0A1F17; border-left:3px solid #76b900; border-radius:2px;"
     "padding:0.5rem 0.9rem; margin:0.3rem 0;'>"
     "<p style='font-family:Inter,sans-serif; font-size:0.84rem; color:#ffffff; margin:0; line-height:1.55;'>"
@@ -287,8 +288,7 @@ def _prepare_trigger_df_from_raw(trig_data: dict):
         df["Facility"] = df["Facility"].apply(_format_facility_label)
 
     df = df.rename(columns={
-        "Available Inventory Before Demand": "Usable Inventory Before Demand",
-        "Procurement Need":                  "Direct Procurement Needed",
+        "Procurement Need": "Direct Procurement Needed",
     })
 
     # Extract SS context before column reorder
