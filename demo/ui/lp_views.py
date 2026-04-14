@@ -1125,7 +1125,13 @@ def _render_lp_result(raw: dict) -> None:
 
         _uf            = raw.get("urgency_feasibility") or {}
         _uf_coverable  = _uf.get("coverable_weeks", [])    # eligible pool CAN cover
-        _uf_uncoverable= _uf.get("uncoverable_weeks", [])  # nobody in eligible pool can cover
+        # Intersect uncoverable_weeks with _emergency_weeks (SS util ≥ 50%) so
+        # the "Contact sales/sourcing" sentence only cites weeks with actual
+        # procurement pressure at Moderate or higher urgency.
+        _uf_uncoverable = [
+            w for w in _uf.get("uncoverable_weeks", [])
+            if w in _emergency_weeks
+        ]
         _uf_fast_sups  = _uf.get("fast_suppliers", [])
 
         if _uf:
