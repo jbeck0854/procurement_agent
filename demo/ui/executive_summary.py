@@ -567,9 +567,11 @@ def _render_executive_summary() -> None:
         "cycle boundary."
     )
     _rec_box(
-        "<strong>Carryover demand:</strong> If procurement volumes persist beyond the current horizon, "
-        "resubmit with updated net requirements. Do not assume current allocations roll "
-        "forward automatically."
+        "<strong>Carryover demand:</strong> This plan covers only the current planning horizon. "
+        "Demand is expected to continue beyond this window, especially for multi-quarter production programs. "
+        "If procurement needs extend beyond this horizon, rerun the optimization with an updated forecast "
+        "to ensure future demand is explicitly planned for. Do not assume current allocations will automatically "
+        "carry forward and cover demand needs past the planning horizon."
     )
 
     _carryover = []
