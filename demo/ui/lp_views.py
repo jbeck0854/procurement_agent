@@ -1329,5 +1329,14 @@ def _render_procurement_status_bar(pending_products: list | None = None) -> None
             help="Generate the final executive summary for all approved runs",
         ):
             st.session_state.show_executive_summary = True
+            # Stepper: mark ONLY Summary (index 6) as completed. Any stage
+            # the user skipped (e.g. LP-Trans if they ran IC only) is NOT
+            # auto-completed — it stays greyed out.
+            _completed = st.session_state.get("demo_completed_stages")
+            if _completed is None:
+                _completed = set()
+                st.session_state.demo_completed_stages = _completed
+            _completed.add(6)
+            st.session_state.demo_prompt = 0
             st.session_state._pending_scroll = "exec_summary"
             st.rerun()

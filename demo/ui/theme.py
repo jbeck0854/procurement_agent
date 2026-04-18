@@ -514,6 +514,9 @@ def render_sidebar():
         st.session_state.show_executive_summary = False
         st.session_state.current_view = "chat"
         st.session_state.viewing_session = None
+        # Reset demo stepper to Initialization
+        st.session_state.demo_completed_stages = set()
+        st.session_state.demo_prompt = 0
         st.rerun()
 
     # Nav item CSS — override global button style for sidebar nav
@@ -1118,9 +1121,9 @@ def render_landing():
             {logo_img_html}
           </div>
           <p style="font-family:'Manrope',sans-serif; font-size:0.95rem; color:#ffffff;
-                    max-width:460px; margin:0 auto 2rem; line-height:1.65;">
-            Analyzing suppliers, pricing signals, and logistics across 40+ markets
-            with real-time risk assessment.
+                    max-width:640px; margin:0 auto 2rem; line-height:1.65;
+                    white-space:nowrap;">
+            Analyzing suppliers, pricing signals, and logistics with real-time risk assessment.
           </p>
         </div>
         """, unsafe_allow_html=True)
@@ -1130,7 +1133,7 @@ def render_landing():
         <div style="background:#0A1F17;
                     border:1px solid #333333; border-radius:2px;
                     padding:1.75rem 2rem; margin-bottom:1.5rem;">
-          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:1.5rem; margin-bottom:1.5rem;">
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:1.5rem; margin-bottom:1.5rem;">
             <div>
               <p style="font-family:'Inter',sans-serif; font-size:0.58rem; letter-spacing:0.15em;
                         text-transform:uppercase; color:#888888; margin-bottom:0.2rem;">Suppliers Indexed</p>
@@ -1148,14 +1151,6 @@ def render_landing():
                         text-transform:uppercase; color:#888888; margin-bottom:0.2rem;">Forecast Horizon</p>
               <p style="font-family:'Space Grotesk',sans-serif; font-size:1.7rem; font-weight:700;
                         color:#ffffff; margin:0; line-height:1.1;">20<span style="font-size:0.9rem; font-weight:500;"> wks</span></p>
-            </div>
-            <div>
-              <p style="font-family:'Inter',sans-serif; font-size:0.58rem; letter-spacing:0.15em;
-                        text-transform:uppercase; color:#888888; margin-bottom:0.2rem;">Service Level</p>
-              <p style="font-family:'Space Grotesk',sans-serif; font-size:1.7rem; font-weight:700;
-                        color:#76b900; margin:0; line-height:1.1;">
-                90<span style="font-size:0.9rem; font-weight:500;">%</span>
-              </p>
             </div>
           </div>
           <div style="display:flex; align-items:center; justify-content:center; gap:0.5rem;">
@@ -1184,11 +1179,16 @@ def render_landing():
         """, unsafe_allow_html=True)
 
         _SUGGESTIONS = [
-            ("Data Agent — Supplier Risk",   "Which suppliers have the highest disruption risk scores and what countries are they in?"),
-            ("Risk Agent — Geopolitical",    "Are there any recent geopolitical risks affecting semiconductor supply chains in East Asia?"),
+            ("Data Agent — Supplier Risk",
+             "Which suppliers have the highest disruption risk scores and what countries are they in?"),
+            ("Risk Agent — Geopolitical",
+             "Are there any recent geopolitical risks affecting semiconductor supply chains in East Asia?"),
+            ("Multi-Agent — Risk × News",
+             "Show me our top 10 highest-risk suppliers and check for any recent news about "
+             "disruptions or tariffs affecting the countries they operate in."),
         ]
         st.markdown("<div class='suggestion-row'>", unsafe_allow_html=True)
-        cols = st.columns(2)
+        cols = st.columns(len(_SUGGESTIONS))
         for col, (label, query) in zip(cols, _SUGGESTIONS):
             with col:
                 if st.button(label, key=f"sug_{label[:18]}", use_container_width=True):

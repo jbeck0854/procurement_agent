@@ -150,13 +150,20 @@ TOOL_PLAN_INFO = {
 
 DEMO_FLOW = [
     {
-        "tag": "Forecast",
-        "label": "Demand Forecasting",
-        "context": "Begin by understanding the demand landscape — what products are needed, where, and when across the planning horizon.",
+        "tag": "Initialization",
+        "label": "Planning Initialization",
+        "context": "Set the procurement objective — balancing cost efficiency against supply reliability across the 20-week horizon.",
         "prompts": [
             ("Plan Procurement",
              "Help me plan procurement for the upcoming 20 week planning horizon "
              "with a balance between cost and reliability."),
+        ],
+    },
+    {
+        "tag": "Forecast",
+        "label": "Demand Forecasting",
+        "context": "Begin by understanding the demand landscape — what products are needed, where, and when across the planning horizon.",
+        "prompts": [
             ("Yes, Proceed",
              "Yes, proceed"),
         ],
@@ -178,8 +185,6 @@ DEMO_FLOW = [
             ("Net Procurement Need",
              "After our inventory is factored in, what is the total amount that needs to be "
              "ordered for each component to meet our upcoming demand?"),
-            ("Triggered Weeks",
-             "In which weeks and where is procurement actually triggered across the planning horizon?"),
         ],
     },
     {
@@ -216,6 +221,83 @@ DEMO_FLOW = [
         ],
     },
 ]
+
+# Stepper advancement — maps a tool/agent to the DEMO_FLOW stage it completes.
+# Stage indices (must match DEMO_FLOW order):
+#   0 Initialization | 1 Forecast | 2 BOM | 3 Inventory
+#   4 LP-IC          | 5 LP-Trans | 6 Summary
+_TOOL_TO_STAGE = {
+    # Forecast
+    "query_forecast_summary": 1,
+    "query_forecast_drilldown": 1,
+    "query_forecast_model_assessment": 1,
+    # BOM
+    "query_component_requirements": 2,
+    "query_bom_translation": 2,
+    "query_bom_translation_explainer": 2,
+    # Inventory
+    "query_procurement_status": 3,
+    "query_procurement_planning_summary": 3,
+    "query_aggregated_procurement_need": 3,
+    "query_procurement_drilldown": 3,
+    "query_procurement_summary_data": 3,
+    "query_triggered_procurement_rows": 3,
+    "query_triggered_rows_structured": 3,
+    "query_full_horizon_drilldown": 3,
+}
+
+
+def _advance_stage(completed_stage: int) -> None:
+    """Mark a stage as completed. Set-based tracking lets skipped stages
+    stay visually uncompleted (e.g. if user jumps straight to Summary
+    after IC without running Trans, LP-Trans is NOT falsely marked ✓).
+    """
+    completed = st.session_state.get("demo_completed_stages")
+    if completed is None:
+        completed = set()
+        st.session_state.demo_completed_stages = completed
+    completed.add(completed_stage)
+    st.session_state.demo_prompt = 0
+
+
+def _demo_current_stage() -> int | None:
+    """First uncompleted stage, or None if demo has ended.
+
+    Summary (final stage) completing ends the demo — any stages skipped
+    along the way remain uncompleted but the demo is over.
+    """
+    completed = st.session_state.get("demo_completed_stages", set())
+    final_idx = len(DEMO_FLOW) - 1
+    if final_idx in completed:
+        return None
+    for i in range(len(DEMO_FLOW)):
+        if i not in completed:
+            return i
+    return None
+
+
+def _infer_stage_from_plan(plan) -> int | None:
+    """Inspect plan.tasks → return the highest stage represented, or None.
+
+    Planner → 0. Known forecast/BOM/inventory tool → 1/2/3. LP agent →
+    4 (IC) or 5 (Transistor) based on the `product` param.
+    """
+    if not isinstance(plan, dict):
+        return None
+    completed = set()
+    for task in plan.get("tasks", []) or []:
+        agent = task.get("agent")
+        tool = task.get("tool")
+        params = task.get("params") or {}
+        if agent == "planner":
+            completed.add(0)
+        elif tool in _TOOL_TO_STAGE:
+            completed.add(_TOOL_TO_STAGE[tool])
+        elif agent == "lp_agent":
+            product = (params.get("product") or "").lower()
+            completed.add(5 if "trans" in product else 4)
+    return max(completed) if completed else None
+
 
 # Fallback descriptions for ReAct agents (no specific tool — agent decides autonomously)
 _AGENT_PLAN_INFO = {
@@ -314,8 +396,8 @@ if "suggested_query" not in st.session_state:
     st.session_state.suggested_query = ""
 
 # Demo flow progress: tracks which section/prompt we're at
-if "demo_section" not in st.session_state:
-    st.session_state.demo_section = 0
+if "demo_completed_stages" not in st.session_state:
+    st.session_state.demo_completed_stages = set()
 if "demo_prompt" not in st.session_state:
     st.session_state.demo_prompt = 0
 
@@ -324,36 +406,40 @@ if "demo_prompt" not in st.session_state:
 
 def render_demo_flowchart():
     """Render horizontal business-cycle flowchart showing current position."""
-    sec = st.session_state.demo_section
+    completed = st.session_state.get("demo_completed_stages", set())
+    current = _demo_current_stage()
     tags = [s["tag"] for s in DEMO_FLOW]
 
     nodes = ""
     for i, tag in enumerate(tags):
-        if i < sec:
+        if i in completed:
             # Completed
             border = "#76b900"
             text_color = "#76b900"
             bg = "#0A1F17"
             icon = "✓ "
             opacity = "0.5"
-        elif i == sec:
+            is_current = False
+        elif current is not None and i == current:
             # Current
             border = "#76b900"
             text_color = "#ffffff"
             bg = "rgba(118,185,0,0.12)"
             icon = "● "
             opacity = "1"
+            is_current = True
         else:
-            # Upcoming
+            # Upcoming OR skipped (both render the same — greyed out)
             border = "#333333"
             text_color = "#555555"
             bg = "transparent"
             icon = ""
             opacity = "0.6"
+            is_current = False
 
         # Current step gets a subtle glow border
-        border_w = "2px" if i == sec else "1px"
-        shadow = "box-shadow:0 0 12px rgba(118,185,0,0.25);" if i == sec else ""
+        border_w = "2px" if is_current else "1px"
+        shadow = "box-shadow:0 0 12px rgba(118,185,0,0.25);" if is_current else ""
 
         node = (
             f"<div style='display:flex; flex-direction:column; align-items:center;"
@@ -366,7 +452,8 @@ def render_demo_flowchart():
             f"</div></div>"
         )
         if i > 0:
-            arrow_color = "#76b900" if i <= sec else "#333333"
+            # Arrow is green if the previous stage is completed (flow passed through)
+            arrow_color = "#76b900" if (i - 1) in completed else "#333333"
             arrow = (
                 f"<span style='color:{arrow_color}; font-size:1.1rem; margin:0 6px;"
                 f"align-self:center;'>→</span>"
@@ -383,10 +470,10 @@ def render_demo_flowchart():
 
 def render_demo_buttons():
     """Render prompt buttons for the current demo section."""
-    sec_idx = st.session_state.demo_section
-    prompt_idx = st.session_state.demo_prompt
+    sec_idx = _demo_current_stage()
+    prompt_idx = st.session_state.get("demo_prompt", 0)
 
-    if sec_idx >= len(DEMO_FLOW):
+    if sec_idx is None:
         st.markdown(
             "<p style='text-align:center; font-family:Inter,sans-serif; font-size:0.7rem;"
             "color:#76b900; text-transform:uppercase; letter-spacing:0.1em; margin:0.5rem 0;'>"
@@ -395,14 +482,19 @@ def render_demo_buttons():
         )
         return
 
+    # Summary stage has no demo button — the Complete action lives in the
+    # Procurement Status bar (Complete Procurement Plan) which is the only
+    # path that actually triggers show_executive_summary. Rendering another
+    # button here duplicates the control and confuses users.
+    if sec_idx == len(DEMO_FLOW) - 1:
+        return
+
     section = DEMO_FLOW[sec_idx]
     remaining = section["prompts"][prompt_idx:]
 
     if not remaining:
-        # All prompts in this section used — advance to next
-        st.session_state.demo_section += 1
+        # Should not happen with single-prompt stages; reset and retry.
         st.session_state.demo_prompt = 0
-        st.rerun()
         return
 
     # Section label
@@ -425,15 +517,14 @@ def render_demo_buttons():
         )
 
     # Show only the NEXT button (one at a time, sequential)
+    # Button click only injects the canned prompt — stepper advances
+    # only after the AI actually runs the corresponding tool (see
+    # `_advance_stage_from_plan` call sites).
     label, query = remaining[0]
     _cols = st.columns([1, 2, 1])
     with _cols[1]:
         btn_key = f"demo_{sec_idx}_{prompt_idx}_{label[:12]}"
         if st.button(label, key=btn_key, use_container_width=True):
-            st.session_state.demo_prompt = prompt_idx + 1
-            if st.session_state.demo_prompt >= len(section["prompts"]):
-                st.session_state.demo_section += 1
-                st.session_state.demo_prompt = 0
             st.session_state.suggested_query = query
             st.rerun()
 
@@ -1891,6 +1982,12 @@ def render_pending_plan():
                 config = {"configurable": {"thread_id": st.session_state.thread_id}}
                 final_state = stream_graph(Command(resume=feedback), config=config)
 
+            # Stepper: pipeline tools (forecast/BOM/inventory) just actually ran.
+            # Advance demo_section to whichever stage this plan covered.
+            _stage = _infer_stage_from_plan(plan)
+            if _stage is not None and _stage <= 3:
+                _advance_stage(_stage)
+
             lp_interrupt = final_state.get("__interrupt__")
             if lp_interrupt and lp_interrupt.get("type") == "lp_approval":
                 st.session_state.waiting_for_lp_approval = True
@@ -2011,6 +2108,10 @@ def render_lp_approval():
         if st.button("Approve Recommendation", key="approve_lp_btn"):
             for result_dict in raw.values():
                 _store_approved_run(result_dict)
+                # Stepper: LP run approved → advance LP-IC (4) or LP-Trans (5)
+                _recap = (result_dict or {}).get("params_recap") or {}
+                _product = (_recap.get("product") or "").lower()
+                _advance_stage(5 if "trans" in _product else 4)
             if is_direct:
                 _approved = [k.replace("lp_", "").replace("_", " ").title() for k in raw]
                 st.session_state.messages.append({
@@ -2170,27 +2271,11 @@ if not st.session_state.intro_done:
   <div class="load-progress"><div class="progress-track"><div id="progress-bar" class="progress-fill"></div></div></div>
 </div>
 <div id="main-content" class="main-content hidden">
-  <nav class="nav-pill">
-    <div class="nav-logo"><span class="nav-logo-text">PP</span></div>
-    <div class="nav-divider"></div>
-    <span class="nav-link active">Home</span>
-    <span class="nav-link">Agents</span>
-    <span class="nav-link">Data</span>
-  </nav>
   <div class="hero">
     <p class="eyebrow blur-in">Multi-Agent Intelligence System</p>
     <h1 class="hero-title name-reveal">Procurement<br><em>Pilot</em></h1>
     <p class="hero-role blur-in">A <span id="role-word" class="role-word">Forecasting</span> engine for global supply chains.</p>
     <p class="hero-desc blur-in">Orchestrating 5 specialized AI agents across 89 suppliers and 21 countries to optimize semiconductor procurement in real-time.</p>
-  </div>
-  <div class="stats-row blur-in">
-    <div class="stat"><span class="stat-value">89</span><span class="stat-label">Suppliers</span></div>
-    <div class="stat-divider"></div>
-    <div class="stat"><span class="stat-value">21</span><span class="stat-label">Countries</span></div>
-    <div class="stat-divider"></div>
-    <div class="stat"><span class="stat-value">20<small>wk</small></span><span class="stat-label">Horizon</span></div>
-    <div class="stat-divider"></div>
-    <div class="stat"><span class="stat-value">90<small>%+</small></span><span class="stat-label">Accuracy</span></div>
   </div>
 </div>
 <script>{_js}</script>
@@ -2378,6 +2463,18 @@ else:
                 state = asyncio.run(graph.aget_state(config=config))
 
             plan = extract_plan(state)
+
+            # Stepper: planner is the only direct-response path that advances
+            # immediately (no approval/execution step). Planner does NOT
+            # produce a graph interrupt, so extract_plan(state) returns None
+            # for planner responses — we must read tasks from `result`
+            # (the ainvoke return) instead. Other agents advance
+            # post-approval in render_pending_plan / render_lp_approval.
+            _result_tasks = (
+                result.get("tasks") if isinstance(result, dict) else None
+            ) or []
+            if any(t.get("agent") == "planner" for t in _result_tasks):
+                _advance_stage(0)
 
             # ── Direct-response check (planner / out_of_scope) ────────
             # These tasks produce a final_response in the orchestrator and
