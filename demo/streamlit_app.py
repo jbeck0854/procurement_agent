@@ -38,6 +38,7 @@ from ui.theme import (
     inject_css, FAVICON, LOGO_B64, USER_AVATAR, CPU_AVATAR,
     SECTION_STYLE, section_header, render_charts,
     render_header, render_sidebar, render_landing, render_architecture,
+    render_data_pipeline,
     render_history_list, render_history_detail,
 )
 
@@ -2305,6 +2306,9 @@ with st.sidebar:
 
 if st.session_state.current_view == "architecture":
     render_architecture()
+
+elif st.session_state.current_view == "data_pipeline":
+    render_data_pipeline()
 
 elif st.session_state.current_view == "history":
     render_history_list()
