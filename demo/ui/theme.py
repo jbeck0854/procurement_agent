@@ -2466,9 +2466,533 @@ canvas { display:block; cursor:crosshair; }
   letter-spacing:0.06em; margin-bottom:6px; }
 #tip .td { color:#aaa; font-size:11.5px; margin-bottom:5px; line-height:1.55; }
 #tip .tt { color:#76b900; font-size:11px; margin-top:3px; }
+.dpanel { position:absolute; display:none; top:3%; left:4%; width:92%; height:94%;
+  background:rgba(10,31,23,0.97); border:1.5px solid #76b900; border-radius:6px;
+  padding:28px 32px 24px; box-shadow:0 12px 48px rgba(0,0,0,0.7); z-index:20;
+  overflow-y:auto; }
+.dpanel .pclose { position:absolute; top:14px; right:18px; font-size:22px; color:#76b900;
+  cursor:pointer; font-weight:400; line-height:1; padding:4px 10px;
+  border:1px solid transparent; border-radius:3px; transition:border-color 0.15s; }
+.dpanel .pclose:hover { border-color:#76b900; }
+.dpanel .ph { color:#fff; font-size:22px; font-weight:700; letter-spacing:0.06em;
+  text-transform:uppercase; margin-bottom:6px; }
+.dpanel .psub { color:#888; font-size:14px; margin-bottom:26px; line-height:1.55; }
+.dpanel .gsec { margin-bottom:32px; }
+.dpanel .gsec-n { color:#76b900; font-size:11px; font-weight:700; letter-spacing:0.14em;
+  text-transform:uppercase; margin-bottom:4px; }
+.dpanel .gsec-t { color:#fff; font-size:18px; font-weight:700; margin-bottom:16px;
+  letter-spacing:0.02em; }
+.dpanel .gcap { color:#888; font-size:12.5px; margin-top:10px; font-style:italic;
+  line-height:1.6; }
+/* ── DS panel: Public Data Sources ── */
+.ds-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:14px; }
+.ds-tile { background:rgba(118,185,0,0.04); border:1px solid rgba(118,185,0,0.35);
+  border-radius:6px; padding:20px; display:flex; flex-direction:column; gap:10px;
+  position:relative; min-height:200px; }
+.ds-tile-head { display:flex; align-items:flex-start; justify-content:space-between; gap:6px; }
+.ds-icon { font-size:48px; line-height:1; flex-shrink:0; }
+.ds-badge { font-size:11px; font-weight:700; letter-spacing:0.08em;
+  padding:4px 11px; border-radius:20px; text-transform:uppercase;
+  white-space:nowrap; margin-top:4px; flex-shrink:0; }
+.ds-badge-log { background:rgba(118,185,0,0.18); color:#76b900; border:1px solid rgba(118,185,0,0.45); }
+.ds-badge-gov { background:rgba(0,185,185,0.14); color:#00c4c4; border:1px solid rgba(0,185,185,0.40); }
+.ds-badge-cost { background:rgba(224,160,32,0.16); color:#e0a020; border:1px solid rgba(224,160,32,0.42); }
+.ds-badge-trd { background:rgba(192,80,80,0.15); color:#e06060; border:1px solid rgba(192,80,80,0.40); }
+.ds-name { font-size:15px; font-weight:700; color:#fff; line-height:1.3; margin-top:-2px; }
+.ds-cov { display:flex; flex-direction:column; gap:6px; }
+.ds-dots { display:flex; flex-wrap:wrap; gap:4px; }
+.ds-dot { width:9px; height:9px; border-radius:50%;
+  background:rgba(118,185,0,0.22); border:1px solid rgba(118,185,0,0.35); }
+.ds-dot.on { background:#76b900; border-color:#76b900; box-shadow:0 0 3px rgba(118,185,0,0.55); }
+.ds-cov-label { font-size:11.5px; color:#888; font-family:'SF Mono',Menlo,Consolas,monospace; }
+.ds-bar-track { width:100%; height:8px; background:rgba(255,255,255,0.07); border-radius:3px; overflow:hidden; }
+.ds-bar-fill { height:100%; border-radius:3px;
+  background:linear-gradient(90deg,rgba(118,185,0,0.45) 0%,#76b900 100%); }
+.ds-bar-labels { display:flex; justify-content:space-between; }
+.ds-bar-labels span { font-size:11.5px; color:#888; font-family:'SF Mono',Menlo,Consolas,monospace; }
+.ds-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:auto; }
+.ds-chip { font-size:11px; font-family:'SF Mono',Menlo,Consolas,monospace;
+  color:#bbb; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.10);
+  border-radius:20px; padding:3px 10px; white-space:nowrap; }
+
+/* ── CL panel: Cleaning & Normalization ── */
+.cl-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:6px; }
+.cl-card { background:rgba(118,185,0,0.04); border:1px solid rgba(118,185,0,0.35);
+  border-radius:10px; padding:18px 18px 14px; display:flex; flex-direction:column; gap:10px; }
+.cl-card-icon { font-size:30px; line-height:1; }
+.cl-card-name { font-size:14.5px; font-weight:700; color:#fff;
+  letter-spacing:0.03em; text-transform:uppercase; }
+.cl-xform { display:flex; align-items:flex-start; gap:8px; flex-wrap:nowrap; }
+.cl-before, .cl-after { font-family:'SF Mono',Menlo,Consolas,monospace;
+  font-size:12px; line-height:1.55; border-radius:5px; padding:8px 10px;
+  flex:1; min-width:0; word-break:break-all; white-space:pre-wrap; }
+.cl-before { color:#c09090; background:rgba(192,144,144,0.08); border:1px solid rgba(192,144,144,0.18); }
+.cl-after { color:#76b900; background:rgba(118,185,0,0.07); border:1px solid rgba(118,185,0,0.22); }
+.cl-arrow { color:#76b900; font-size:18px; font-weight:700; margin-top:8px;
+  flex-shrink:0; line-height:1; }
+.cl-note { font-size:12.5px; color:#888; line-height:1.5;
+  border-top:1px solid rgba(255,255,255,0.06); padding-top:8px; }
+.cl-chips { display:flex; flex-wrap:wrap; gap:9px; margin-top:6px; }
+.cl-chip { background:rgba(118,185,0,0.10); border:1px solid rgba(118,185,0,0.40);
+  color:#76b900; font-size:13px; font-weight:600; letter-spacing:0.04em;
+  border-radius:20px; padding:5px 13px; }
+.cl-caption { margin-top:12px; font-size:13px; color:#888; line-height:1.55; }
+.cl-caption code { font-family:'SF Mono',Menlo,Consolas,monospace; font-size:11.5px;
+  color:#bbb; background:rgba(255,255,255,0.06); border-radius:4px; padding:2px 7px; }
+
+/* ── SN panel: Synthetic Generation ── */
+.sn-pipeline-wrap { display:flex; align-items:center; gap:0;
+  overflow-x:auto; padding:14px 0 18px;
+  scrollbar-width:thin; scrollbar-color:#76b900 #0A1F17; }
+.sn-edge-card { flex:0 0 auto; width:110px; padding:14px 10px; border-radius:8px;
+  text-align:center; display:flex; flex-direction:column; align-items:center; gap:7px; }
+.sn-edge-card.sn-input { border:1.5px dashed #555; background:rgba(255,255,255,0.03); }
+.sn-edge-card.sn-output { border:1.5px solid #76b900; background:rgba(118,185,0,0.10); }
+.sn-edge-icon { font-size:28px; line-height:1; }
+.sn-edge-label { font-size:12px; font-weight:600; line-height:1.3;
+  text-transform:uppercase; letter-spacing:0.05em; }
+.sn-input .sn-edge-label { color:#888; }
+.sn-output .sn-edge-label { color:#76b900; }
+.sn-edge-detail { font-size:11px; color:#666; line-height:1.4; text-align:center; }
+.sn-output .sn-edge-detail { color:#9dcf40; }
+.sn-connector { flex:0 0 auto; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:4px; padding:0 6px; min-width:44px; }
+.sn-conn-dots { font-size:13px; letter-spacing:1px; color:#76b900; line-height:1; }
+.sn-conn-arrow { font-size:22px; color:#76b900; line-height:1; font-weight:700; }
+.sn-stage { flex:0 0 auto; width:180px;
+  background:linear-gradient(160deg,#0f2a1e 0%,#0d2218 100%);
+  border:1px solid #1e4030; border-radius:12px; padding:18px 14px 14px;
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+  position:relative; transition:border-color 0.2s; }
+.sn-stage:hover { border-color:#76b900; }
+.sn-badge { width:34px; height:34px; border-radius:50%; background:#76b900;
+  color:#0A1F17; font-size:14px; font-weight:800;
+  display:flex; align-items:center; justify-content:center; line-height:1; flex-shrink:0; }
+.sn-stage-icon { font-size:38px; line-height:1; margin:4px 0; }
+.sn-nb-name { font-family:'SF Mono',Menlo,Consolas,monospace; font-size:11px;
+  color:#76b900; background:rgba(118,185,0,0.10); border:1px solid rgba(118,185,0,0.25);
+  border-radius:4px; padding:4px 8px; letter-spacing:0.02em; text-align:center;
+  width:100%; box-sizing:border-box; white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis; }
+.sn-stat-num { font-size:46px; font-weight:800; color:#fff; line-height:1;
+  text-align:center; letter-spacing:-0.02em; }
+.sn-stat-num span.sn-tilde { font-size:30px; color:#bbb; vertical-align:middle; font-weight:600; }
+.sn-stat-label { font-size:11.5px; color:#76b900; font-weight:600;
+  text-align:center; line-height:1.35; letter-spacing:0.03em; }
+.sn-entity-chip { font-size:12px; color:#bbb; background:rgba(255,255,255,0.06);
+  border-radius:4px; padding:4px 10px; text-align:center; font-weight:500; }
+.sn-note { font-size:11.5px; color:#888; text-align:center; line-height:1.5;
+  padding-top:4px; border-top:1px solid rgba(255,255,255,0.06); width:100%; }
+.sn-why-card { background:linear-gradient(135deg,#0f2a1e 0%,#0d2218 100%);
+  border:1px solid #1e4030; border-radius:10px; padding:18px 22px;
+  display:flex; gap:18px; align-items:flex-start; margin-top:6px; }
+.sn-why-icon { font-size:34px; line-height:1; flex-shrink:0; margin-top:2px; }
+.sn-why-body { display:flex; flex-direction:column; gap:6px; }
+.sn-why-title { font-size:15px; font-weight:700; color:#fff; letter-spacing:0.02em; }
+.sn-why-bullets { list-style:none; padding:0; margin:0;
+  display:flex; flex-direction:column; gap:5px; }
+.sn-why-bullets li { font-size:13px; color:#bbb; line-height:1.55;
+  padding-left:18px; position:relative; }
+.sn-why-bullets li::before { content:'\u25B8'; color:#76b900; font-size:11px;
+  position:absolute; left:0; top:2px; }
+
+/* ── SW panel: SQL Warehouse ── */
+.sw-schema-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-top:12px; }
+.sw-family-col { display:flex; flex-direction:column; gap:8px; }
+.sw-family-header { display:flex; align-items:center; gap:9px; padding:10px 14px;
+  border-radius:6px; background:rgba(255,255,255,0.04); margin-bottom:4px; }
+.sw-family-icon { font-size:20px; line-height:1; }
+.sw-family-name { font-size:14px; font-weight:600; color:#fff;
+  text-transform:uppercase; letter-spacing:0.08em; flex:1; }
+.sw-family-badge { font-size:12.5px; font-weight:700; padding:3px 10px;
+  border-radius:12px; line-height:1.3; }
+.sw-badge-dim { background:rgba(56,189,196,0.18); color:#38bdc4; }
+.sw-badge-fact { background:rgba(224,160,32,0.18); color:#e0a020; }
+.sw-badge-view { background:rgba(118,185,0,0.18); color:#76b900; }
+.sw-table-card { padding:10px 12px 10px 14px; border-radius:5px;
+  background:rgba(255,255,255,0.03); border-left:4px solid transparent;
+  transition:background 0.15s; }
+.sw-card-dim { border-left-color:#38bdc4; }
+.sw-card-fact { border-left-color:#e0a020; }
+.sw-card-view { border-left-color:#76b900; }
+.sw-table-name { font-family:'SF Mono',Menlo,Consolas,monospace; font-size:13px;
+  color:#76b900; display:block; line-height:1.4; word-break:break-all; }
+.sw-table-grain { font-size:11.5px; color:#888; font-style:italic;
+  display:block; line-height:1.5; margin-top:3px; }
+.sw-ladder { display:flex; flex-direction:column; position:relative;
+  padding-left:38px; margin-top:12px; }
+.sw-ladder-line { position:absolute; left:14px; top:16px; bottom:40px;
+  width:2px; border-left:2px dashed rgba(118,185,0,0.4); }
+.sw-ladder-step { display:flex; align-items:flex-start; gap:12px;
+  padding:7px 0; position:relative; }
+.sw-step-num { position:absolute; left:-38px; top:8px; width:24px; height:24px;
+  border-radius:50%; background:#76b900; color:#0A1F17; font-size:12px;
+  font-weight:700; display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; line-height:1; z-index:1; }
+.sw-step-body { display:flex; align-items:center; gap:12px; flex:1; flex-wrap:wrap;
+  padding:8px 14px; border-radius:5px; background:rgba(255,255,255,0.03); min-height:38px; }
+.sw-step-file { font-family:'SF Mono',Menlo,Consolas,monospace; font-size:13.5px;
+  color:#fff; flex:1; }
+.sw-step-type { font-size:11px; font-weight:700; text-transform:uppercase;
+  letter-spacing:0.1em; padding:3px 10px; border-radius:3px; white-space:nowrap; }
+.sw-type-ddl { background:rgba(56,189,196,0.15); color:#38bdc4; }
+.sw-type-stage { background:rgba(255,255,255,0.08); color:#bbb; }
+.sw-type-data { background:rgba(224,160,32,0.15); color:#e0a020; }
+.sw-type-views { background:rgba(118,185,0,0.15); color:#76b900; }
+.sw-ladder-warn { margin-top:14px; padding:11px 14px; border-radius:5px;
+  background:rgba(224,160,32,0.08); border:1px solid rgba(224,160,32,0.25);
+  font-size:12.5px; color:#bbb; line-height:1.55; }
+.sw-warn-icon { color:#e0a020; font-style:normal; margin-right:6px; font-size:14px; }
+.sw-warn-code { font-family:'SF Mono',Menlo,Consolas,monospace; font-size:12px; color:#e0a020; }
 </style></head><body>
 <canvas id="c"></canvas>
 <div id="tip"></div>
+
+<div id="dp-panel-sources" class="dpanel">
+  <div class="pclose" onclick="closeDp('sources')">\u2715</div>
+  <div class="ph">Public Data Sources \u2014 9 External Datasets</div>
+  <div class="psub">Open government &amp; trade data ingested once \u00b7 powers risk scoring, cost indices, and logistics benchmarks</div>
+
+  <div class="gsec">
+    <div class="gsec-n">Visual catalog</div>
+    <div class="gsec-t">All datasets \u00b7 grouped by domain</div>
+    <div class="ds-grid">
+
+      <div class="ds-tile">
+        <div class="ds-tile-head"><div class="ds-icon">\U0001F6A2</div><span class="ds-badge ds-badge-log">LOG</span></div>
+        <div class="ds-name">World Bank LPI</div>
+        <div class="ds-cov">
+          <div class="ds-dots"><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span></div>
+          <span class="ds-cov-label">20/20 countries \u00b7 2023 snapshot</span>
+        </div>
+        <div class="ds-chips"><span class="ds-chip">customs</span><span class="ds-chip">infrastructure</span><span class="ds-chip">logistics</span></div>
+      </div>
+
+      <div class="ds-tile">
+        <div class="ds-tile-head"><div class="ds-icon">\u2693</div><span class="ds-badge ds-badge-log">LOG</span></div>
+        <div class="ds-name">UNCTAD Port Calls</div>
+        <div class="ds-cov">
+          <div class="ds-dots"><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot"></span><span class="ds-dot"></span><span class="ds-dot"></span><span class="ds-dot"></span><span class="ds-dot"></span><span class="ds-dot"></span><span class="ds-dot"></span><span class="ds-dot"></span><span class="ds-dot"></span><span class="ds-dot"></span><span class="ds-dot"></span></div>
+          <span class="ds-cov-label">9/20 countries \u00b7 2023 snapshot</span>
+        </div>
+        <div class="ds-chips"><span class="ds-chip">port efficiency</span><span class="ds-chip">dwell time</span><span class="ds-chip">container ships</span></div>
+      </div>
+
+      <div class="ds-tile">
+        <div class="ds-tile-head"><div class="ds-icon">\u2696\uFE0F</div><span class="ds-badge ds-badge-gov">GOV</span></div>
+        <div class="ds-name">WGI</div>
+        <div class="ds-cov">
+          <div class="ds-dots"><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span><span class="ds-dot on"></span></div>
+          <span class="ds-cov-label">20/20 countries \u00b7 2023 snapshot</span>
+        </div>
+        <div class="ds-chips"><span class="ds-chip">corruption</span><span class="ds-chip">rule of law</span><span class="ds-chip">reg quality</span></div>
+      </div>
+
+      <div class="ds-tile">
+        <div class="ds-tile-head"><div class="ds-icon">\U0001F4C8</div><span class="ds-badge ds-badge-cost">COST</span></div>
+        <div class="ds-name">BLS PPI \u2014 US Electronics</div>
+        <div class="ds-cov">
+          <div class="ds-bar-track"><div class="ds-bar-fill" style="width:88%"></div></div>
+          <div class="ds-bar-labels"><span>multi-year</span><span>monthly</span></div>
+        </div>
+        <div class="ds-chips"><span class="ds-chip">IC</span><span class="ds-chip">transistors</span><span class="ds-chip">assemblies</span></div>
+      </div>
+
+      <div class="ds-tile">
+        <div class="ds-tile-head"><div class="ds-icon">\U0001F4CA</div><span class="ds-badge ds-badge-cost">COST</span></div>
+        <div class="ds-name">FRED PPI \u2014 MX/CA</div>
+        <div class="ds-cov">
+          <div class="ds-bar-track"><div class="ds-bar-fill" style="width:55%"></div></div>
+          <div class="ds-bar-labels"><span>recent</span><span>monthly</span></div>
+        </div>
+        <div class="ds-chips"><span class="ds-chip">computer mfg</span><span class="ds-chip">electronics</span><span class="ds-chip">proxy</span></div>
+      </div>
+
+      <div class="ds-tile">
+        <div class="ds-tile-head"><div class="ds-icon">\U0001F4C9</div><span class="ds-badge ds-badge-cost">COST</span></div>
+        <div class="ds-name">FRED PPI \u2014 China/Asia</div>
+        <div class="ds-cov">
+          <div class="ds-bar-track"><div class="ds-bar-fill" style="width:60%"></div></div>
+          <div class="ds-bar-labels"><span>recent</span><span>monthly</span></div>
+        </div>
+        <div class="ds-chips"><span class="ds-chip">China semi</span><span class="ds-chip">Asia proxy</span><span class="ds-chip">PPI</span></div>
+      </div>
+
+      <div class="ds-tile">
+        <div class="ds-tile-head"><div class="ds-icon">\U0001F52C</div><span class="ds-badge ds-badge-cost">COST</span></div>
+        <div class="ds-name">FRED PPI \u2014 US Semi</div>
+        <div class="ds-cov">
+          <div class="ds-bar-track"><div class="ds-bar-fill" style="width:65%"></div></div>
+          <div class="ds-bar-labels"><span>recent</span><span>monthly</span></div>
+        </div>
+        <div class="ds-chips"><span class="ds-chip">advanced nodes</span><span class="ds-chip">CHIPS-Act</span><span class="ds-chip">semi</span></div>
+      </div>
+
+      <div class="ds-tile">
+        <div class="ds-tile-head"><div class="ds-icon">\U0001F4B0</div><span class="ds-badge ds-badge-trd">TRADE</span></div>
+        <div class="ds-name">USITC Tariff DB</div>
+        <div class="ds-cov">
+          <div class="ds-bar-track"><div class="ds-bar-fill" style="width:42%"></div></div>
+          <div class="ds-bar-labels"><span>snapshot</span><span>2025</span></div>
+        </div>
+        <div class="ds-chips"><span class="ds-chip">HTS-8</span><span class="ds-chip">Ch 84/85/90</span><span class="ds-chip">tariff</span></div>
+      </div>
+
+      <div class="ds-tile">
+        <div class="ds-tile-head"><div class="ds-icon">\U0001F6E2\uFE0F</div><span class="ds-badge ds-badge-trd">TRADE</span></div>
+        <div class="ds-name">WB Commodity Prices</div>
+        <div class="ds-cov">
+          <div class="ds-bar-track"><div class="ds-bar-fill" style="width:100%"></div></div>
+          <div class="ds-bar-labels"><span>1960</span><span>\u2192 2025</span></div>
+        </div>
+        <div class="ds-chips"><span class="ds-chip">oil</span><span class="ds-chip">copper</span><span class="ds-chip">aluminum</span></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="dp-panel-cleaning" class="dpanel">
+  <div class="pclose" onclick="closeDp('cleaning')">\u2715</div>
+  <div class="ph">Cleaning &amp; Normalization \u2014 4 Standard Transforms</div>
+  <div class="psub">Raw supplier data unified to a consistent schema before load</div>
+
+  <div class="gsec">
+    <div class="gsec-n">Section 01</div>
+    <div class="gsec-t">Transformation Cascade</div>
+    <div class="cl-grid">
+
+      <div class="cl-card">
+        <div class="cl-card-icon">\U0001F310</div>
+        <div class="cl-card-name">Country Normalization</div>
+        <div class="cl-xform">
+          <div class="cl-before">"United States"
+"Korea, Rep."
+"China, HK"</div>
+          <div class="cl-arrow">\u2192</div>
+          <div class="cl-after">USA
+KOR
+HKG</div>
+        </div>
+        <div class="cl-note">All country names \u2192 ISO-3 codes</div>
+      </div>
+
+      <div class="cl-card">
+        <div class="cl-card-icon">\U0001F504</div>
+        <div class="cl-card-name">Wide \u2192 Long Reshape</div>
+        <div class="cl-xform">
+          <div class="cl-before">yr_1996 yr_2000
+ \u2026 yr_2023
+(columns)</div>
+          <div class="cl-arrow">\u2192</div>
+          <div class="cl-after">year=1996
+value=\u2026
+year=2023
+(rows)</div>
+        </div>
+        <div class="cl-note">Year columns melted into one <code style="font-family:'SF Mono',Menlo,Consolas,monospace;font-size:9px;color:#bbb;">year</code> column</div>
+      </div>
+
+      <div class="cl-card">
+        <div class="cl-card-icon">\u2728</div>
+        <div class="cl-card-name">Gap Interpolation</div>
+        <div class="cl-xform">
+          <div class="cl-before">[100, 102,
+ NaN, NaN,
+ 109]</div>
+          <div class="cl-arrow">\u2192</div>
+          <div class="cl-after">[100, 102,
+ 104, 106,
+ 109]</div>
+        </div>
+        <div class="cl-note">Short gaps linear \u00b7 long gaps spline \u00b7 edges dropped</div>
+      </div>
+
+      <div class="cl-card">
+        <div class="cl-card-icon">\U0001F9F9</div>
+        <div class="cl-card-name">Column Filter + Rename</div>
+        <div class="cl-xform">
+          <div class="cl-before">"LPI Score"
+"LPI Rank"
+"LPI Cust"</div>
+          <div class="cl-arrow">\u2192</div>
+          <div class="cl-after">lpi_score
+(rank fields
+ dropped)</div>
+        </div>
+        <div class="cl-note">Drop rank fields \u00b7 snake_case all headers</div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="gsec">
+    <div class="gsec-n">Section 02</div>
+    <div class="gsec-t">Output Format</div>
+    <div class="cl-chips">
+      <span class="cl-chip">ISO-3 unified</span>
+      <span class="cl-chip">snake_case</span>
+      <span class="cl-chip">long format</span>
+    </div>
+    <div class="cl-caption">All 9 cleaned datasets \u2192 <code>cleaned_data/*.csv</code> \u2192 staged into Postgres</div>
+  </div>
+</div>
+
+<div id="dp-panel-synth" class="dpanel">
+  <div class="pclose" onclick="closeDp('synth')">\u2715</div>
+  <div class="ph">Synthetic Generation \u2014 4-Stage Entity Factory</div>
+  <div class="psub">Four notebooks build a fully synthetic, country-anchored procurement universe from cleaned public data</div>
+
+  <div class="gsec">
+    <div class="gsec-n">Section 01</div>
+    <div class="gsec-t">Entity Pipeline</div>
+    <div class="sn-pipeline-wrap">
+
+      <div class="sn-edge-card sn-input">
+        <div class="sn-edge-icon">\U0001F310</div>
+        <div class="sn-edge-label">Cleaned Country Data</div>
+        <div class="sn-edge-detail">LPI \u00b7 WGI<br>Tariffs \u00b7 PPI</div>
+      </div>
+      <div class="sn-connector"><div class="sn-conn-dots">\u22EF</div><div class="sn-conn-arrow">\u2192</div></div>
+
+      <div class="sn-stage">
+        <div class="sn-badge">1</div>
+        <div class="sn-stage-icon">\U0001F3ED</div>
+        <div class="sn-nb-name">01_suppliers.ipynb</div>
+        <div class="sn-stat-num">89</div>
+        <div class="sn-stat-label">suppliers \u00b7 21 countries</div>
+        <div class="sn-entity-chip">Suppliers</div>
+        <div class="sn-note">Lead time \u00b7 defect rate \u00b7 base price anchored to LPI / WGI / PPI</div>
+      </div>
+      <div class="sn-connector"><div class="sn-conn-dots">\u22EF</div><div class="sn-conn-arrow">\u2192</div></div>
+
+      <div class="sn-stage">
+        <div class="sn-badge">2</div>
+        <div class="sn-stage-icon">\U0001F527</div>
+        <div class="sn-nb-name">02_create_products.ipynb</div>
+        <div class="sn-stat-num"><span class="sn-tilde">~</span>20</div>
+        <div class="sn-stat-label">finished SKUs \u00b7 component families</div>
+        <div class="sn-entity-chip">Products</div>
+        <div class="sn-note">Finished-goods catalog + component families</div>
+      </div>
+      <div class="sn-connector"><div class="sn-conn-dots">\u22EF</div><div class="sn-conn-arrow">\u2192</div></div>
+
+      <div class="sn-stage">
+        <div class="sn-badge">3</div>
+        <div class="sn-stage-icon">\U0001F517</div>
+        <div class="sn-nb-name">03_link_suppliers_products.ipynb</div>
+        <div class="sn-stat-num" style="font-size:22px;line-height:1.2;">S\u00d7P<br>Map</div>
+        <div class="sn-stat-label">supplier-product map \u00b7 BOM</div>
+        <div class="sn-entity-chip">BOM + Mapping</div>
+        <div class="sn-note">Who supplies what \u00b7 BOM explosion backbone \u00b7 units-per-SKU</div>
+      </div>
+      <div class="sn-connector"><div class="sn-conn-dots">\u22EF</div><div class="sn-conn-arrow">\u2192</div></div>
+
+      <div class="sn-stage">
+        <div class="sn-badge">4</div>
+        <div class="sn-stage-icon">\U0001F4CA</div>
+        <div class="sn-nb-name">04_FinishedGoods_Demand.ipynb</div>
+        <div class="sn-stat-num" style="font-size:20px;line-height:1.25;">W\u00d7F<br>\u00d7SKU</div>
+        <div class="sn-stat-label">weekly \u00b7 facility \u00b7 SKU series</div>
+        <div class="sn-entity-chip">Historical Demand</div>
+        <div class="sn-note">Training data for HGB forecast model</div>
+      </div>
+      <div class="sn-connector"><div class="sn-conn-dots">\u22EF</div><div class="sn-conn-arrow">\u2192</div></div>
+
+      <div class="sn-edge-card sn-output">
+        <div class="sn-edge-icon">\u2705</div>
+        <div class="sn-edge-label">LP-Ready Universe</div>
+        <div class="sn-edge-detail">Fully linked<br>entity graph</div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="gsec">
+    <div class="gsec-n">Section 02</div>
+    <div class="gsec-t">Why Synthetic?</div>
+    <div class="sn-why-card">
+      <div class="sn-why-icon">\U0001F6E1\uFE0F</div>
+      <div class="sn-why-body">
+        <div class="sn-why-title">Why synthetic data?</div>
+        <ul class="sn-why-bullets">
+          <li>Real supplier rosters are NDA-protected and proprietary \u2014 no public dataset covers the supplier-product-facility graph needed for LP.</li>
+          <li>Synthetic data anchored to real country-level public signals (LPI, WGI, tariffs, PPI) preserves economic realism without disclosing any firm's sourcing strategy.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="dp-panel-sql" class="dpanel">
+  <div class="pclose" onclick="closeDp('sql')">\u2715</div>
+  <div class="ph">SQL Warehouse \u2014 11 Objects \u00b7 Strict Build Order</div>
+  <div class="psub">PostgreSQL schema: 4 dimensions \u00b7 4 facts \u00b7 3 LP-ready views \u2014 load in the exact sequence below</div>
+
+  <div class="gsec">
+    <div class="gsec-n">Section 01</div>
+    <div class="gsec-t">Schema Browser</div>
+    <div class="sw-schema-grid">
+
+      <div class="sw-family-col">
+        <div class="sw-family-header">
+          <span class="sw-family-icon">\U0001F4CB</span>
+          <span class="sw-family-name">Dimensions</span>
+          <span class="sw-family-badge sw-badge-dim">4</span>
+        </div>
+        <div class="sw-table-card sw-card-dim"><span class="sw-table-name">dim_supplier</span><span class="sw-table-grain">one row per supplier</span></div>
+        <div class="sw-table-card sw-card-dim"><span class="sw-table-name">dim_product</span><span class="sw-table-grain">one row per component/SKU</span></div>
+        <div class="sw-table-card sw-card-dim"><span class="sw-table-name">dim_bom</span><span class="sw-table-grain">SKU\u2192component bridge</span></div>
+        <div class="sw-table-card sw-card-dim"><span class="sw-table-name">dim_forecast_run</span><span class="sw-table-grain">forecast batch metadata</span></div>
+      </div>
+
+      <div class="sw-family-col">
+        <div class="sw-family-header">
+          <span class="sw-family-icon">\U0001F4CA</span>
+          <span class="sw-family-name">Facts</span>
+          <span class="sw-family-badge sw-badge-fact">4</span>
+        </div>
+        <div class="sw-table-card sw-card-fact"><span class="sw-table-name">fact_semiconductor_demand</span><span class="sw-table-grain">historical weekly demand</span></div>
+        <div class="sw-table-card sw-card-fact"><span class="sw-table-name">fact_supplier_product_profile</span><span class="sw-table-grain">price/quality per supplier</span></div>
+        <div class="sw-table-card sw-card-fact"><span class="sw-table-name">fact_inventory_policy</span><span class="sw-table-grain">safety stock + base-stock per fac\u00d7product</span></div>
+        <div class="sw-table-card sw-card-fact"><span class="sw-table-name">fact_component_inventory_history</span><span class="sw-table-grain">weekly benchmark inventory</span></div>
+      </div>
+
+      <div class="sw-family-col">
+        <div class="sw-family-header">
+          <span class="sw-family-icon">\U0001F50D</span>
+          <span class="sw-family-name">Views</span>
+          <span class="sw-family-badge sw-badge-view">3</span>
+        </div>
+        <div class="sw-table-card sw-card-view"><span class="sw-table-name">vw_supplier_complete_profile</span><span class="sw-table-grain">canonical LP supplier input</span></div>
+        <div class="sw-table-card sw-card-view"><span class="sw-table-name">vw_component_requirement_lp</span><span class="sw-table-grain">horizon demand for LP</span></div>
+        <div class="sw-table-card sw-card-view"><span class="sw-table-name">vw_procurement_requirement</span><span class="sw-table-grain">weekly trigger signal</span></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="gsec">
+    <div class="gsec-n">Section 02</div>
+    <div class="gsec-t">Build Order</div>
+    <div class="sw-ladder">
+      <div class="sw-ladder-line"></div>
+
+      <div class="sw-ladder-step"><div class="sw-step-num">1</div><div class="sw-step-body"><span class="sw-step-file">dimensions.sql</span><span class="sw-step-type sw-type-ddl">DDL</span></div></div>
+      <div class="sw-ladder-step"><div class="sw-step-num">2</div><div class="sw-step-body"><span class="sw-step-file">facts.sql</span><span class="sw-step-type sw-type-ddl">DDL</span></div></div>
+      <div class="sw-ladder-step"><div class="sw-step-num">3</div><div class="sw-step-body"><span class="sw-step-file">load/stage.sql</span><span class="sw-step-type sw-type-stage">STAGING DDL</span></div></div>
+      <div class="sw-ladder-step"><div class="sw-step-num">4</div><div class="sw-step-body"><span class="sw-step-file">load/copy_staging.sql</span><span class="sw-step-type sw-type-data">DATA LOAD</span></div></div>
+      <div class="sw-ladder-step"><div class="sw-step-num">5</div><div class="sw-step-body"><span class="sw-step-file">load/load_dimensions.sql</span><span class="sw-step-type sw-type-data">DATA LOAD</span></div></div>
+      <div class="sw-ladder-step"><div class="sw-step-num">6</div><div class="sw-step-body"><span class="sw-step-file">load/load_facts.sql</span><span class="sw-step-type sw-type-data">DATA LOAD</span></div></div>
+      <div class="sw-ladder-step"><div class="sw-step-num">7</div><div class="sw-step-body"><span class="sw-step-file">load/load_bom.sql</span><span class="sw-step-type sw-type-data">DATA LOAD</span></div></div>
+      <div class="sw-ladder-step"><div class="sw-step-num">8</div><div class="sw-step-body"><span class="sw-step-file">views.sql</span><span class="sw-step-type sw-type-views">VIEWS</span></div></div>
+
+      <div class="sw-ladder-warn"><i class="sw-warn-icon">\u26A0</i>Out-of-order execution breaks foreign keys. See <span class="sw-warn-code">sql/README.md</span> for full commands.</div>
+    </div>
+  </div>
+</div>
+
+
 <script>
 var canvas = document.getElementById("c");
 var ctx = canvas.getContext("2d");
@@ -2583,6 +3107,25 @@ function drawRR(x,y,w,h,r) {
 function clamp(v,a,b) { return Math.max(a,Math.min(b,v)); }
 function easeOut(t) { return 1-Math.pow(1-t,3); }
 
+// Click-to-expand wiring
+var DP_EXPANDABLE = {
+  data_sources:  {panel:"dp-panel-sources",  tip:"Click to see all 9 datasets grouped by domain"},
+  cleaning:      {panel:"dp-panel-cleaning", tip:"Click to see before/after transforms"},
+  synthesis:     {panel:"dp-panel-synth",    tip:"Click to see 4-notebook generation chain"},
+  sql_warehouse: {panel:"dp-panel-sql",      tip:"Click to see the full schema + build order"},
+};
+function closeDp(which) {
+  var map = {sources:"dp-panel-sources", cleaning:"dp-panel-cleaning",
+             synth:"dp-panel-synth", sql:"dp-panel-sql"};
+  var id = map[which];
+  if (id) document.getElementById(id).style.display = "none";
+}
+function closeAllDp() {
+  ["dp-panel-sources","dp-panel-cleaning","dp-panel-synth","dp-panel-sql"]
+    .forEach(function(id) { document.getElementById(id).style.display = "none"; });
+}
+document.addEventListener("keydown", function(e) { if (e.key === "Escape") closeAllDp(); });
+
 // Hover
 var hoverNode = null;
 canvas.addEventListener("mousemove", function(evt) {
@@ -2593,6 +3136,7 @@ canvas.addEventListener("mousemove", function(evt) {
     var n = nodes[i];
     if (mx >= n.x && mx <= n.x+n.w && my >= n.y && my <= n.y+n.h) { hoverNode = n; break; }
   }
+  canvas.style.cursor = (hoverNode && DP_EXPANDABLE[hoverNode.id]) ? "pointer" : "default";
   if (hoverNode) {
     var key = hoverNode.key;
     var html = '<div class="tl">' + hoverNode.label + '</div>';
@@ -2601,6 +3145,7 @@ canvas.addEventListener("mousemove", function(evt) {
       INFO[key].tools.forEach(function(t) { html += '<div class="tt">' + t + '</div>'; });
     }
     if (hoverNode.id === "output") html += '<div class="td">Final supplier allocation with cost, risk, and executive summary.</div>';
+    if (DP_EXPANDABLE[hoverNode.id]) html += '<div class="td" style="color:#76b900;font-weight:600;">\u25B6 ' + DP_EXPANDABLE[hoverNode.id].tip + '</div>';
     tip.innerHTML = html;
     tip.style.display = "block";
     var tx = mx + 14, ty = my - 10;
@@ -2611,6 +3156,20 @@ canvas.addEventListener("mousemove", function(evt) {
   } else { tip.style.display = "none"; }
 });
 canvas.addEventListener("mouseleave", function() { tip.style.display = "none"; });
+canvas.addEventListener("click", function(evt) {
+  var rect = canvas.getBoundingClientRect();
+  var mx = evt.clientX - rect.left, my = evt.clientY - rect.top;
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    if (mx >= n.x && mx <= n.x+n.w && my >= n.y && my <= n.y+n.h) {
+      if (DP_EXPANDABLE[n.id]) {
+        document.getElementById(DP_EXPANDABLE[n.id].panel).style.display = "block";
+        tip.style.display = "none";
+      }
+      break;
+    }
+  }
+});
 
 // Animation
 var ANIM_DUR = 3000;
@@ -2731,6 +3290,24 @@ function draw(ts) {
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillStyle = "#000";
       ctx.fillText(badge, bx, by);
+    }
+
+    // Pulsing "+" indicator for expandable nodes
+    if (DP_EXPANDABLE && DP_EXPANDABLE[n.id]) {
+      var epulse = 0.6 + 0.4 * Math.sin(elapsed/400);
+      var ebx = n.x + n.w - 16;
+      var eby = n.y + n.h - 16;
+      var ebr = 12;
+      ctx.beginPath();
+      ctx.arc(ebx, eby, ebr, 0, TAU);
+      ctx.fillStyle = "rgba(118,185,0," + (0.85*epulse) + ")";
+      ctx.fill();
+      ctx.strokeStyle = "#76b900"; ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.font = "700 15px Inter,sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "#0A1F17";
+      ctx.fillText("+", ebx, eby);
     }
 
     ctx.restore();
