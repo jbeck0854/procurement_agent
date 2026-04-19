@@ -351,8 +351,6 @@ def _render_forecast_expanders(key_suffix: str = "live") -> None:
                 "facility_id":        "Facility",
                 "semiconductor_id":   "SKU",
                 "predicted_demand":   "Forecast",
-                "interval_lower_90":  "Lower 90%",
-                "interval_upper_90":  "Upper 90%",
                 "horizon_weeks":      "Horizon Wks",
             }
             _dd = _dd.rename(columns={k: v for k, v in _rename_map.items() if k in _dd.columns})
@@ -373,7 +371,10 @@ def _render_forecast_expanders(key_suffix: str = "live") -> None:
                 _dd = _dd[_dd["Facility"].isin(_sel_fac)]
             if _sel_sku and "SKU" in _dd.columns:
                 _dd = _dd[_dd["SKU"].isin(_sel_sku)]
-            _fmt_fe = {c: "{:,.0f}" for c in ["Forecast", "Lower 90%", "Upper 90%"] if c in _dd.columns}
+            _drop_cols = [c for c in ("interval_lower_90", "interval_upper_90", "Lower 90%", "Upper 90%") if c in _dd.columns]
+            if _drop_cols:
+                _dd = _dd.drop(columns=_drop_cols)
+            _fmt_fe = {c: "{:,.0f}" for c in ["Forecast"] if c in _dd.columns}
             st.caption(f"{len(_dd):,} rows")
             st.dataframe(
                 _dd.style.format(_fmt_fe),
