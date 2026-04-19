@@ -284,9 +284,10 @@ def _render_executive_summary() -> None:
             )
         else:
             _prem_sentence = (
-                f"The {session_delta_pct:+.1f}% premium is material but defensible — driven by "
-                f"active diversification and risk constraints that eliminate single-point "
-                f"sourcing failure as a procurement risk."
+                f"The optimized plan incurs a {session_delta_pct:+.1f}% cost premium, representing "
+                f"an investment in supply continuity. Given the concentration risk in the baseline, "
+                f"a single disruption event would likely exceed this premium — making diversification "
+                f"economically justified."
             )
 
         if _single_country_prds:
@@ -323,8 +324,9 @@ def _render_executive_summary() -> None:
         _risk_box(f"<strong>Why the baseline is cheaper:</strong> {_baseline_why}")
         _rec_box(
             f"<strong>Why the optimized plan is preferable:</strong> {_opt_why} "
-            f"The risk premium is the cost of protection against a disruption event that "
-            f"could halt production."
+            f"Just as diversification increases expected sales in uncertain supply scenarios, "
+            f"this procurement strategy increases expected supply reliability under real-world disruptions. "
+            f"The risk premium is the cost of that protection."
         )
     else:
         st.caption("Baseline comparison unavailable — baseline data not present for this run.")
