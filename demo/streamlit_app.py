@@ -32,7 +32,7 @@ from param_extractor import extract_lp_params, merge_with_prior, fill_defaults
 from ui.common import _inject_scroll_to_bottom, _inject_scroll_to_anchor
 from ui.lp_views import _build_run_entry, _render_lp_result, _render_procurement_status_bar
 from ui.executive_summary import _render_executive_summary
-from ui.forecast_views import _render_forecast_summary_structured, _render_forecast_expanders
+from ui.forecast_views import _render_forecast_summary_structured, _render_forecast_expanders, _render_csv_button
 from ui.session_helpers import _store_approved_run, _merge_final_states
 from ui.theme import (
     inject_css, FAVICON, LOGO_B64, USER_AVATAR, CPU_AVATAR,
@@ -2399,6 +2399,8 @@ else:
                 # Non-trace messages: render content as-is
                 if msg.get("content"):
                     st.markdown(msg["content"], unsafe_allow_html=True)
+                    if "validating the historical demand" in msg.get("content", ""):
+                        _render_csv_button()
 
             if _b64 and not msg.get("chart_first"):
                 st.image(base64.b64decode(_b64))
@@ -2507,6 +2509,8 @@ else:
                 if final_resp:
                     with st.chat_message("assistant", avatar=CPU_AVATAR):
                         st.markdown(final_resp, unsafe_allow_html=True)
+                        if any(t.get("agent") == "planner" for t in _result_tasks):
+                            _render_csv_button()
                     st.session_state.messages.append({
                         "role": "assistant", "content": final_resp,
                         "has_trace": False, "summary": "",
