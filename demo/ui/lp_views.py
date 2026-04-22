@@ -46,6 +46,7 @@ def _build_run_entry(result: dict) -> dict:
         "baseline_selected_suppliers": list(baseline.get("baseline_selected_suppliers") or []),
         "baseline_n_suppliers":        len(baseline.get("baseline_selected_suppliers") or []),
         "baseline_country_count":      baseline.get("baseline_country_count", 0),
+        "disrupted_baseline":          result.get("disrupted_baseline") or {},
     }
 
 

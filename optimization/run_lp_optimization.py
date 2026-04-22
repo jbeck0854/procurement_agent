@@ -304,6 +304,65 @@ def _load_scored_suppliers(conn, params: LPParams) -> tuple[pd.DataFrame, list]:
     return eligible, excluded
 
 
+# ── Disrupted-baseline scenario ───────────────────────────────────────────────
+
+def _compute_disrupted_baseline(
+    D:           float,
+    eligible_df: pd.DataFrame,
+    baseline:    dict,
+) -> dict:
+    """
+    Compute an emergency re-sourcing cost/timing scenario assuming the
+    cost-only baseline procurement source is fully disrupted.
+
+    Logic:
+      emergency_unit_cost  = 1.25 × average landed_unit_cost of all eligible suppliers
+      emergency_total_cost = emergency_unit_cost × D
+      emergency_lead_weeks = average lead time of eligible US suppliers (weeks) + 3
+                             (falls back to average of all eligible + 3 if no US suppliers)
+
+    Returns {} if prerequisites are missing.
+    """
+    if eligible_df.empty or not baseline or D <= 0:
+        return {}
+
+    avg_unit_cost        = float(eligible_df['landed_unit_cost'].astype(float).mean())
+    emergency_unit_cost  = round(avg_unit_cost * 1.25, 5)
+    emergency_total_cost = round(emergency_unit_cost * D, 2)
+
+    baseline_total_cost  = baseline.get('baseline_total_cost', 0.0) or 0.0
+    if baseline_total_cost > 0:
+        incremental_cost     = round(emergency_total_cost - baseline_total_cost, 2)
+        incremental_cost_pct = round(incremental_cost / baseline_total_cost * 100, 1)
+    else:
+        incremental_cost     = None
+        incremental_cost_pct = None
+
+    us_df = eligible_df[eligible_df['country_code'].astype(str).str.upper() == 'US'].copy()
+    n_us  = len(us_df)
+
+    if n_us > 0:
+        avg_lead_days = float(us_df['lead_time_mean'].astype(float).mean())
+        lead_basis    = "US suppliers"
+    else:
+        avg_lead_days = float(eligible_df['lead_time_mean'].astype(float).mean())
+        lead_basis    = "all eligible suppliers"
+
+    avg_lead_weeks       = max(1, round(avg_lead_days / 7.0))
+    emergency_lead_weeks = avg_lead_weeks + 3
+
+    return {
+        'avg_eligible_unit_cost': round(avg_unit_cost, 5),
+        'emergency_unit_cost':    emergency_unit_cost,
+        'emergency_total_cost':   emergency_total_cost,
+        'emergency_lead_weeks':   emergency_lead_weeks,
+        'emergency_lead_basis':   lead_basis,
+        'n_us_suppliers':         n_us,
+        'incremental_cost':       incremental_cost,
+        'incremental_cost_pct':   incremental_cost_pct,
+    }
+
+
 # ── Lead-time feasibility note ────────────────────────────────────────────────
 
 def _build_lead_time_feasibility_note(
@@ -1188,6 +1247,9 @@ def run(params: LPParams) -> dict:
         # ── Step 8: Baseline comparison (silent — not printed; for session summary) ─
         baseline = _run_baseline(D, eligible_df, params)
 
+        # ── Step 8b: Disrupted-baseline scenario (exec summary what-if) ──────────
+        disrupted_baseline = _compute_disrupted_baseline(D, eligible_df, baseline)
+
         # ── Step 9: Formula description ────────────────────────────────────────
         formula_desc = _build_formula_description(
             D, params, n_eligible, n_total, solve,
@@ -1292,6 +1354,7 @@ def run(params: LPParams) -> dict:
             'formula_description':      formula_desc,
             'executive_summary':        exec_summary,
             'baseline':                 baseline,
+            'disrupted_baseline':       disrupted_baseline,
             # ── Semantic alerts (rendered prominently by demo layer) ───────────
             'avoid_tier_warning':       avoid_tier_warning,
             'compliance_unlocked_note': compliance_unlocked_note,

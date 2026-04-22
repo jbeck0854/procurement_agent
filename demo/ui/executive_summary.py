@@ -332,6 +332,97 @@ def _render_executive_summary() -> None:
         st.caption("Baseline comparison unavailable — baseline data not present for this run.")
 
     # ── Expandable justification panels ──────────────────────────────────────
+
+    # ── WHAT IF PROCUREMENT FROM COST-ONLY BASELINE WAS DISRUPTED ────────────
+    _disruption_rows = []
+    for r in approved:
+        _db = r.get("disrupted_baseline") or {}
+        if not _db:
+            continue
+        _prd_label = r.get("product", "unknown").replace("_", " ").title()
+        _opt_cost  = r.get("total_cost") or 0.0
+        _e_cost    = _db.get("emergency_total_cost") or 0.0
+        _e_weeks   = _db.get("emergency_lead_weeks")
+        _e_basis   = _db.get("emergency_lead_basis", "eligible suppliers")
+
+        _diff_vs_opt     = _e_cost - _opt_cost if (_e_cost and _opt_cost) else None
+        _diff_vs_opt_pct = (_diff_vs_opt / _opt_cost * 100) if (_diff_vs_opt is not None and _opt_cost > 0) else None
+
+        def _fmt_diff(v):
+            if v is None:
+                return "—"
+            return f"+${v:,.2f}" if v >= 0 else f"-${abs(v):,.2f}"
+
+        def _fmt_diff_pct(v):
+            if v is None:
+                return "—"
+            return f"+{v:.1f}%" if v >= 0 else f"{v:.1f}%"
+
+        _disruption_rows.append({
+            "Product":                          _prd_label,
+            "Optimized Plan Cost":              f"${_opt_cost:,.2f}" if _opt_cost else "—",
+            "Disrupted Baseline Cost":          f"${_e_cost:,.2f}" if _e_cost else "—",
+            "Difference vs Optimized Plan ($)": _fmt_diff(_diff_vs_opt),
+            "Difference vs Optimized Plan (%)": _fmt_diff_pct(_diff_vs_opt_pct),
+            "Emergency Delivery Timing":        f"~{_e_weeks} weeks (post-disruption)" if _e_weeks else "—",
+        })
+
+    if _disruption_rows:
+        with st.expander("WHAT IF PROCUREMENT FROM COST-ONLY BASELINE WAS DISRUPTED", expanded=False):
+            st.caption(
+                "This scenario models a disruption to the cost-only baseline, forcing procurement "
+                "to shift to expedited spot-market sourcing. Costs increase due to urgency and "
+                "reduced supplier availability, and delivery timelines extend due to re-routing "
+                "and supplier onboarding delays. All figures are compared against the approved "
+                "optimized plan."
+            )
+
+            _total_opt = sum(r.get("total_cost") or 0.0 for r in approved if (r.get("disrupted_baseline") or {}))
+            _total_e   = sum((r.get("disrupted_baseline") or {}).get("emergency_total_cost") or 0.0 for r in approved)
+            _total_diff_vs_opt = _total_e - _total_opt if _total_opt > 0 else None
+
+            if len(_disruption_rows) > 1 and _total_opt > 0:
+                _oc1, _oc2, _oc3 = st.columns(3)
+                _oc1.metric("Optimized Plan Cost",      f"${_total_opt:,.2f}")
+                _oc2.metric("Disrupted Baseline Cost",  f"${_total_e:,.2f}")
+                _oc3.metric(
+                    "Extra Cost vs Optimized Plan",
+                    f"${abs(_total_diff_vs_opt):,.2f}" if _total_diff_vs_opt is not None else "—",
+                    delta=f"{(_total_diff_vs_opt / _total_opt * 100):+.1f}% vs optimized" if _total_diff_vs_opt is not None else None,
+                    delta_color="inverse",
+                )
+
+            st.dataframe(_pd.DataFrame(_disruption_rows), use_container_width=True, hide_index=True)
+
+            _risk_box(
+                "<strong>Why the baseline is exposed:</strong> The cost-only baseline concentrates "
+                "procurement in the lowest-cost supplier(s) with no redundancy. A single disruption — "
+                "tariff change, port closure, supplier insolvency, or geopolitical event — eliminates "
+                "that source entirely. Emergency re-sourcing at spot rates typically carries a 20–30% "
+                "cost premium and delayed deliveries — often 3+ additional weeks due to the time "
+                "required to detect the disruption and re-route procurement."
+            )
+            if _total_diff_vs_opt is not None and _total_opt > 0:
+                _diff_pct_vs_opt = _total_diff_vs_opt / _total_opt * 100
+                if _total_diff_vs_opt > 0:
+                    _conclusion = (
+                        f"<strong>The disrupted baseline costs more than the optimized plan:</strong> "
+                        f"If the cost-only baseline were disrupted, emergency re-sourcing would cost an estimated "
+                        f"<strong>${_total_diff_vs_opt:,.2f} more</strong> than the approved optimized plan "
+                        f"({_diff_pct_vs_opt:.1f}% above optimized). "
+                        f"The diversification premium already paid is smaller than this exposure — "
+                        f"making it the economically rational choice."
+                    )
+                else:
+                    _conclusion = (
+                        f"<strong>Disrupted baseline vs optimized plan:</strong> "
+                        f"Emergency re-sourcing would cost ${abs(_total_diff_vs_opt):,.2f} "
+                        f"({'less' if _total_diff_vs_opt < 0 else 'more'}) than the optimized plan. "
+                        f"The optimized plan's diversification still provides supply continuity that "
+                        f"emergency spot sourcing cannot guarantee."
+                    )
+                _rec_box(_conclusion)
+
     with st.expander("Why the Optimized Plan Reduces Supplier Risk", expanded=False):
         for r in approved:
             _prd_label_e = r.get("product", "unknown").replace("_", " ").title()
