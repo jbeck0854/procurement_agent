@@ -595,6 +595,8 @@ def query_bom_translation_explainer(**kwargs) -> dict:
                 """
                 SELECT
                     v.semiconductor_id                        AS sku,
+                    sku_meta.sku_performance_tier             AS performance,
+                    sku_meta.finished_family                  AS family,
                     p.product                                 AS component,
                     b.units_per_sku                           AS units_per_sku,
                     SUM(v.predicted_demand)                   AS total_forecast,
@@ -605,8 +607,16 @@ def query_bom_translation_explainer(**kwargs) -> dict:
                 JOIN dim_bom b
                     ON  b.semiconductor_id = v.semiconductor_id
                     AND b.product_key      = v.product_key
+                JOIN (
+                    SELECT semiconductor_id,
+                           MAX(sku_performance_tier) AS sku_performance_tier,
+                           MAX(finished_family)      AS finished_family
+                    FROM   fact_semiconductor_demand
+                    GROUP  BY semiconductor_id
+                ) sku_meta ON sku_meta.semiconductor_id = v.semiconductor_id
                 WHERE v.forecast_run_id = %s
-                GROUP BY v.semiconductor_id, p.product, b.units_per_sku
+                GROUP BY v.semiconductor_id, sku_meta.sku_performance_tier,
+                         sku_meta.finished_family, p.product, b.units_per_sku
                 ORDER BY v.semiconductor_id, SUM(v.gross_component_requirement) DESC
                 """,
                 (run_id,),
@@ -620,11 +630,13 @@ def query_bom_translation_explainer(**kwargs) -> dict:
         "rows": [
             {
                 "Finished SKU":           r[0],
-                "Component":              r[1],
-                "Units / SKU":            float(r[2]),
-                "Forecast (units)":       float(r[3]),
-                "Gross Component Demand": float(r[4]),
-                "Facilities":             int(r[5]),
+                "Performance":            r[1] if r[1] else "—",
+                "Family":                 r[2].replace("_", " ").title() if r[2] else "—",
+                "Component":              r[3],
+                "Units / SKU":            float(r[4]),
+                "Forecast (units)":       float(r[5]),
+                "Gross Component Demand": float(r[6]),
+                "Facilities":             int(r[7]),
             }
             for r in rows
         ],
