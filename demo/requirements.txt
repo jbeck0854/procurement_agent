@@ -22,6 +22,9 @@ numpy>=1.26
 PyYAML>=6.0
 matplotlib>=3.8
 
+# Forecasting / ML dependencies (REQUIRED for run_production)
+scikit-learn>=1.4
+
 # LP optimization (used by optimization/run_lp_optimization.py)
 pulp>=2.7
 

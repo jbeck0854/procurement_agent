@@ -75,7 +75,7 @@ class LPParams:
     budget_cap          : optional USD budget cap for this product / run;
                           None = unconstrained
     compliance_threshold: minimum compliance_eligibility to include a supplier;
-                          default 0.60 (contract default)
+                          default 0.50 (contract default)
     lambda_risk         : risk-aversion weight 0–1 in objective;
                           0 = pure cost, 1 = pure risk
     max_supplier_share  : maximum fraction of total requirement any single
@@ -104,7 +104,7 @@ class LPParams:
     product:               str
     facility_id:           Optional[str]   = None
     budget_cap:            Optional[float] = None
-    compliance_threshold:  float           = 0.60
+    compliance_threshold:  float           = 0.50
     lambda_risk:           float           = 0.50
     max_supplier_share:    float           = 1.00
     service_level_target:  float           = 1.00
@@ -304,6 +304,65 @@ def _load_scored_suppliers(conn, params: LPParams) -> tuple[pd.DataFrame, list]:
     return eligible, excluded
 
 
+# ── Disrupted-baseline scenario ───────────────────────────────────────────────
+
+def _compute_disrupted_baseline(
+    D:           float,
+    eligible_df: pd.DataFrame,
+    baseline:    dict,
+) -> dict:
+    """
+    Compute an emergency re-sourcing cost/timing scenario assuming the
+    cost-only baseline procurement source is fully disrupted.
+
+    Logic:
+      emergency_unit_cost  = 1.25 × average landed_unit_cost of all eligible suppliers
+      emergency_total_cost = emergency_unit_cost × D
+      emergency_lead_weeks = average lead time of eligible US suppliers (weeks) + 3
+                             (falls back to average of all eligible + 3 if no US suppliers)
+
+    Returns {} if prerequisites are missing.
+    """
+    if eligible_df.empty or not baseline or D <= 0:
+        return {}
+
+    avg_unit_cost        = float(eligible_df['landed_unit_cost'].astype(float).mean())
+    emergency_unit_cost  = round(avg_unit_cost * 1.25, 5)
+    emergency_total_cost = round(emergency_unit_cost * D, 2)
+
+    baseline_total_cost  = baseline.get('baseline_total_cost', 0.0) or 0.0
+    if baseline_total_cost > 0:
+        incremental_cost     = round(emergency_total_cost - baseline_total_cost, 2)
+        incremental_cost_pct = round(incremental_cost / baseline_total_cost * 100, 1)
+    else:
+        incremental_cost     = None
+        incremental_cost_pct = None
+
+    us_df = eligible_df[eligible_df['country_code'].astype(str).str.upper() == 'US'].copy()
+    n_us  = len(us_df)
+
+    if n_us > 0:
+        avg_lead_days = float(us_df['lead_time_mean'].astype(float).mean())
+        lead_basis    = "US suppliers"
+    else:
+        avg_lead_days = float(eligible_df['lead_time_mean'].astype(float).mean())
+        lead_basis    = "all eligible suppliers"
+
+    avg_lead_weeks       = max(1, round(avg_lead_days / 7.0))
+    emergency_lead_weeks = avg_lead_weeks + 3
+
+    return {
+        'avg_eligible_unit_cost': round(avg_unit_cost, 5),
+        'emergency_unit_cost':    emergency_unit_cost,
+        'emergency_total_cost':   emergency_total_cost,
+        'emergency_lead_weeks':   emergency_lead_weeks,
+        'emergency_lead_basis':   lead_basis,
+        'n_us_suppliers':         n_us,
+        'incremental_cost':       incremental_cost,
+        'incremental_cost_pct':   incremental_cost_pct,
+    }
+
+
 # ── Lead-time feasibility note ────────────────────────────────────────────────
 
 def _build_lead_time_feasibility_note(
@@ -312,25 +371,41 @@ def _build_lead_time_feasibility_note(
     resolved_run_id: int,
     eligible_df:    pd.DataFrame,
     allocation_rows: list,
-) -> str:
+) -> tuple:
     """
-    Return a 0–2 sentence execution-risk note for the executive summary, or ''.
+    Return (note_str, urgency_feasibility) tuple.
+
+    note_str: 0–2 sentence execution-risk note appended to executive summary.
+    urgency_feasibility: dict with per-week feasibility data, or None if no shortfall.
 
     Fires only when the earliest triggered procurement week occurs before the
     selected suppliers can realistically deliver, based on lead_time_mean (days).
     Lead time is converted to weeks using round(lead_time_mean / 7.0), consistent
     with the simulation convention in run_inventory.py.
 
-    Case A: faster alternatives exist in the eligible pool → list top 3.
-    Case B: no eligible supplier can cover in time → spot-sourcing note.
+    Case A: faster alternatives exist in the eligible pool for the earliest week.
+    Case B: no eligible supplier can cover the earliest week → spot-sourcing note.
     Suppressed: LP infeasible, no allocation rows, no triggered weeks, no gap.
+
+    urgency_feasibility keys:
+      earliest_shortfall_week  — first triggered week before selected suppliers can deliver
+      gap_weeks                — all triggered weeks before min selected lead time
+      coverable_weeks          — gap weeks where ≥1 eligible supplier can deliver on time
+      uncoverable_weeks        — gap weeks where NO eligible supplier can deliver on time
+      fast_suppliers           — eligible pool suppliers that can cover ≥1 gap week
     """
     if not allocation_rows:
-        return ""
+        return "", None
 
     # Step 1: Earliest triggered procurement week for this product / run.
+    # Uses r.horizon_week from vw_procurement_requirement — absolute horizon
+    # position (1–20), computed by ROW_NUMBER inside the view definition.
     facility_filter = "AND r.facility_id = %(facility_id)s" if params.facility_id else ""
-    sql = f"""
+    qparams = {'run_id': resolved_run_id, 'product': params.product}
+    if params.facility_id:
+        qparams['facility_id'] = params.facility_id
+
+    sql_min = f"""
         SELECT MIN(r.horizon_week)
         FROM   vw_procurement_requirement r
         JOIN   dim_product dp ON dp.product_key = r.product_key
@@ -339,16 +414,12 @@ def _build_lead_time_feasibility_note(
           AND  r.net_requirement > 0
           {facility_filter}
     """
-    qparams = {'run_id': resolved_run_id, 'product': params.product}
-    if params.facility_id:
-        qparams['facility_id'] = params.facility_id
-
     with conn.cursor() as cur:
-        cur.execute(sql, qparams)
+        cur.execute(sql_min, qparams)
         row = cur.fetchone()
 
     if row is None or row[0] is None:
-        return ""  # no triggered weeks → no note
+        return "", None  # no triggered weeks → no note
 
     earliest_week = int(row[0])
 
@@ -357,45 +428,99 @@ def _build_lead_time_feasibility_note(
     selected_df  = eligible_df[eligible_df['supplier_id'].isin(selected_ids)]
 
     if selected_df.empty or 'lead_time_mean' not in selected_df.columns:
-        return ""
+        return "", None
 
     min_selected_lead_weeks = int(round(float(selected_df['lead_time_mean'].min()) / 7.0))
     min_selected_lead_weeks = max(1, min_selected_lead_weeks)
 
     # Step 3: Gap check — if selected suppliers can already cover in time, no note.
     if earliest_week >= min_selected_lead_weeks:
-        return ""
+        return "", None
 
-    # Step 4: Search eligible pool for faster alternatives.
+    # Step 4: Compute lead weeks for all eligible suppliers.
     eligible_df = eligible_df.copy()
     eligible_df['_lead_weeks'] = eligible_df['lead_time_mean'].apply(
         lambda x: max(1, int(round(float(x) / 7.0)))
     )
-    can_cover = (
-        eligible_df[eligible_df['_lead_weeks'] <= earliest_week]
+
+    # Step 5: Query ALL triggered weeks in the gap (not just earliest).
+    sql_all = f"""
+        SELECT DISTINCT r.horizon_week
+        FROM   vw_procurement_requirement r
+        JOIN   dim_product dp ON dp.product_key = r.product_key
+        WHERE  r.forecast_run_id = %(run_id)s
+          AND  dp.product        = %(product)s
+          AND  r.net_requirement > 0
+          {facility_filter}
+        ORDER BY r.horizon_week
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql_all, qparams)
+        all_triggered = [int(r[0]) for r in cur.fetchall()]
+
+    # Gap weeks = triggered weeks before selected suppliers can first deliver.
+    gap_trigger_weeks = [w for w in all_triggered if w < min_selected_lead_weeks]
+    if not gap_trigger_weeks:
+        gap_trigger_weeks = [earliest_week]
+
+    # Step 6: Per-week feasibility — which gap weeks can ≥1 eligible supplier cover?
+    coverable_weeks   = []
+    uncoverable_weeks = []
+    for w in gap_trigger_weeks:
+        if not eligible_df[eligible_df['_lead_weeks'] <= w].empty:
+            coverable_weeks.append(w)
+        else:
+            uncoverable_weeks.append(w)
+
+    # Fast suppliers: eligible pool members that can cover ≥1 gap week, top 3.
+    max_gap_week = max(gap_trigger_weeks)
+    fast_sups_df = (
+        eligible_df[eligible_df['_lead_weeks'] <= max_gap_week]
         .sort_values('lead_time_mean')
         .head(3)
     )
+    fast_suppliers = [
+        {
+            'supplier_id':     str(r['supplier_id']),
+            'lead_time_weeks': int(r['_lead_weeks']),
+            'lead_time_days':  int(round(float(r['lead_time_mean']))),
+        }
+        for _, r in fast_sups_df.iterrows()
+    ]
 
-    if not can_cover.empty:
-        # Case A: faster alternatives exist in the eligible pool.
+    urgency_feasibility = {
+        'earliest_shortfall_week':  earliest_week,
+        'min_selected_lead_weeks':  min_selected_lead_weeks,
+        'gap_weeks':                gap_trigger_weeks,
+        'coverable_weeks':          coverable_weeks,
+        'uncoverable_weeks':        uncoverable_weeks,
+        'fast_suppliers':           fast_suppliers,
+    }
+
+    # Step 7: Build exec-summary note string (preserves existing Case A / Case B text).
+    can_cover_earliest = eligible_df[eligible_df['_lead_weeks'] <= earliest_week]
+    if not can_cover_earliest.empty:
+        # Case A: faster alternatives exist for the earliest week.
+        top3  = can_cover_earliest.sort_values('lead_time_mean').head(3)
         names = [
             f"{i + 1}) {r['supplier_id']} ({int(round(float(r['lead_time_mean'])))} d)"
-            for i, (_, r) in enumerate(can_cover.iterrows())
+            for i, (_, r) in enumerate(top3.iterrows())
         ]
-        return (
+        note_str = (
             f" Early shortfall begins Week {earliest_week}, before selected supplier"
             f" lead times can cover it."
             f" Faster alternative(s) in pool: {', '.join(names)}."
         )
     else:
-        # Case B: no eligible supplier can cover in time.
-        return (
+        # Case B: no eligible supplier can cover the earliest week.
+        note_str = (
             f" Early shortfall begins Week {earliest_week}, before current supplier"
             f" lead times can cover it."
             f" Recommend emergency domestic / spot sourcing for immediate coverage;"
             f" planned orders will support later weeks."
         )
+
+    return note_str, urgency_feasibility
 
 
 # ── LP core ────────────────────────────────────────────────────────────────────
@@ -512,13 +637,19 @@ def _build_and_solve(
                 country_diversity_skip_reason = (
                     f"only {n_ctry} "
                     f"{'country' if n_ctry == 1 else 'countries'} "
-                    f"in eligible pool — need ≥ 3; constraint skipped"
+                    f"in eligible pool — need ≥ 3; applying share-cap fallback"
                 )
             else:
                 country_diversity_skip_reason = (
                     f"only {n_sup} eligible supplier(s) — need ≥ 3 "
-                    f"across ≥ 3 countries; constraint skipped"
+                    f"across ≥ 3 countries; applying share-cap fallback"
                 )
+            # MIP diversification is infeasible for this pool.
+            # Fall back to a 50% per-supplier share cap so the LP must use
+            # at least 2 suppliers, partially honouring the diversification intent.
+            _fallback_share = min(alpha, 0.50) if alpha < 1.0 else 0.50
+            for j in suppliers:
+                model += x[j] <= _fallback_share * demand_floor, f'max_share_{j}'
     else:
         # "none" or "supplier_share_only": apply simple per-supplier share cap if set
         if alpha < 1.0:
@@ -693,7 +824,8 @@ def _moq_flag(supplier_id: str, allocated_qty: float, eligible_df: pd.DataFrame)
 
 def _build_formula_description(D: float, params: LPParams,
                                 n_eligible: int, n_total: int,
-                                solve_result: dict) -> str:
+                                solve_result: dict,
+                                n_avoid_excluded: int = 0) -> str:
     """
     Return a structured, business-readable description of the LP that was solved.
     Shows the objective function, active constraints, and parameter interpretation.
@@ -787,6 +919,12 @@ def _build_formula_description(D: float, params: LPParams,
         f'  Compliance gate   : suppliers with eligibility < {params.compliance_threshold:.0%} excluded'
         f'  →  {n_eligible} of {n_total} {product} suppliers eligible'
     )
+    if n_avoid_excluded > 0:
+        n_in_lp = n_eligible - n_avoid_excluded
+        lines.append(
+            f'  Avoid-tier filter : {n_avoid_excluded} Avoid-tier supplier(s) excluded from LP'
+            f'  →  {n_in_lp} non-Avoid supplier(s) used  [active]'
+        )
 
     # Facility scope
     if params.facility_id:
@@ -927,8 +1065,78 @@ def run(params: LPParams) -> dict:
                 'formula_description':  '',
             }
 
+        # ── Pre-check A: Compliance unlock note (Fix P3) ──────────────────────
+        # Detect when a compliance threshold below the contract default (0.50)
+        # did not actually add any new suppliers to the eligible pool.
+        compliance_unlocked_note: str | None = None
+        _CONTRACT_COMPLIANCE_DEFAULT = 0.50
+        if params.compliance_threshold < _CONTRACT_COMPLIANCE_DEFAULT:
+            _newly_in_pool = int(
+                (eligible_df['compliance_eligibility'].astype(float)
+                 < _CONTRACT_COMPLIANCE_DEFAULT).sum()
+            )
+            if _newly_in_pool == 0:
+                compliance_unlocked_note = (
+                    f"Compliance threshold was lowered to "
+                    f"{params.compliance_threshold:.0%} but no additional suppliers "
+                    f"entered the eligible pool — no suppliers found with a compliance "
+                    f"score between {params.compliance_threshold:.0%} and "
+                    f"{_CONTRACT_COMPLIANCE_DEFAULT:.0%}. "
+                    f"Allocation is unchanged from the higher threshold."
+                )
+
+        # ── Pre-check B: Compliance exclusion callout (Fix P4) ────────────────
+        # Surface a note when compliance filtering excluded any suppliers.
+        n_excluded_compliance = sum(
+            1 for e in excluded if 'compliance' in e.get('exclusion_reason', '')
+        )
+        compliance_exclusion_note: str | None = (
+            f"{n_excluded_compliance} supplier(s) excluded by the "
+            f"{params.compliance_threshold:.0%} compliance threshold. "
+            f"Lowering the threshold may unlock additional options."
+        ) if n_excluded_compliance > 0 else None
+
+        # ── Pre-check C: Avoid-tier filter (Fix P1) ───────────────────────────
+        # If non-Avoid suppliers can satisfy demand on their own, restrict the LP
+        # to that subset.  If they cannot, fall back to the full eligible pool
+        # and set a visible warning so the user knows an Avoid supplier was used.
+        avoid_tier_warning: str | None = None
+        lp_eligible_df = eligible_df          # pool the LP will actually use
+
+        if 'decision_tier_global' in eligible_df.columns:
+            _non_avoid_df = eligible_df[
+                eligible_df['decision_tier_global'] != 'Avoid'
+            ].copy()
+            _n_avoid = len(eligible_df) - len(_non_avoid_df)
+
+            if _n_avoid > 0 and len(_non_avoid_df) > 0:
+                # Some suppliers are Avoid.  Test whether non-Avoid pool suffices.
+                _probe = _build_and_solve(D, _non_avoid_df, params)
+                if _probe['status'] == 'Optimal':
+                    # Non-Avoid pool is sufficient — use restricted pool.
+                    lp_eligible_df = _non_avoid_df
+                else:
+                    # Non-Avoid alone cannot satisfy demand — use full pool + warn.
+                    avoid_tier_warning = (
+                        f"Avoid-tier supplier(s) included: non-Avoid suppliers "
+                        f"alone cannot satisfy the full procurement requirement of "
+                        f"{_qty_int(D):,} units. Selection extended to Avoid-tier "
+                        f"suppliers due to constraint limitations."
+                    )
+            elif _n_avoid > 0 and len(_non_avoid_df) == 0:
+                # All eligible suppliers are Avoid-tier.
+                avoid_tier_warning = (
+                    "All eligible suppliers are classified as Avoid-tier. "
+                    "This indicates limited supplier availability after compliance "
+                    "filtering."
+                )
+        else:
+            _n_avoid = 0
+
+        n_avoid_excluded = len(eligible_df) - len(lp_eligible_df)
+
         # ── Step 3: Solve LP ───────────────────────────────────────────────────
-        solve = _build_and_solve(D, eligible_df, params)
+        solve = _build_and_solve(D, lp_eligible_df, params)
 
         # ── Step 4: Build allocation rows ──────────────────────────────────────
         allocation_rows = []
@@ -937,10 +1145,10 @@ def run(params: LPParams) -> dict:
             for j, qty in solve['allocation'].items():
                 if qty < 0.01:
                     continue
-                row   = eligible_df[eligible_df['supplier_id'] == j].iloc[0]
+                row   = lp_eligible_df[lp_eligible_df['supplier_id'] == j].iloc[0]
                 c_j   = float(row['landed_unit_cost'])
                 r_j   = float(row['risk_penalty_norm'])
-                moq   = _moq_flag(j, qty, eligible_df)
+                moq   = _moq_flag(j, qty, lp_eligible_df)
 
                 top_drivers = row.get('top_risk_drivers', [])
                 if isinstance(top_drivers, str):
@@ -970,7 +1178,7 @@ def run(params: LPParams) -> dict:
         # Zero-allocation suppliers → flagged as excluded with reason
         for j in solve['allocation']:
             if solve['allocation'][j] < 0.01:
-                row = eligible_df[eligible_df['supplier_id'] == j].iloc[0]
+                row = lp_eligible_df[lp_eligible_df['supplier_id'] == j].iloc[0]
                 excluded.append({
                     'supplier_id':            j,
                     'country_code':           str(row.get('country_code', '')).strip(),
@@ -1039,12 +1247,29 @@ def run(params: LPParams) -> dict:
         # ── Step 8: Baseline comparison (silent — not printed; for session summary) ─
         baseline = _run_baseline(D, eligible_df, params)
 
+        # ── Step 8b: Disrupted-baseline scenario (exec summary what-if) ──────────
+        disrupted_baseline = _compute_disrupted_baseline(D, eligible_df, baseline)
+
         # ── Step 9: Formula description ────────────────────────────────────────
         formula_desc = _build_formula_description(
-            D, params, n_eligible, n_total, solve
+            D, params, n_eligible, n_total, solve,
+            n_avoid_excluded=n_avoid_excluded,
         )
 
+        # Add Avoid-excluded suppliers to excluded list for transparency.
+        if n_avoid_excluded > 0:
+            _avoid_ids_in_lp = set(lp_eligible_df['supplier_id'])
+            for _, _avoid_row in eligible_df.iterrows():
+                if _avoid_row['supplier_id'] not in _avoid_ids_in_lp:
+                    excluded.append({
+                        'supplier_id':            _avoid_row['supplier_id'],
+                        'country_code':           str(_avoid_row.get('country_code', '')).strip(),
+                        'compliance_eligibility': float(_avoid_row.get('compliance_eligibility', 0)),
+                        'exclusion_reason':       'avoid_tier_filter',
+                    })
+
         # ── Step 10: Executive summary (business-readable one-paragraph string) ──
+        n_lp_eligible = len(lp_eligible_df)
         if solve['status'] == 'Optimal' and allocation_rows:
             n_excl_comp = sum(
                 1 for e in excluded if 'compliance' in e.get('exclusion_reason', '')
@@ -1054,7 +1279,7 @@ def run(params: LPParams) -> dict:
                 f"Procure {_qty_int(solve['demand_floor']):,} units of "
                 f"{params.product.replace('_', ' ')} "
                 f"({int(params.service_level_target * 100)}% service-level target). "
-                f"{len(allocation_rows)} of {n_eligible} eligible supplier(s) selected. "
+                f"{len(allocation_rows)} of {n_lp_eligible} eligible supplier(s) selected. "
                 f"Lead supplier: {top_sup['supplier_id']} "
                 f"({top_sup['share_pct']:.0f}% of volume, "
                 f"${top_sup['landed_unit_cost']:.4f}/unit). "
@@ -1071,10 +1296,14 @@ def run(params: LPParams) -> dict:
                     f" {n_excl_comp} supplier(s) excluded by compliance "
                     f"threshold ({params.compliance_threshold:.0%})."
                 )
+            # Prepend Avoid warning so it appears before the main summary.
+            if avoid_tier_warning:
+                exec_summary = f"[AVOID-TIER ALERT] {avoid_tier_warning}  " + exec_summary
             # ── Lead-time feasibility note (appended last; does not alter LP result) ──
-            exec_summary += _build_lead_time_feasibility_note(
-                conn, params, resolved_run_id, eligible_df, allocation_rows
+            _lt_note, _urgency_feas = _build_lead_time_feasibility_note(
+                conn, params, resolved_run_id, lp_eligible_df, allocation_rows
             )
+            exec_summary += _lt_note
         else:
             exec_summary = (
                 f"No feasible procurement plan for "
@@ -1083,6 +1312,7 @@ def run(params: LPParams) -> dict:
                     'infeasibility_reason', 'Infeasible.'
                 )
             )
+            _urgency_feas = None
 
         return {
             'params_recap': {
@@ -1112,16 +1342,35 @@ def run(params: LPParams) -> dict:
                 'n_excluded_compliance':     sum(
                     1 for e in excluded if 'compliance' in e.get('exclusion_reason','')
                 ),
+                'n_avoid_excluded_from_lp':  n_avoid_excluded,
+                'n_in_lp':                   n_lp_eligible,
                 'n_selected_by_lp':          len(allocation_rows),
                 'compliance_threshold_applied': params.compliance_threshold,
             },
-            'allocation':             allocation_rows,
-            'cost_summary':           cost_summary,
-            'excluded_suppliers':     excluded,
-            'constraint_diagnostics': constraint_diagnostics,
-            'formula_description':    formula_desc,
-            'executive_summary':      exec_summary,
-            'baseline':               baseline,
+            'allocation':               allocation_rows,
+            'cost_summary':             cost_summary,
+            'excluded_suppliers':       excluded,
+            'constraint_diagnostics':   constraint_diagnostics,
+            'formula_description':      formula_desc,
+            'executive_summary':        exec_summary,
+            'baseline':                 baseline,
+            'disrupted_baseline':       disrupted_baseline,
+            # ── Semantic alerts (rendered prominently by demo layer) ───────────
+            'avoid_tier_warning':       avoid_tier_warning,
+            'compliance_unlocked_note': compliance_unlocked_note,
+            'compliance_exclusion_note':compliance_exclusion_note,
+            'diversification_fallback_note': (
+                f"Country-diversified constraint could not be fully satisfied "
+                f"({solve.get('country_diversity_skip_reason', '')}). "
+                f"A 50% per-supplier share cap was applied as fallback to partially "
+                f"enforce diversification intent."
+            ) if (
+                params.diversification_mode == 'country_diversified'
+                and not solve.get('country_diversity_applied')
+                and solve.get('country_diversity_skip_reason')
+            ) else None,
+            # ── Per-week lead-time feasibility (used by demo urgency bullets) ──────
+            'urgency_feasibility': _urgency_feas,
         }
 
     finally:
@@ -1254,7 +1503,7 @@ if __name__ == '__main__':
     params = LPParams(
         product              = 'transistors',
         lambda_risk          = 0.50,
-        compliance_threshold = 0.60,
+        compliance_threshold = 0.50,
         max_supplier_share   = 1.00,
         service_level_target = 1.00,
         order_quantity       = 5_000,
@@ -1270,7 +1519,7 @@ if __name__ == '__main__':
     params2 = LPParams(
         product              = 'transistors',
         lambda_risk          = 0.75,
-        compliance_threshold = 0.60,
+        compliance_threshold = 0.50,
         max_supplier_share   = 0.40,
         budget_cap           = 5_000,
         service_level_target = 1.00,
@@ -1287,7 +1536,7 @@ if __name__ == '__main__':
     params3 = LPParams(
         product              = 'transistors',
         lambda_risk          = 0.50,
-        compliance_threshold = 0.60,
+        compliance_threshold = 0.50,
         max_supplier_share   = 1.00,
         service_level_target = 1.00,
         order_quantity       = 5_000,
@@ -1303,7 +1552,7 @@ if __name__ == '__main__':
     params4a = LPParams(
         product              = 'transistors',
         lambda_risk          = 0.50,
-        compliance_threshold = 0.60,
+        compliance_threshold = 0.50,
         max_supplier_share   = 0.40,
         service_level_target = 1.00,
         order_quantity       = 5_000,
@@ -1319,7 +1568,7 @@ if __name__ == '__main__':
     params4b = LPParams(
         product              = 'transistors',
         lambda_risk          = 0.50,
-        compliance_threshold = 0.60,
+        compliance_threshold = 0.50,
         max_supplier_share   = 0.40,
         service_level_target = 1.00,
         order_quantity       = 5_000,

@@ -14,8 +14,14 @@ from config import DATABASE_URL
 
 # How to start the postgres-mcp subprocess
 # Use the venv's postgres-mcp so it works regardless of PATH
+import sys
+
 _VENV_BIN = os.path.join(os.path.dirname(__file__), "venv", "bin")
+# Also check the venv that's actually running this process
+_RUNNING_VENV_BIN = os.path.dirname(sys.executable)
 _POSTGRES_MCP = os.path.join(_VENV_BIN, "postgres-mcp")
+if not os.path.exists(_POSTGRES_MCP):
+    _POSTGRES_MCP = os.path.join(_RUNNING_VENV_BIN, "postgres-mcp")
 
 server_params = StdioServerParameters(
     command=_POSTGRES_MCP if os.path.exists(_POSTGRES_MCP) else "postgres-mcp",

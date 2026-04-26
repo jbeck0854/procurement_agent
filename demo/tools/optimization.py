@@ -20,7 +20,7 @@ def run_optimization(
     lambda_risk: float = 0.50,
     max_supplier_share: float = 1.00,
     budget_cap: float | None = None,
-    compliance_threshold: float = 0.60,
+    compliance_threshold: float = 0.50,
     service_level_target: float = 1.00,
     order_quantity: int = 5_000,
     urgency: bool = False,

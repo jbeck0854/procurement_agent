@@ -1,6 +1,6 @@
 # AI Procurement Decision Intelligence Agent — Demo Plan
 
-> **Current as of:** Sprint ending 2026-03-29
+> **Current as of:** Sprint ending 2026-04-08
 > **Status:** All pipeline layers complete and validated. Agent/orchestration integration in progress.
 
 ---
@@ -49,6 +49,30 @@ And show one additional capability that differentiates the system:
 
 ## End-to-End Walkthrough
 
+**IMPORTANT:**
+
+Before kickstarting demo and initializing streamlit, in terminal (after all database schemas loaded), must run in order:
+
+```bash
+# 0. activate venv
+source demo/venv/bin/activate
+
+# 1 for model-trust and explainability routes (from project root)
+python -m forecasting.run_pipeline
+python -m forecasting.run_baseline
+
+# 2. generate forecasts (from project root)
+python -m forecasting.run_production
+
+# 3. build inventory / procurement layer (from project root)
+python -m inventory.run_inventory
+
+# 4. THEN start demo
+cd demo
+streamlit run streamlit_app.py
+```
+
+
 ---
 
 ### 0:00–1:00 — Opening and objective framing
@@ -56,22 +80,27 @@ And show one additional capability that differentiates the system:
 **User says:**
 > "I need to make sure we can meet the next 12–16 weeks of demand for our semiconductor components. Minimize cost, but keep supplier risk at a moderate level."
 
-**Agent responds:**
-> "Understood. I'll walk you through five steps: forecast demand, translate that into component requirements, check inventory coverage, identify what needs to be procured, and recommend an optimized supplier allocation, based on your risk aversion. Let's start."
+**Other acceptable user variations:**
+> "Help me plan procurement for the upcoming 20 week planning horizon with a balance between cost and reliability."
 
-> (optional addition) Please provide/upload your historical demand csv begin demand forecast.
+**Agent responds:**
+> "Understood. We will:
+> 1. Verify your historical demand across all four facilities and semiconductor SKUs
+> 2. Translate that demand into the exact component requirements needed to support production
+> 3. Assess inventory coverage and identify where procurement is required
+> 4. Optimize supplier allocation to minimize cost while controlling supplier risk and disruption
+
+> Your objective balances cost efficiency with supply reliability:
+> - lower emphasis prioritizes cost minimization
+> - higher emphasis prioritizes more stable, lower-risk suppliers even if slightly more expensive
+
+> Let's begin by validating the historical demand that drives this workflow.
+
+> Please review the historical demand file below and confirm it looks correct. Once reviewed, reply with 'Yes, proceed' to continue."
 
 NOTE: Above is simply so that it is clear to audience that the system has/is working with actual demand
-> (if optional route added) AGENT: Demand successfully stored. Here is your input: (shows on screen a few lines of first few weeks x facility x sku and last few week lines)
 
-**On screen:**
-A four-step workflow indicator:
-1. Forecast demand
-2. Translate to components
-3. Check inventory
-4. Recommend procurement plan
-
-**Business explanation:**
+**Business explanation (subject to change):**
 > "The system doesn't just rank suppliers. It starts from assessing historical demand and works forward — so every procurement recommendation is grounded in what we actually need."
 
 **What runs behind the scenes:** Nothing yet. Orientation only.
@@ -80,9 +109,13 @@ A four-step workflow indicator:
 
 ### 1:00–2:30 — Demand forecast
 
-**User action:** "Please provide me a forecast for the upcoming planning horizon."
+**User action:** "Yes, proceed."
+
+**Agent Response:** "I will now generate forecasts over the upcoming planning horizon (20-week period), based on your historical demand data."
 
 **Agent action:** Queries the forecast layer ( **forecast summary**). No rerun needed — forecasts are precomputed and stored.
+
+**NOTE:** Here is where I am considering implementing a returned table that shows average forecasted demand for each facility over the 20-week period.
 
 **Behind the scenes:**
 - `dim_forecast_run` — identifies latest run
@@ -98,7 +131,20 @@ Returns a clean planning-window summary of the latest production forecast, inclu
 - weekly totals
 - forecast metadata
 
-Additional routes that can be taken here (user choice) **SEE THE HELPER FUNCTIONS (within /forecast) FOR IDEAS ON STRUCTURING PROFESSIONAL QUERIES FOR THESE**:
+Additional routes that can be taken here (user choice) 
+
+**(Optional) CALLS FOR MODEL ASSESSMENT AND VALIDATION OF FORECASTS**:
+> **User:** "Show me the forecast detail by facility and SKU."
+
+> **User:** "Show me the forecast detail for Facility 1"
+
+> **User:** "Compare forecast demand across all facilities"
+
+> **User:** "Are these forecasts reliable? How was the model trained and validated?"
+
+> **User:** "How does this model stack up against a baseline model?" 
+
+**SEE THE HELPER FUNCTIONS (within /forecast) FOR IDEAS ON STRUCTURING PROFESSIONAL QUERIES FOR THESE**:
 #### 2) Forecast drill-down
 Returns week × facility × semiconductor detail for the production forecast, including:
 - predicted demand
@@ -161,7 +207,7 @@ This separation helps the system feel like a real decision-support workflow rath
 - `vw_component_requirement_detail` — exploded per-SKU component view
 - `vw_component_requirement_lp` — aggregated full-horizon component demand
 
-**Suggested user query #1 (summary):** "Show total component requirements for the next planning window."
+**Suggested user query #1 (summary):** "Show total component requirements for the upcoming demand window."
 
 **Agent returns:**
 Full-horizon gross BOM demand — the raw component volume implied by the finished-goods forecast, before any inventory offset is applied.
@@ -175,7 +221,7 @@ Full-horizon gross BOM demand — the raw component volume implied by the finish
 
 *Exact figures shown on screen from the helper output. These are gross demand totals — no inventory has been netted out yet.*
 
-**Suggested query #2 (translation explainability):** "How does forecasted SKU demand translate into component demand?"
+**Suggested query #2 (translation explainability):** "How exactly is forecasted SKU demand translated into component demand?"
 
 **Agent returns:**
 BOM translation explainer — shows which components make up each finished SKU and the arithmetic that converts forecasted SKU volume into raw component need.
@@ -189,178 +235,30 @@ BOM translation explainer — shows which components make up each finished SKU a
 
 ### 3:45–5:15 — Inventory sufficiency and net procurement requirement
 
-**Agent action:** Checks projected component demand against current inventory, scheduled receipts, and safety stock — then surfaces the quantity the LP will actually optimize.
+**User:** "After our inventory is factored in, what is the total amount that needs to be ordered for each component to meet our upcoming demand?"
 
-**Behind the scenes:**
-- `inventory/run_inventory.py` — inventory simulation (already run; outputs in DB)
-- `fact_component_inventory_history` — on-hand and pipeline inventory
-- `fact_inventory_policy` — safety stock and base-stock targets
+**Agent:** Returns a clean horizon-level net procurement summary table.
 
-**Step 1 — Procurement Status (weekly trigger signal):**
+--
 
-Shows *where* and *when* procurement is activated across the planning horizon using stateful rolling depletion. Forecast demand depletes starting inventory week by week; net requirement is positive only once the inventory above the safety stock floor is exhausted.
+**User:** "In which weeks and where is procurement actually triggered across the planning horizon?"
 
-| Component | On-Hand | Safety Stock | Triggered Gross | Net Req (triggered weeks) | Status |
-|---|---|---|---|---|---|
-| transistors | ~X | ~Y | see output | see output | 🔴 Action required |
-| power_devices | ~X | ~Y | see output | see output | 🔴 Action required |
-| integrated_circuit_components | ... | ... | see output | see output | 🟡 Monitor |
-| microprocessors | ... | ... | see output | see output | 🟢 Covered |
+**Agent:** 
+Shows *where* and *when* procurement is activated across the planning horizon using stateful rolling depletion.
 
-*These figures reflect triggered weeks only — weeks where cumulative demand has depleted available inventory below the safety stock floor. on_hand and safety_stock appear constant per series (decision-point values); the rolling state is in the "Remaining" column.*
+--
 
-> "This tells us which components have inventory shortfalls and in which weeks they occur. Transistors and power_devices require procurement action this cycle."
+**User:** "How does the base stock policy work"
 
----
+**Agent:** Details Safety Stock and Base-Stock Logic set in place
 
-**Step 2 — Aggregated Procurement Need (LP demand floor):**
+--
 
-**Suggested query:** "Show aggregated procurement need for transistors."
+*optional transparency full-horizon drilldown query*
+**User:** "Show all upcoming demand weeks across each facility for inventory planning"
 
-**Agent returns:**
-The horizon-level procurement need the LP will actually optimize against. The inventory offset (on-hand stock, safety stock, scheduled receipts) is applied once across the full horizon — not week by week — producing the correct total quantity to source from suppliers. When on_hand >= SS, this equals the sum of weekly net requirements from Procurement Status.
+**Agent:** returns filterable table for inventory planning. All week x facility x component combinations, with trigger indicator.
 
-| Component | Horizon Gross Demand | Inventory Offset | LP Demand Floor |
-|---|---|---|---|
-| transistors | large | applied once | the optimizer's target |
-| power_devices | large | applied once | the optimizer's target |
-
-*Exact figures shown on screen.*
-
-> "The LP optimization in the next step will allocate supplier volume to cover this total. The weekly trigger signal told us *where* procurement is needed; this tells us *how much* to buy in total."
-
-**Precomputed:** Yes — inventory simulation already run; outputs compute on query.
-
----
-
-## Explainability and Summary Helpers
-
-`procurement_summary.py` provides business-facing, formatted outputs for the
-inventory and procurement planning layer. It reads from pre-computed tables and
-views only — no computational logic is changed. Its purpose is to improve
-interpretability for demo delivery and agent integration.
-
----
-
-### Summary helpers
-
-#### Primary
-
-**`format_procurement_recommendation(conn, forecast_run_id=None) -> str`**
-One-screen answer to "do we need to buy anything?" Shows LP net requirement per
-component with 🔴/🟢 action status and triggered-week count. **Start here.**
-
-#### Secondary — explainability
-
-**`format_aggregated_procurement_need(conn, forecast_run_id=None, product=None, facility_id=None) -> str`**
-Horizon-level LP demand floor. Applies the inventory offset (on-hand, safety
-stock, scheduled receipts) once against the total horizon gross demand per
-facility — the same formulation the LP uses internally. This is the quantity the
-optimizer allocates across suppliers.
-
-**`get_triggered_procurement_rows(conn, forecast_run_id=None, product=None, facility_id=None) -> str`**
-Only weeks and facilities where `net_requirement > 0` — the specific gaps where
-existing inventory is insufficient. Use this to explain WHERE and WHEN
-procurement is triggered.
-
-#### Diagnostic / deep-dive
-
-**`format_component_requirements(conn, forecast_run_id=None) -> str`**
-Full-horizon gross BOM demand before any inventory offset.
-
-**`format_procurement_status(conn, forecast_run_id=None) -> str`**
-Full week-by-week inventory trigger signal across all components and facilities.
-
----
-
-### LangChain wrappers
-
-Each wrapper opens and closes its own DB connection. `forecast_run_id=0`
-retrieves the most recent run.
-
-| Tier | Wrapper | Returns |
-|---|---|---|
-| **Primary** | `get_procurement_recommendation_tool(forecast_run_id=0)` | One-screen buy/no-buy status per component |
-| **Secondary** | `get_aggregated_procurement_need_tool(forecast_run_id=0, product='', facility_id='')` | Horizon-level LP demand floor — the quantity the LP optimizes |
-| **Secondary** | `get_triggered_procurement_rows_tool(forecast_run_id=0, product='', facility_id='')` | Triggered weeks only — WHERE and WHEN procurement activates |
-| Diagnostic | `get_procurement_status_summary_tool(forecast_run_id=0)` | Full week-by-week procurement trigger signal |
-| Diagnostic | `get_procurement_planning_summary_tool(forecast_run_id=0)` | Gross demand + weekly trigger in sequence |
-| Diagnostic | `get_component_requirements_summary_tool(forecast_run_id=0)` | Full-horizon gross BOM demand |
-
----
-
-### Drill-down helpers
-
-**`get_procurement_requirement_drilldown(conn, forecast_run_id=None, product=None, facility_id=None) -> str`**
-Full week-by-week planning detail at the component × facility × week level.
-Accepts optional filters by product name and facility. Use this to trace the
-complete planning math for any component across all forecast weeks.
-
-**`get_triggered_procurement_rows(conn, forecast_run_id=None, product=None, facility_id=None) -> str`**
-Only weeks and facilities where net requirement > 0. Also available as
-`get_triggered_procurement_rows_tool()` LangChain wrapper.
-
----
-
-### Key conceptual distinctions
-
-| Output | What it represents | LP input? |
-|---|---|---|
-| **Procurement Recommendation** | One-screen buy/no-buy per component | No — summary |
-| **Component Requirements** | Full-horizon gross BOM demand — all weeks, before any inventory offset | No — gross only |
-| **Procurement Status** | Week-by-week trigger signal — shows WHERE and WHEN procurement activates | No — weekly signal |
-| **Triggered rows** | Subset of weekly rows where net requirement > 0 | No — weekly subset |
-| **Aggregated Procurement Need** | Horizon-level net requirement, inventory offset applied once per facility | **Yes — LP demand floor** |
-
-Most weeks have gross demand but zero net requirement. Weekly depletion uses
-stateful rolling logic: gross demand consumes the usable inventory pool (above
-the SS floor) week by week; procurement triggers only once that pool is
-exhausted. When `on_hand ≥ SS` (always true by design), `SUM(weekly net_req) =
-LP demand floor`. The Recommendation and Aggregated Procurement Need helpers
-both reflect this correctly.
-
----
-
-### Usage examples
-
-```python
-from inventory.procurement_summary import (
-    get_procurement_recommendation_tool,
-    get_aggregated_procurement_need_tool,
-    get_triggered_procurement_rows_tool,
-    get_procurement_status_summary_tool,
-    get_procurement_planning_summary_tool,
-    get_component_requirements_summary_tool,
-)
-
-# ── PRIMARY — start here ──────────────────────────────────────────────────────
-
-# "Do we need to buy anything?" — one-screen buy/no-buy per component
-print(get_procurement_recommendation_tool())
-
-# ── SECONDARY — explainability ────────────────────────────────────────────────
-
-# Horizon-level LP demand floor — the quantity the LP actually optimizes
-print(get_aggregated_procurement_need_tool())
-
-# Filtered to one component (matches LP run scope)
-print(get_aggregated_procurement_need_tool(product='transistors'))
-
-# Which specific weeks and facilities trigger procurement?
-print(get_triggered_procurement_rows_tool())
-print(get_triggered_procurement_rows_tool(product='transistors', facility_id='FACILITY_3'))
-
-# ── DIAGNOSTIC / DEEP-DIVE ────────────────────────────────────────────────────
-
-# Gross demand + weekly trigger signal in one output
-print(get_procurement_planning_summary_tool())
-
-# Drill down: one component, one facility, all forecast weeks
-conn = psycopg2.connect(DATABASE_URL)
-from inventory.procurement_summary import get_procurement_requirement_drilldown
-print(get_procurement_requirement_drilldown(conn, product='transistors', facility_id='FACILITY_3'))
-conn.close()
-```
 ---
 
 ### 5:15–6:00 — Side-track: ad hoc supplier comparison (Probably don't need this anymore since these suppliers plot comparison should show for each LP Inventory Optimization run below)
@@ -400,9 +298,9 @@ conn.close()
 ### 6:00–7:30 — LP optimization: transistors
 
 **User says:**
-> "Optimize transistors procurement with moderate risk and a 40% supplier cap."
+> "From our available suppliers, provide a procurement plan to ensure we have enough integrated circuit components across all facilities to meet our upcoming demand window. Implement a moderate risk aversion supply strategy. No supplier should exceed 40% of total supply volume for this order."
 
-**Agent action:** Runs LP optimization for transistors using the net procurement requirement from the inventory layer and the scored supplier universe.
+**Agent action:** Runs LP optimization for integrated circuit components using the net procurement requirement from the inventory layer and the scored supplier universe.
 
 **Behind the scenes:**
 - Horizon-level aggregated procurement need (computed from full-horizon gross demand with inventory offset applied once) — the LP demand floor
@@ -431,65 +329,15 @@ The LP solves: minimize total cost weighted by risk exposure, subject to demand 
 - Formula description: plain-language explanation of the optimization run
 
 **Agent explanation:**
-> "The LP allocated transistors volume across three suppliers. The 40% cap prevents overconcentration — no single country or supplier absorbs the full order. Two suppliers were excluded by compliance threshold before the LP ran; they were never eligible. The allocation reflects the lowest-cost mix that also meets your risk tolerance."
+> "The LP allocated integrated circuit component volume across three suppliers. The 40% cap prevents overconcentration — no single country or supplier absorbs the full order. X suppliers were excluded by compliance threshold before the LP ran; they were never eligible. The allocation reflects the lowest-cost mix that also meets your risk tolerance."
 
 **Live run:** Yes — CBC solver is sub-second for this problem size.
 
 ---
 
-**Additional user queries the agent handles here (show one or two live):**
+*Users sees that some weeks arent covered*
 
-- > "Optimize for FACILITY_3 only" → reruns LP with `facility_id="FACILITY_3"` scope
-- > "Limit any supplier to 30% of volume" → reruns with `max_supplier_share=0.30`
-- > "Increase risk aversion slightly" → reruns with `lambda_risk=0.70`
-- > "Exclude SUP_HKG_38" → reruns with `exclude_supplier_ids=["SUP_HKG_38"]`
-- > "Diversify across countries" → reruns with `diversification_mode="country_diversified"` (MIP: exactly 3 suppliers, each from a different country, ~33% each)
-
-Each rerun is a one-parameter change — the audience sees that the system is responsive, not a static report.
-
----
-
-**Session-state behavior (important for the transition ahead):**
-
-Each LP run result is stored in the agent session under `approved_lp_runs`. The agent prompts the user to approve or discard each run before it is committed. Only approved runs are carried forward.
-
-This means the demo can now hold:
-- the baseline transistors run (moderate risk, 40% cap)
-- an optional disruption rerun (SUP_HKG_38 excluded)
-- an optional power_devices run
-
-All approved runs will be aggregated in the final session summary — alongside a baseline comparison showing how much additional cost the diversification and risk constraints added over the cheapest feasible unconstrained plan.
-
----
-
-### 7:30–8:00 — Disruption / what-if scenario
-
-**User asks:**
-> "What if SUP_HKG_38 becomes unavailable next quarter?"
-
-**Agent action:** Reruns the transistors LP with `exclude_supplier_ids=["SUP_HKG_38"]`.
-
-**Behind the scenes:**
-- Same LP pipeline as above
-- `LPParams(product="transistors", exclude_supplier_ids=["SUP_HKG_38"], lambda_risk=0.50, max_supplier_share=0.40)`
-
-**On screen:**
-- Updated allocation table (SUP_HKG_38 absent)
-- Change in total cost vs. baseline run
-- Any binding constraint changes (e.g. share constraint now forces different mix)
-- LP executive_summary reflecting exclusion
-
-**Agent explanation:**
-> "With SUP_HKG_38 excluded, volume redistributes to the remaining eligible suppliers. Total cost increases by approximately X%. The plan remains feasible — no stockout risk — but the risk profile shifts slightly."
-
-**Live run:** Yes — fast rerun, CBC solver is sub-second for this problem size.
-
-### 8:00 - 8:30 - Optional: urgency mode
-*Run only if time permits. Can be shown as a quick toggle*
-
-**User asks:**
-
-"What if we need this faster — we're behind schedule on this cycle?"
+**User:** "We need to expedite this component"
 
 **Agent action:** Reruns transistors LP with urgency=True.
 
@@ -512,11 +360,52 @@ All approved runs will be aggregated in the final session summary — alongside 
 
 > "In urgency mode, we apply a delivery-speed premium on top of cost and risk. Faster suppliers are unaffected, while slower suppliers become relatively more expensive — up to about 25% higher for the slowest option. This keeps all suppliers feasible, but makes the tradeoff between cost and speed explicit in the optimization."
 
+This run is a one-parameter (other modifications possible) change — the audience sees that the system is responsive, not a static report.
+
 ---
+
+**Session-state behavior (important for the transition ahead):**
+
+Each LP run result is stored in the agent session under `approved_lp_runs`. The agent prompts the user to approve, modify or discard each run before it is committed. Only approved runs are carried forward towards final executive summary.
+
+This means the demo can now hold:
+- the baseline transistors run (moderate risk, 40% cap)
+- an optional disruption rerun (SUP_HKG_38 excluded)
+- an optional power_devices run
+
+All approved runs will be aggregated in the final session summary — alongside a baseline comparison showing how much additional cost the diversification and risk constraints added over the cheapest feasible unconstrained plan.
+
+---
+
+### 7:30–8:30 — Disruption / what-if scenario
+
+**User first asks:** From our available suppliers, provide a procurement plan to ensure we have enough transistors across all facilities to meet our upcoming demand window. Implement a moderate risk aversion supply strategy. No supplier should exceed 35% of total supply volume for this order
+
+**User then asks:**
+> "What if SUP_HKG_38 becomes unavailable next quarter?"
+
+**Agent action:** Reruns the transistors LP with `exclude_supplier_ids=["SUP_HKG_38"]`.
+
+**Behind the scenes:**
+- Same LP pipeline as above
+- `LPParams(product="transistors", exclude_supplier_ids=["SUP_HKG_38"], lambda_risk=0.50, max_supplier_share=0.35)`
+
+**On screen:**
+- Updated allocation table (SUP_HKG_38 absent)
+- Change in total cost vs. baseline run
+- Any binding constraint changes (e.g. share constraint now forces different mix)
+- LP executive_summary reflecting exclusion
+
+**Agent explanation:**
+> "With SUP_HKG_38 excluded, volume redistributes to the remaining eligible suppliers. Total cost increases by approximately X%. The plan remains feasible — no stockout risk — but the risk profile shifts slightly."
+
+**Live run:** Yes — fast rerun, CBC solver is sub-second for this problem size.
+
+--
 
 ### 8:30–9:30 — Session-level final summary
 
-**Agent action:** After all LP runs are complete (transistors, and optionally power_devices), the synthesizer assembles the session-level summary.
+**Agent action:** After all LP runs are complete (integrated circuit components, transistors, and potentially one other), the synthesizer assembles the session-level summary.
 
 **Behind the scenes:**
 - `demo/graph/synthesizer.py` reads all `agent_results["lp_*"]` entries
@@ -544,7 +433,7 @@ Single-source risk:               0 products (diversification active)
 *Note: unit totals reflect the horizon-level LP demand floor — the full planning period quantity the optimizer allocated across suppliers, not the weekly trigger signal shown in the inventory step.*
 
 **Session narrative (generated by synthesizer LLM):**
-> "We forecast 12–16 weeks of finished-goods demand, translated that into component requirements, and confirmed that transistors and power_devices require procurement action this cycle. The LP optimizer allocated the full horizon procurement need across suppliers under moderate risk weighting with diversification enforced. Total estimated procurement spend is $X,XXX,XXX across X suppliers."
+> "We forecast 20 weeks of finished-goods demand, translated that into component requirements, and confirmed that transistors and power_devices require procurement action this cycle. The LP optimizer allocated the full horizon procurement need across suppliers under moderate risk weighting with diversification enforced. Total estimated procurement spend is $X,XXX,XXX across X suppliers."
 
 **Note:** The LP-level `executive_summary` for each product is passed through as-is into the session summary table. The session narrative is the only new LLM-generated text at this stage. **Also compares a baseline optimization that prioritizes complete cost minimization against a more diversified and risk-minimized run** — showing how much the active constraints added in cost and how many more suppliers or countries they introduced. (see optimization/README.md for this exact augmentation if needed for agent integration)
 
@@ -564,7 +453,7 @@ Single-source risk:               0 products (diversification active)
 NOTE: This section is essentially merged/works in with the final exectuive summary.
 
 **Closing line:**
-> "The system moved from historical demand to an optimized, feasible procurement plan — accounting for inventory, supplier risk, compliance, and resilience constraints — in a single session."
+> "The system moved from historical demand to an optimized, feasible procurement plan — accounting for inventory, supplier risk, compliance, and resilience constraints — in a single session to help guide and steer risk-minimized forward looking procurement decision making."
 
 ---
 

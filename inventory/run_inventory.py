@@ -17,7 +17,7 @@ Pipeline:
   7. Write both tables to database
 
 Simulation policy:
-  - Cold start: on_hand = 0.65 × S at week 1 (warm-up below full target to seed realistic early replenishment)
+  - Cold start: on_hand = 0.95 × S at week 1 (near steady-state initialization)
   - Review weeks: 1, 9, 17, 25, … (every 8 weeks)
   - Lead time: deterministic, round(μ_L_days / 7) weeks
   - scheduled_receipts_qty: total outstanding on-order (MRP convention)
@@ -192,12 +192,12 @@ def _simulate_series(
     """
     Periodic-review order-up-to-S simulation.
 
-    Cold start: on_hand = 0.65 × S, backorder = 0 at week 1 (warm-up below full target to seed realistic early replenishment).
+    Cold start: on_hand = 0.95 × S, backorder = 0 at week 1 (near steady-state initialization).
     Review weeks: t where (t-1) % review_period == 0  →  1, 9, 17, …
     Lead time: deterministic (L_weeks).
     scheduled_receipts_qty: total outstanding on-order at end of week (MRP).
     """
-    on_hand       = 0.65 * float(S)
+    on_hand       = 0.95 * float(S)
     backorder     = 0.0
     pending       = {}          # {arrival_week_number (int): qty (float)}
     rows          = []
@@ -477,17 +477,28 @@ def run() -> None:
 
         # ── Step 3b: Decision-point benchmark override ─────────────────────────
         # The final week (MAX week_number) is the planning decision point consumed
-        # by vw_procurement_requirement.  The fully-converged periodic-review
-        # simulation always yields IP ≈ S at that week (L=13–14 w > r=8 w means
-        # at least one large order is always in transit), making net_requirement = 0
-        # for every LP row.  We replace that single week's inventory state with a
-        # benchmark anchored in historical demand statistics:
+        # by vw_procurement_requirement.  We replace that single week's inventory
+        # state with a controlled benchmark:
         #
-        #   on_hand      = safety_stock_qty + avg_demand_weekly   (SS + 1 week avg)
-        #   scheduled_receipts = 0                                (conservative)
+        #   on_hand            = SS + 8 × μ_D   (steady-state near base-stock target)
+        #   scheduled_receipts = 0              (conservative — no open orders)
         #
-        # This produces net_requirement > 0 for forecast weeks where predicted
-        # demand exceeds avg_demand_weekly, and 0 for weeks below — a ~50/50 mix.
+        # RATIONALE: vw_procurement_requirement uses rolling window depletion —
+        # available_above_ss = max(0, on_hand + SR − BO − SS) is computed once
+        # per facility × product series, then cumulative_gross_prior is subtracted
+        # week by week to derive remaining_inventory.  With on_hand = SS + 8×μ_D:
+        #   available_above_ss  = 8×μ_D
+        #   horizon gross total ≈ 20×μ_D  (20-week planning window)
+        # The usable pool is exhausted around week 8-9, triggering procurement
+        # for the remaining ~12 horizon weeks per series.  This produces a
+        # realistic, business-meaningful procurement picture: enough on-hand to
+        # cover the near term, but clear procurement need for the second half of
+        # the horizon.
+        #
+        # A multiplier of 0.5 exhausts the pool in <1 week, making virtually
+        # every horizon week a trigger week — overstating urgency and offering
+        # less decision-support value.
+        #
         # Weeks 1–144 are untouched and preserve full simulation history.
 
         decision_wk  = max(r['week_number'] for r in all_inv_rows)
@@ -503,7 +514,7 @@ def run() -> None:
             key    = (row['facility_id'], row['product_key'])
             mu_d   = mu_d_lookup[key]
             ss     = ss_lookup[key]
-            dp_oh  = mu_d + ss          # SS + 1 week of average demand
+            dp_oh  = ss + 8.0 * mu_d    # SS floor + 8-week demand buffer (near base-stock target)
             row['on_hand_qty']            = round(dp_oh, 4)
             row['scheduled_receipts_qty'] = 0.0
             row['backorder_qty']          = 0.0
@@ -513,7 +524,7 @@ def run() -> None:
             n_overridden += 1
 
         print(f'  Decision-point override applied: {n_overridden} rows '
-              f'(week {decision_wk})  on_hand = SS + μ_D, scheduled_receipts = 0')
+              f'(week {decision_wk})  on_hand = SS + 8×μ_D, scheduled_receipts = 0')
 
         # ── Step 4: Write to database ──────────────────────────────────────────
         print('\n[4/5] Writing to database ...')

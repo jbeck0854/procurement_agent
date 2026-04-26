@@ -8,6 +8,8 @@ import json
 import logging
 import time
 
+from langgraph.types import interrupt
+
 from graph.state import AgentState
 from tools.optimization import DIRECT_LP_TOOLS
 
@@ -35,18 +37,46 @@ def _format_result(result: dict) -> str:
 
     parts = []
 
-    # Executive summary
+    # ── Semantic alerts (rendered first, before allocation) ─────────────────
+    avoid_warn = result.get("avoid_tier_warning")
+    if avoid_warn:
+        parts.append(f"⚠ AVOID-TIER ALERT: {avoid_warn}")
+
+    div_fallback = result.get("diversification_fallback_note")
+    if div_fallback:
+        parts.append(f"⚠ DIVERSIFICATION ALERT: {div_fallback}")
+
+    compliance_unlock = result.get("compliance_unlocked_note")
+    if compliance_unlock:
+        parts.append(f"ℹ PARAMETER CHANGE NOTE: {compliance_unlock}")
+
+    compliance_excl = result.get("compliance_exclusion_note")
+    if compliance_excl:
+        parts.append(f"ℹ COMPLIANCE NOTE: {compliance_excl}")
+
+    # Executive summary (stripped of embedded alert prefix to avoid duplication)
     exec_summary = result.get("executive_summary", "")
     if exec_summary:
-        parts.append(exec_summary)
+        # The avoid-tier alert is already surfaced above; strip it from exec_summary
+        # to avoid repeating it inline.
+        _stripped = exec_summary
+        if _stripped.startswith("[AVOID-TIER ALERT]"):
+            _prefix_end = _stripped.find("  ", len("[AVOID-TIER ALERT] "))
+            if _prefix_end != -1:
+                _stripped = _stripped[_prefix_end:].strip()
+        parts.append(_stripped)
 
     # Allocation table
     allocation = result.get("allocation", [])
     if allocation:
         parts.append("\nSupplier Allocation:")
         for row in allocation:
+            tier_note = (
+                f" [{row.get('decision_tier', '')}]"
+                if row.get("decision_tier") else ""
+            )
             parts.append(
-                f"  {row['supplier_id']} ({row.get('country_code', '')}) — "
+                f"  {row['supplier_id']} ({row.get('country_code', '')}){tier_note} — "
                 f"{row['allocated_qty']:,} units ({row['share_pct']:.1f}%) "
                 f"@ ${row['landed_unit_cost']:.4f}/unit "
                 f"= ${row['total_cost']:,.2f}"
@@ -92,31 +122,6 @@ def _format_result(result: dict) -> str:
     return "\n".join(parts)
 
 
-def _find_previous_params(product: str) -> dict:
-    """
-    Look up params_recap from the most recent LP run for the same product
-    across all previous traces stored in Streamlit session state.
-    Returns the params_recap dict, or empty dict if not found.
-    """
-    try:
-        import streamlit as st
-        traces = st.session_state.get("traces", [])
-    except Exception:
-        return {}
-
-    # Search traces in reverse (most recent first)
-    for trace in reversed(traces):
-        agent_results = trace.get("agent_results", {})
-        # Check if this trace has raw_data with LP results for this product
-        # raw_data is stored separately, but we can check the timings/agent_results
-        # to confirm LP ran for this product
-        pass
-
-    # Traces don't store raw_data directly. Use a dedicated session store instead.
-    lp_history = st.session_state.get("lp_params_history", {})
-    return lp_history.get(product, {})
-
-
 def _save_params_to_session(product: str, params_recap: dict) -> None:
     """Save LP params_recap to Streamlit session state for carry-forward."""
     try:
@@ -126,52 +131,6 @@ def _save_params_to_session(product: str, params_recap: dict) -> None:
         st.session_state.lp_params_history[product] = params_recap
     except Exception:
         pass
-
-
-def _merge_with_previous_params(params: dict) -> dict:
-    """
-    For what-if / disruption reruns, carry forward parameters from the
-    previous LP run for the same product. Only fill in missing keys —
-    never overwrite what the orchestrator explicitly set.
-    """
-    product = params.get("product")
-    if not product:
-        return params
-
-    prev_recap = _find_previous_params(product)
-    if not prev_recap:
-        return params
-
-    # Default values from run_optimization — if orchestrator passes these,
-    # it likely didn't intentionally set them, so prefer previous run's values.
-    defaults = {
-        "lambda_risk": 0.50,
-        "max_supplier_share": 1.00,
-        "budget_cap": None,
-        "compliance_threshold": 0.60,
-        "service_level_target": 1.00,
-        "order_quantity": 5_000,
-        "urgency": False,
-        "facility_id": None,
-        "diversification_mode": "none",
-        "forecast_run_id": None,
-    }
-
-    merged = dict(params)
-    carried = []
-    for key, default_val in defaults.items():
-        prev_val = prev_recap.get(key)
-        current_val = merged.get(key)
-        # Carry forward if: previous run had a non-default value AND
-        # current params either missing or still at default
-        if prev_val is not None and prev_val != default_val and current_val == default_val:
-            merged[key] = prev_val
-            carried.append(f"{key}={prev_val}")
-
-    if carried:
-        logger.info(f"[LP_AGENT] Carried forward from previous run: {', '.join(carried)}")
-
-    return merged
 
 
 async def lp_agent_node(state: AgentState) -> dict:
@@ -194,7 +153,8 @@ async def lp_agent_node(state: AgentState) -> dict:
     for task in tasks:
         tool_name = task.get("tool", "run_optimization")
         params = task.get("params") or {}
-        params = _merge_with_previous_params(params)
+        # Parameter merging (prior run carry-forward) is handled by the
+        # orchestrator via param_extractor.merge_with_prior(). No double-merge.
         product = params.get("product", "unknown")
         result_key = f"lp_{product}"
         logger.info(f"[LP_AGENT] Task: tool={tool_name}, product={product}, params={params}")
@@ -228,11 +188,31 @@ async def lp_agent_node(state: AgentState) -> dict:
             agent_results[result_key] = f"LP optimization failed for {product}: {e}"
             logger.error(f"[LP_AGENT] Failed {product}: {e}", exc_info=True)
 
+    # ── LP approval interrupt ──────────────────────────────────────────────────
+    # Pause for user approval BEFORE the synthesizer finalises the turn.
+    # Only fires when at least one LP product actually completed and has a
+    # corresponding entry in raw_data (guards against error-only runs).
+    lp_keys = [k for k in agent_results if k in raw_data]
+    if lp_keys:
+        approval_payload = {
+            "type":      "lp_approval",
+            "formatted": {k: agent_results[k] for k in lp_keys},
+            "raw":       {k: raw_data[k] for k in lp_keys},
+        }
+        feedback = interrupt(approval_payload)
+        if str(feedback).strip().lower() == "discard":
+            for k in lp_keys:
+                agent_results.pop(k, None)
+                raw_data.pop(k, None)
+            logger.info("[LP_AGENT] LP results discarded by user.")
+        else:
+            logger.info("[LP_AGENT] LP results approved by user.")
+
     total = round(time.perf_counter() - start, 3)
     timings["lp_agent"] = total
 
-    n_ok = sum(1 for k in agent_results if "failed" not in agent_results[k].lower())
-    logger.info(f"[TIMING] lp_agent total: {total:.3f}s — {n_ok} product(s) optimized")
+    n_ok = sum(1 for k in agent_results if k in raw_data)
+    logger.info(f"[TIMING] lp_agent total: {total:.3f}s — {n_ok} product(s) retained")
 
     if errors:
         agent_results["lp_agent_errors"] = "; ".join(errors)

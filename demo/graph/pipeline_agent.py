@@ -53,6 +53,9 @@ async def pipeline_agent_node(state: AgentState) -> dict:
             elapsed = round(time.perf_counter() - t0, 3)
             timings[f"pipeline_agent.{tool_name}"] = elapsed
             agent_results[result["name"]] = result["content"]
+            # Pass structured data for rich rendering (if available)
+            if result.get("structured") is not None:
+                agent_results[f"{result['name']}__structured"] = result["structured"]
             logger.info(f"[PIPELINE_AGENT] Completed {tool_name} in {elapsed:.3f}s")
         except Exception as e:
             elapsed = round(time.perf_counter() - t0, 3)

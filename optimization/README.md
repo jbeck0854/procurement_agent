@@ -1,171 +1,49 @@
-# optimization/README.md
+# optimization/
 
 ## Overview
 
 This folder contains the LP-based procurement allocation layer.
 
-Its purpose is to take the **procurement requirement** generated upstream and decide:
+Its job is singular and decisive:
 
-- **which suppliers to use**
-- **how much to buy from each supplier**
-- while respecting business constraints such as:
-  - budget
-  - compliance
-  - risk tolerance
-  - diversification limits
-  - optional facility scope
-  - optional service-level buffer
+> **Given what we need to buy, who should we buy it from, and in what quantity?**
 
-In simple terms, this layer answers:
-
-> “Now that we know what we need to buy, who should we buy it from, and in what quantity?”
+The layer takes the upstream procurement requirement and produces an optimized supplier allocation that respects business constraints — budget, compliance, risk tolerance, concentration limits, and optionally, country diversification.
 
 ---
 
 ## File Contents
 
-### `run_lp_optimization.py`
-Main optimization module.
-
-This file:
-1. loads the procurement requirement for a selected product
-2. loads the eligible suppliers for that product
-3. scores / evaluates those suppliers using the existing scoring layer
-4. builds and solves a linear program (LP)
-5. returns a structured, business-facing result for the demo / agent
-
-### `__init__.py`
-Package file so the optimization layer can be imported cleanly.
+| File | Purpose |
+|---|---|
+| `run_lp_optimization.py` | Main optimization module — loads requirement, scores suppliers, builds and solves LP, returns structured result |
+| `__init__.py` | Package init for clean imports |
 
 ---
 
 ## What This Layer Depends On
 
-### `run_lp_optimization.py`
-Main optimization module.
+This module does **not** forecast demand, build BOMs, or compute safety stock.
+It consumes the outputs of upstream layers that are already complete:
 
-This file:
-1. loads the procurement requirement for a selected product
-2. loads the eligible suppliers for that product
-3. scores / evaluates those suppliers using the existing scoring layer
-4. builds and solves a linear program (LP)
-5. returns a structured, business-facing result for the demo / agent
-
-### `__init__.py`
-Package file so the optimization layer can be imported cleanly.
+| Layer | What it provides |
+|---|---|
+| Forecasting | Forward finished-goods demand |
+| BOM | Component demand derived from finished-goods forecast |
+| Inventory / procurement requirement | Net procurement need after inventory offset |
+| Supplier scoring (`analytics/scoring.py`) | Landed cost, risk penalty, compliance status, supplier tier |
 
 ---
 
-This module does **not** create demand forecasts, BOM mappings, or inventory policy logic itself.
+## Main Inputs
 
-It relies on upstream layers that are already completed:
+### Procurement Requirement
 
-### 1. Forecasting layer
-Provides forward finished-goods demand.
-
-### 2. BOM layer
-Translates finished-goods demand into procurement-side component demand.
-
-### 3. Inventory / procurement requirement layer
-Provides:
-- how much of each product/component is actually needed
-- after considering inventory, receipts, and safety stock
-
-### 4. Supplier scoring layer
-Provides supplier-level cost / risk information used by the LP.
-
----
-
-## Main Input
-
-The LP primarily consumes:
-
-### Procurement requirement
-
-The LP computes a **horizon-level** net procurement requirement by aggregating
-the full-horizon gross demand and applying the inventory offset (on-hand,
-safety stock, scheduled receipts, backorder) **once per facility**.
-
-This is distinct from the weekly procurement trigger view, which applies the
-inventory offset once per forecast week and is intended for drill-down
-explainability — not LP sizing.
-
-The LP demand floor tells the optimizer:
-- which product / component needs procurement
-- total quantity needed across the planning horizon
-- which facilities are involved and their demand shares
-- the correct demand floor for supplier allocation
-
-### Supplier universe
-From:
-- supplier profile / scoring views
-- existing scoring logic in `analytics/scoring.py`
-
-This tells the LP:
-- landed cost
-- risk
-- compliance status
-- supplier tier
-- MOQ / bulk-unit threshold
-- lead time
-- other supplier characteristics
-
----
-
-## Core Idea
-
-The LP solves a sourcing allocation problem.
-
-It determines the quantity to purchase from each eligible supplier for a selected product.
-
-### Objective
-Minimize total procurement cost adjusted for risk and, optionally, delivery speed.
-
-The objective function per supplier `j` is:
-
-```
-c_j × (1 + λ_risk × r_j + λ_urgency × lt_norm_j)
-```
-
-where:
-- `c_j` = landed unit cost (USD/unit)
-- `r_j` = risk penalty, normalised 0–1
-- `lt_norm_j` = lead-time mean, normalised 0–1 within the eligible pool (0 = fastest, 1 = slowest)
-- `λ_risk` = user-controlled risk weight (default 0.50)
-- `λ_urgency` = `URGENCY_LEAD_TIME_WEIGHT` (0.25) when `urgency=True`, else 0
-
-**Urgency mode** adds a lead-time cost premium using the same multiplicative structure as
-`λ_risk`. The slowest eligible supplier carries a 25% cost premium; the fastest supplier
-carries no urgency premium. This is a continuous dial, not a hard cutoff — no suppliers
-are excluded and no feasibility risk is introduced.
-
-### Subject to
-- meeting required demand
-- staying within budget (if provided)
-- excluding non-compliant suppliers
-- limiting supplier concentration (if provided)
-- optionally adding extra procurement buffer via service level target
-- optionally enforcing country diversification (see `diversification_mode`)
-
----
-
-## Typical Flow of `run_lp_optimization.py`
-
-## Step 1 — Load procurement requirement
-
-The script computes horizon-level net procurement need for the selected product.
-
-**The LP does NOT consume the weekly procurement trigger view directly.**
-Summing per-week net values from the weekly view would apply the inventory
-offset N times (once per forecast week), producing a demand floor that is
-40–1000× too small.
-
-Instead, the LP applies the inventory offset ONCE per facility against the
-total horizon gross demand:
+The LP computes a **horizon-level** net requirement by aggregating full-horizon gross demand and applying the inventory offset **once per facility**:
 
 ```
 facility_net_req = max(0,
-    SUM(gross_requirement over all forecast weeks)
+    SUM(gross_requirement across all forecast weeks)
     + backorder_qty
     + safety_stock_qty
     - on_hand_qty
@@ -173,318 +51,262 @@ facility_net_req = max(0,
 )
 ```
 
-By default:
-- it aggregates across all facilities with positive horizon net requirement
-- it uses the most recent `forecast_run_id` in `dim_forecast_run`
+This is **not** the weekly procurement trigger view. That view applies the inventory offset once per forecast week (for explainability/drill-down). Summing it would apply the offset N times, producing a demand floor 40–1000× too small.
 
-Optional:
-- if `facility_id` is provided, it restricts to that facility only
-- if `forecast_run_id` is provided explicitly, it restricts to that run
+The LP demand floor is aggregated across all facilities with positive net requirement unless `facility_id` is specified.
 
-This produces total procurement demand `D` for the LP run.
+To inspect the demand floor in plain language before running the LP, use `get_aggregated_procurement_need_tool()` from the inventory planning layer.
 
-To inspect this demand floor in plain English before running the LP, use
-`get_aggregated_procurement_need_tool()` from the inventory planning layer.
+> **Data currency note.** Inventory state (on-hand, safety stock) is sourced from the most recent run of `run_inventory.py`. Re-run it after regenerating a forecast to keep the LP demand floor aligned.
 
-> **Data currency note.** The inventory state (on-hand, safety stock) is sourced
-> from the most recent execution of `run_inventory.py`. If the forecast is
-> regenerated, `run_inventory.py` should be re-run before running the LP to
-> ensure the inventory snapshot is aligned with the current forecast horizon.
+### Supplier Universe
 
----
-
-## Step 2 — Load and score suppliers
-
-The script loads supplier candidates for the selected product.
-
-It then uses the existing scoring layer to compute or retrieve:
-- landed unit cost
-- risk penalty
-- compliance eligibility
-- supplier decision tier
-- MOQ / bulk units
-- lead time information
-
-Important:
-- this layer **uses** the scoring system
-- it does **not** redesign or replace it
-
----
-
-## Step 3 — Build the LP
-
-The script creates one decision variable per eligible supplier:
-
-- quantity to procure from supplier `j`
-
-These quantities are continuous and non-negative.
-
-### The LP then applies:
-
-#### Demand fulfillment constraint
-Total allocated quantity must cover required procurement demand.
-
-#### Budget constraint (optional)
-Total spend must remain below the user’s budget cap.
-
-#### Diversification constraint (optional, controlled by `diversification_mode`)
-
-Three modes are available:
-
-- **`none`** — no diversification constraint; LP selects the lowest-cost supplier(s)
-- **`supplier_share_only`** — no single supplier may exceed `max_supplier_share` of total volume
-- **`country_diversified`** — Mixed Integer Program (MIP) extension:
-  - exactly 3 suppliers selected
-  - each from a different country
-  - each allocated roughly one-third of volume (30–35% each)
-  - requires ≥ 3 countries in the eligible supplier pool; falls back gracefully if not feasible
-
-When `country_diversified` is active, binary selection variables `y_j ∈ {0,1}` are added:
-- `Σ y_j = 3`
-- `Σ_{j ∈ country_c} y_j ≤ 1` for each country `c`
-- `0.30·D ≤ x_j ≤ 0.35·D` for selected suppliers (forces `x_j = 0` when unselected)
-
-The objective function is **not changed** in any mode — only constraints are added.
-
-#### Service level target (optional user parameter)
-Used as an additive procurement buffer multiplier on top of the already-computed procurement requirement.
-
-Important:
-- this does **not** rebuild safety stock
-- it simply scales the procurement target above the requirement if requested
-
----
-
-## Step 4 — Solve the LP
-
-The model is solved using a linear programming solver.
-
-Current intended solver:
-- **PuLP + CBC**
-
-This was chosen because it is:
-- easy to read
-- easy to debug
-- suitable for demo use
-- easier to explain than lower-level solver interfaces
-
----
-
-## Step 5 — Format the results
-
-After solving, the script returns a structured result that is easy for the demo agent or a notebook to consume.
-
-This includes:
-
-### Parameter recap
-- selected product
-- selected facility scope
-- budget cap
-- lambda risk
-- max supplier share
-- service level target
-- urgency toggle
-- order quantity assumption
-
-### Requirement summary
-- total procurement requirement
-- adjusted requirement after service-level multiplier
-- facilities included
-- facility demand shares
-
-### Supplier pool summary
-- number of total suppliers for product
-- number excluded by compliance
-- number selected by LP
-
-### Allocation output
-For each selected supplier:
-- supplier ID
-- country
-- quantity allocated
-- share of total
-- landed unit cost
-- risk measure
-- total cost contribution
-- risk-adjusted cost contribution
-- supplier tier
+Loaded from `vw_supplier_complete_profile` and scored via `SupplierScorer.score()`. Provides:
+- Landed unit cost
+- Risk penalty (normalized 0–1)
+- Compliance eligibility
+- Supplier decision tier (Preferred / Acceptable / Avoid)
 - MOQ / bulk-unit threshold
-- whether MOQ was met
-- whether bulk discount would be active
+- Lead time (mean, used for urgency normalization)
 
-### Excluded supplier output
-For suppliers not used:
-- supplier ID
-- country
-- compliance status
-- exclusion reason
+---
 
-### Constraint diagnostics
-- LP solve status
-- whether demand constraint was binding
-- whether budget constraint was binding
-- whether diversification constraints were binding
-- infeasibility reason if applicable
+## Objective Function
 
-### Formula description
-A business-readable explanation of how the optimization was solved.
-Describes the objective function in plain language, interprets each active
-constraint (budget, diversification mode, service-level multiplier), and notes
-any constraints that were binding or skipped.
+Minimize total risk-adjusted procurement cost:
 
-### Executive summary
-A short procurement-facing explanation of the result.
+```
+minimize  Σ_j  c_j × (1 + λ_risk × r_j + λ_urgency × lt_norm_j) × x_j
+```
 
-### Baseline comparison record
-A silent, lightweight comparison run is computed alongside every LP run.
+| Symbol | Definition |
+|---|---|
+| `c_j` | Landed unit cost (USD/unit) |
+| `r_j` | Risk penalty, normalized 0–1 |
+| `lt_norm_j` | Lead-time mean, normalized 0–1 within eligible pool (0 = fastest, 1 = slowest) |
+| `λ_risk` | User-controlled risk weight (default 0.50) |
+| `λ_urgency` | `URGENCY_LEAD_TIME_WEIGHT` (0.25) when `urgency=True`, else 0 |
+| `x_j` | Quantity allocated to supplier `j` (continuous, ≥ 0) |
 
-The baseline is the **cheapest feasible compliant plan** for the same product
-and demand level, with:
-- `lambda_risk = 0` (cost-only objective, no risk penalty)
-- `diversification_mode = 'none'` (no concentration or country constraints)
+**Interpreting λ_risk:**
+
+| λ_risk value | Business intent |
+|---|---|
+| 0.0 | Cost only — risk profile ignored |
+| 0.25 | Cost-focused, low risk weight |
+| 0.50 | Balanced cost/risk tradeoff (default) |
+| 1.0 | Risk-averse — risk carries equal weight to cost |
+| 1.5 | Risk-priority — risk penalty dominates |
+
+**Urgency mode** adds a lead-time cost premium using the same multiplicative structure as `λ_risk`. The slowest eligible supplier carries a 25% effective cost markup; the fastest carries none. No suppliers are excluded — feasibility is preserved.
+
+---
+
+## Constraints
+
+| Constraint | When active | What it enforces |
+|---|---|---|
+| Demand fulfillment | Always | `Σ x_j ≥ D` (adjusted requirement) |
+| Budget cap | If `budget_cap` is set | `Σ c_j × x_j ≤ budget_cap` |
+| Compliance filter | Always | Suppliers below `compliance_threshold` are excluded before building the LP |
+| Supplier share cap | If `diversification_mode = "supplier_share_only"` | `x_j ≤ max_supplier_share × D` for each supplier |
+| Country diversification (MIP) | If `diversification_mode = "country_diversified"` | Exactly 3 suppliers, each from a different country, each ~30–35% of volume |
+| Service level buffer | If `service_level_target > 1.0` | `D_adjusted = D × service_level_target` (additive buffer above requirement) |
+
+### Diversification Modes
+
+Three modes are supported. **The objective function never changes** — only constraints are added.
+
+- **`none`** — No concentration constraint. LP concentrates on lowest adjusted-cost supplier(s).
+- **`supplier_share_only`** — Enforces `max_supplier_share` cap per supplier. Spreads volume across multiple suppliers.
+- **`country_diversified`** — Mixed Integer Program (MIP) extension:
+  - Binary variables `y_j ∈ {0,1}` added
+  - `Σ y_j = 3` (exactly 3 suppliers selected)
+  - `Σ_{j ∈ country_c} y_j ≤ 1` (at most one per country)
+  - `0.30·D ≤ x_j ≤ 0.35·D` for selected suppliers
+  - Requires ≥ 3 countries in the eligible pool; falls back gracefully with a `diversification_fallback_note` if infeasible
+
+### Service Level
+
+`service_level_target` is an additive procurement buffer — it scales the demand target above the requirement the inventory layer already computed. It does **not** rebuild safety stock.
+
+- `1.00` = procure exactly to requirement
+- `1.10` = procure 10% above requirement
+
+---
+
+## Baseline Comparison
+
+Every LP run silently computes a **baseline plan** alongside the optimized plan.
+
+The baseline is the cheapest feasible compliant plan for the same product and demand, with:
+- `lambda_risk = 0` (cost-only objective)
+- `diversification_mode = "none"` (no concentration or country constraints)
 - `max_supplier_share = 1.0` (single-supplier concentration allowed)
-- same compliance filter applied
+- Same compliance filter applied
 
-The baseline record is stored in the result dict under the key `'baseline'`
-and contains:
-- `baseline_total_cost`
-- `baseline_selected_suppliers`
-- `baseline_lead_supplier_share`
-- `baseline_country_count`
+The baseline record is stored in `result["baseline"]` and contains:
 
-**The baseline is NOT printed in standard LP run output (`_print_result`).**
-It is reserved for session-level decision justification. This keeps routine
-output clean and avoids confusion between the optimized plan and the
-hypothetical unconstrained plan.
+| Key | Description |
+|---|---|
+| `baseline_total_cost` | Total cost of the unconstrained cost-only plan |
+| `baseline_selected_suppliers` | Number of suppliers used |
+| `baseline_lead_supplier_share` | Share held by the largest supplier (0–1) |
+| `baseline_country_count` | Number of distinct sourcing countries |
 
----
-
-## Session-Level Summary Behavior
-
-When multiple LP runs are approved within a single agent session, the demo
-synthesizer assembles a final procurement session summary. This summary:
-
-- lists all approved products, suppliers, countries, and total spend
-- shows diversification posture across runs
-- includes a baseline comparison table — showing each approved plan's cost
-  relative to the cheapest feasible unconstrained plan for the same demand
-
-The baseline comparison uses the `'baseline'` record stored in each approved
-run. It computes cost delta (absolute and percentage) and supplier/country
-delta (how many more suppliers or countries the approved plan selected versus
-the unconstrained baseline). An interpretation line classifies the premium as
-negligible (≤1%), modest (≤10%), or material (>10%).
-
-This framing helps a procurement manager justify a diversified or
-risk-adjusted plan to stakeholders — showing how much extra cost the
-constraints added and why.
-
-**The baseline comparison appears only in the final session summary, not in
-standard individual run output.**
+**The baseline is not shown in standard per-run output.** It is reserved for the Final Executive Summary, where it quantifies the cost of risk management and diversification in plain dollar terms.
 
 ---
 
-## Important Design Choices
+## Final Executive Summary Integration
 
-## 1. Product-level optimization first
-The LP currently solves at the selected **product** level.
+When the user approves one or more LP runs and triggers **"Complete Procurement Plan"**, the demo assembles a Final Executive Summary that spans all approved runs in the session.
 
-That means:
-- it determines the best total allocation across suppliers for one product
-- then optionally provides facility-level breakdown in post-processing
+This summary:
+- Lists every approved product, total allocated quantity, selected suppliers, countries, and total spend
+- Shows a baseline comparison table for each approved run:
+  - Optimized plan cost vs. baseline cost-only plan
+  - Cost delta (absolute USD and percentage premium)
+  - Supplier count delta and country count delta vs. baseline
+  - Interpretation label: Negligible (≤1%), Modest (≤10%), or Material (>10%)
+- Summarizes diversification posture across all runs
+- Characterizes the session-level risk premium as a strategic investment in supply-chain resilience
 
-This keeps the first version:
-- cleaner
-- faster
-- easier to explain
+The baseline comparison makes it straightforward to justify a risk-adjusted or diversified plan to stakeholders — showing precisely how much extra spend the constraints added and what was gained.
 
----
+**The baseline comparison appears only in the final session summary, not in individual run output.**
 
-## 2. Facility is an optional user parameter
-The user may:
-- run the LP across all facilities with positive requirement
-- or isolate a single facility
+### Sourcing Recommendation Logic
 
-This makes the model more flexible for the demo without overcomplicating the base formulation.
+The Final Executive Summary includes targeted sourcing recommendations when inventory pressure is elevated. Two behaviors are worth noting:
 
----
+**Emergency sourcing weeks.** "Contact sales/sourcing immediately" guidance cites only the weeks where Safety Stock Utilization reaches **Moderate or higher (≥50%)**. Low-urgency triggered weeks — where cumulative procurement pressure is below 50% of the SS reserve — are not included. The threshold corresponds to urgency bands `Moderate` (≥50%), `High` (≥75%), and `Critical` (≥100%) in the weekly trigger view.
 
-## 3. MOQ is explainability-only in v1
-Minimum order quantity / bulk-unit threshold is currently:
-- surfaced in the output
-- checked after solving
-
-But it is **not yet** a hard optimization constraint.
-
-That means the result tells us:
-- whether MOQ was met
-- whether bulk pricing would activate
-
-without forcing a more complex mixed-integer optimization in version 1.
-
-This keeps the LP simpler and safer for demo use.
+**Carryover demand.** The allocations approved in a session cover only the current planning horizon. If component demand continues beyond that window — which is likely for multi-quarter production programs — a new optimization must be run against an updated or extended forecast. Current supplier allocations do **not** roll forward automatically. Rerun with refreshed net requirements before the next procurement cycle begins.
 
 ---
 
-## 4. Service level is treated as a user-facing buffer
-The inventory layer already includes safety stock and policy logic.
+## Session Behavior
 
-So the LP does **not** re-solve inventory policy.
+Within a single agent session, a user may run the LP multiple times — for different products, different risk profiles, what-if exclusion scenarios, or diversification variants. Each run is independent.
 
-Instead:
-- `service_level_target` acts as an additional multiplier on procurement quantity
-- example:
-  - `1.00` = satisfy the exact procurement requirement
-  - `1.10` = procure 10% above requirement
+Runs accumulate in session state as **approved scenarios**. The session summary aggregates across all approved runs, enabling cross-product and cross-scenario comparisons that are not visible in individual run output.
 
-This makes service level easy to explain and demo.
+Common session patterns:
 
----
-
-## Example User Parameters
-
-The LP is designed to support parameters such as:
-
-- `product`
-- `facility_id` (optional)
-- `planning_horizon`
-- `budget_cap`
-- `compliance_threshold`
-- `lambda_risk`
-- `max_supplier_share`
-- `service_level_target`
-- `urgency`
-- `exclude_supplier_ids` (for disruption / what-if scenarios)
-- `order_quantity`
-- `diversification_mode` (`"none"`, `"supplier_share_only"`, `"country_diversified"`)
+| Pattern | How it works |
+|---|---|
+| **Multi-product** | One LP run per component (transistors, power devices, etc.) — summary covers all |
+| **What-if / disruption** | Same product with `exclude_supplier_ids` — appears as a separate scenario in session |
+| **Urgency rerun** | Same product with `urgency=True` — compared to the original approved run |
+| **Diversification variant** | Same product with `country_diversified` — baseline comparison shows the diversification premium |
 
 ---
 
-## Example Business Question This Module Answers
+## Step-by-Step Pipeline (`run_lp_optimization.py`)
 
-> “For integrated circuit components over the next planning window, under a moderate risk preference and a $50,000 budget, what supplier mix should we use to satisfy procurement need while avoiding overconcentration?”
+### Step 1 — Load procurement requirement
+Query `vw_component_requirement_lp` + `fact_component_inventory_history` + `fact_inventory_policy`.
+Apply the horizon-level inventory offset formula (see above). Produce total demand `D`.
+
+### Step 2 — Load and score suppliers
+Query `vw_supplier_complete_profile`. Run `SupplierScorer.score()` with `lambda_risk` from params.
+Normalize: `risk_penalty_norm = risk_penalty / 100`. Apply compliance filter.
+
+### Step 3 — Build the LP
+Create one continuous decision variable `x_j ≥ 0` per eligible supplier.
+Apply objective + constraints as described above.
+If `country_diversified`, extend to MIP with binary variables `y_j`.
+
+### Step 4 — Solve
+Solve with **PuLP + CBC**. Chosen for transparency, debuggability, and demo explainability.
+
+### Step 5 — Compute baseline
+Run a silent second solve with `lambda_risk=0`, `diversification_mode="none"`, `max_supplier_share=1.0`.
+Store result in `result["baseline"]` for use in the Final Executive Summary.
+
+### Step 6 — Format and return
+Assemble the structured result dict (see Output Structure below).
 
 ---
 
-## What This Module Does NOT Do
+## Output Structure
 
-This module does **not**:
-- forecast demand
-- build the BOM
-- compute safety stock formulas
-- modify supplier scoring logic
-- modify procurement requirement logic
-- manage agent orchestration directly
+The `run()` function returns a dict with the following keys:
 
-Its job is only:
+| Key | Contents |
+|---|---|
+| `params_recap` | All input parameters as confirmed for this run |
+| `requirement` | Total `D`, adjusted `D`, facilities included, facility demand shares |
+| `supplier_pool` | Total suppliers, excluded by compliance, selected by LP |
+| `allocation` | Per-supplier allocation detail (see below) |
+| `cost_summary` | Total cost, risk-adjusted cost, per-supplier cost breakdown |
+| `excluded_suppliers` | Suppliers not used and why (compliance, exclusion, not selected) |
+| `constraint_diagnostics` | LP status, binding constraints, infeasibility reason if applicable |
+| `formula_description` | Plain-language explanation of objective + active constraints |
+| `executive_summary` | Short procurement-facing narrative for the current run |
+| `baseline` | Baseline comparison record (see Baseline Comparison section) |
+| `avoid_tier_warning` | Warning if Avoid-tier suppliers were included due to pool constraints |
+| `compliance_unlocked_note` | Note if compliance threshold was relaxed to restore feasibility |
+| `compliance_exclusion_note` | Summary of suppliers excluded by compliance filter |
+| `diversification_fallback_note` | Note if `country_diversified` fell back to a relaxed mode |
+| `urgency_feasibility` | Feasibility status when urgency mode is active |
 
-> **take procurement need + supplier options → return an optimal supplier allocation**
+### Allocation detail (per selected supplier)
+
+| Field | Description |
+|---|---|
+| Supplier ID | Internal supplier identifier |
+| Country | Sourcing country |
+| Quantity allocated | Units to procure from this supplier |
+| Share of total | Fraction of total volume (0–1) |
+| Landed unit cost | USD/unit |
+| Risk penalty | Normalized 0–1 |
+| Total cost | `quantity × landed_cost` |
+| Risk-adjusted cost | `quantity × effective_cost_with_risk_weight` |
+| Supplier tier | Preferred / Acceptable / Avoid |
+| MOQ | Minimum order quantity |
+| Bulk-unit threshold | Volume above which bulk pricing activates |
+| MOQ met | Whether allocated quantity meets MOQ |
+| Bulk discount active | Whether bulk threshold is reached |
+
+---
+
+## Parameters Reference
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `product` | str | required | Component to optimize (e.g. `"transistors"`) |
+| `facility_id` | str or null | null | Restrict to one facility; null = aggregate all |
+| `lambda_risk` | float | 0.50 | Risk weight in objective (0 = cost only, 1.5 = risk priority) |
+| `max_supplier_share` | float | 1.0 | Max share per supplier (used by `supplier_share_only` mode) |
+| `budget_cap` | float or null | null | Hard spend ceiling (USD) |
+| `compliance_threshold` | float | 0.50 | Minimum compliance score; below = excluded |
+| `service_level_target` | float | 1.0 | Procurement buffer multiplier (1.10 = 10% buffer) |
+| `urgency` | bool | false | Adds lead-time cost premium to fast-delivery selection |
+| `exclude_supplier_ids` | list[str] | [] | Manually exclude suppliers (disruption / what-if scenarios) |
+| `forecast_run_id` | int | 0 | Pin to specific forecast run; 0 = latest |
+| `diversification_mode` | str | `"none"` | `"none"` / `"supplier_share_only"` / `"country_diversified"` |
+
+---
+
+## Design Decisions
+
+### Product-level first
+The LP solves at the product level and optionally narrows to a facility. This keeps the formulation clean, explainable, and fast for demo use.
+
+### MOQ is explainability-only (v1)
+MOQ and bulk thresholds are surfaced in the output and checked post-solve, but are not hard LP constraints. The result tells the user whether MOQ would be met without introducing mixed-integer complexity for every run.
+
+### Service level is a buffer, not a re-solve
+The inventory layer already handles safety stock. `service_level_target` is a simple additive multiplier on the procurement target — easy to explain and safe to demo without touching inventory logic.
+
+### Baseline is silent
+The baseline plan is computed on every run but never displayed in individual run output. Showing it every time would create confusion between the optimized plan and the hypothetical unconstrained plan. It surfaces once — in the final session summary — where the comparison has clear business purpose.
 
 ---
 
 ## How This Fits into the Full System
-
-The full pipeline now works like this:
 
 ```text
 Historical Demand
@@ -497,25 +319,19 @@ Inventory / Safety Stock Check
     ↓
 Net Procurement Requirement
     ↓
-LP Supplier Allocation
+LP Supplier Allocation         ← this module
+    ↓
+Final Executive Summary        ← session-level aggregation across all approved runs
 ```
-
-This optimization layer is the final step that turns analysis into a recommendation.
 
 ---
 
 ## Why This Matters
 
-Without this layer, the system can tell us:
+Every upstream layer — forecasting, BOM translation, inventory planning — produces **analysis**. It tells the team what demand is coming, what components are needed, and whether inventory is sufficient.
 
-- what demand is coming
-- what components are needed
-- whether inventory is sufficient
+This layer is what converts that analysis into a **decision**: who to buy from, how much, at what cost, and under what risk posture.
 
-But it cannot answer:
+Without it, the system can answer every preparatory question but cannot close the loop. With it, a procurement manager can move from "we need 47,000 transistors" to a specific, defensible supplier allocation — with the cost of risk management quantified in dollars, the diversification posture documented, and the baseline comparison ready for stakeholder review.
 
-- who should we buy from?
-- how much should we buy from each supplier?
-- how do we trade off cost, risk, budget, and diversification?
-
-This module is what makes the system a true procurement decision tool rather than just an analytics tool.
+That is the difference between a supply-chain analytics tool and a procurement decision engine.

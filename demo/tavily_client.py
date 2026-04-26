@@ -12,10 +12,12 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 
 from config import TAVILY_API_KEY
 
+import sys
+
 _VENV_PYTHON = os.path.join(os.path.dirname(__file__), "venv", "bin", "python")
 
 server_params = StdioServerParameters(
-    command=_VENV_PYTHON if os.path.exists(_VENV_PYTHON) else "python",
+    command=_VENV_PYTHON if os.path.exists(_VENV_PYTHON) else sys.executable,
     args=["-m", "mcp_server_tavily"],
     env={
         **os.environ,
