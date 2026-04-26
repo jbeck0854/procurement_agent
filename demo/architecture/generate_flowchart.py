@@ -1,6 +1,19 @@
 """
-Generate a system architecture flowchart for the Procurement Intelligence Agent.
-Reflects the refactored hybrid orchestrator architecture (April 2026).
+System Architecture flowchart — poster edition (V3.1).
+
+Keeps V1 visual language (Graphviz DOT, Phase 1 / Phase 2 dashed cluster
+boxes) but (a) inlines each agent's external dependency as a small chip
+inside the card — no more spaghetti arrows to a separate deps row, and
+(b) uses white terminals with lime borders, not black. All fonts sized
+up for poster legibility.
+
+Fixes vs earlier team draft:
+  - model name is gpt-5.3-chat, not GPT-5 Mini
+  - Orchestrator → Approve? (HITL amber) → Phase 1 → Phase Router
+    → Phase 2 → needs-synthesis? → (Synthesizer | bypass) → Response
+  - Synthesizer is a conditional stop (fires only if Data or Risk ran)
+  - LP Agent amber dashed "modify · re-plan" back to Orchestrator
+
 Outputs: architecture_flowchart.png
 """
 
@@ -8,255 +21,427 @@ import graphviz
 
 OUTPUT_PATH = "architecture_flowchart"
 
+# ── Palette (slide-deck design language) ────────────────────────────
+# Brand green: bright saturated mint, matches "Procurement Pilot" title
+LIME = "#5CDC7A"
+LIME_SOFT = "#8AE7A0"
+LIME_TINT = "#E8FAED"
+LIME_HALO = "#F2FCF6"
+
+AMBER = "#D4A017"
+AMBER_TINT = "#FBF1D6"
+
+INK = "#0A0A0A"
+TEXT = "#111111"
+MUTED = "#5A6A62"
+LINE = "#D4DBD7"
+
+PHASE1_BORDER = "#3E8FCC"
+PHASE1_HALO = "#EBF3FA"
+PHASE1_CARD = "#FFFFFF"
+
+PHASE2_BORDER = "#1F9A5A"
+PHASE2_HALO = "#ECF7F0"
+PHASE2_CARD = "#FFFFFF"
+
+DEP_PG = "#CC7A1E"
+DEP_TAVILY = "#12886B"
+DEP_SOLVER = "#4D5B6B"
+
+
+def pill(bg, fg, text, size=12):
+    return (
+        f'<TD BGCOLOR="{bg}" ALIGN="CENTER" CELLPADDING="6" HEIGHT="26">'
+        f'<FONT FACE="Helvetica Bold" POINT-SIZE="{size}" COLOR="{fg}">'
+        f'&nbsp;{text}&nbsp;</FONT></TD>'
+    )
+
+
+def agent_label(title, subtitle, pills_row, summary, uses_pill=None,
+                title_color=TEXT, border_color=PHASE1_BORDER):
+    pill_cells = "".join(pills_row)
+    n_cols = max(len(pills_row), 1)
+    uses_row = ""
+    if uses_pill:
+        uses_row = (
+            f'<TR><TD COLSPAN="{n_cols}" HEIGHT="6"></TD></TR>'
+            f'<TR><TD COLSPAN="{n_cols}" ALIGN="CENTER">'
+            f'<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">'
+            f'<TR>{uses_pill}</TR></TABLE></TD></TR>'
+        )
+    return (
+        '<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">'
+        f'<TR><TD COLSPAN="{n_cols}" ALIGN="CENTER">'
+        f'<FONT FACE="Helvetica Bold" POINT-SIZE="19" COLOR="{title_color}">'
+        f'{title}</FONT></TD></TR>'
+        f'<TR><TD COLSPAN="{n_cols}" ALIGN="CENTER">'
+        f'<FONT FACE="Helvetica" POINT-SIZE="13" COLOR="{MUTED}">'
+        f'{subtitle}</FONT></TD></TR>'
+        f'<TR><TD COLSPAN="{n_cols}" HEIGHT="10"></TD></TR>'
+        f'<TR>{pill_cells}</TR>'
+        f'<TR><TD COLSPAN="{n_cols}" HEIGHT="9"></TD></TR>'
+        f'<TR><TD COLSPAN="{n_cols}" ALIGN="CENTER">'
+        f'<FONT FACE="Helvetica" POINT-SIZE="13" COLOR="{TEXT}">'
+        f'{summary}</FONT></TD></TR>'
+        f'{uses_row}'
+        '</TABLE>>'
+    )
+
+
+def hero_label(title, subtitle, pills_row):
+    pill_cells = "".join(pills_row)
+    n_cols = max(len(pills_row), 1)
+    return (
+        '<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">'
+        f'<TR><TD COLSPAN="{n_cols}" ALIGN="CENTER">'
+        f'<FONT FACE="Helvetica Bold" POINT-SIZE="22" COLOR="{INK}">'
+        f'{title}</FONT></TD></TR>'
+        f'<TR><TD COLSPAN="{n_cols}" ALIGN="CENTER">'
+        f'<FONT FACE="Helvetica" POINT-SIZE="13" COLOR="#0F2416">'
+        f'<I>{subtitle}</I></FONT></TD></TR>'
+        f'<TR><TD COLSPAN="{n_cols}" HEIGHT="10"></TD></TR>'
+        f'<TR>{pill_cells}</TR>'
+        '</TABLE>>'
+    )
+
+
+def terminal_label(title, subtitle):
+    return (
+        '<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">'
+        f'<TR><TD ALIGN="CENTER">'
+        f'<FONT FACE="Helvetica Bold" POINT-SIZE="19" COLOR="{TEXT}">'
+        f'{title}</FONT></TD></TR>'
+        f'<TR><TD ALIGN="CENTER">'
+        f'<FONT FACE="Helvetica" POINT-SIZE="13" COLOR="{MUTED}">'
+        f'{subtitle}</FONT></TD></TR>'
+        '</TABLE>>'
+    )
+
 
 def build_flowchart() -> graphviz.Digraph:
     g = graphviz.Digraph(
-        "Procurement Agent Architecture",
+        "Procurement Pilot — System Architecture",
         format="png",
         engine="dot",
     )
     g.attr(
         rankdir="TB",
         bgcolor="white",
-        fontname="Helvetica Neue",
+        fontname="Helvetica",
         pad="0.8",
-        nodesep="0.9",
-        ranksep="1.0",
-        dpi="200",
+        nodesep="1.1",
+        ranksep="1.15",
+        dpi="220",
         compound="true",
+        splines="spline",
+        labelloc="t",
+        label=(
+            f'<<FONT FACE="Helvetica Bold" POINT-SIZE="32" COLOR="{LIME}">'
+            'Procurement Pilot</FONT>'
+            f'<FONT FACE="Helvetica Bold" POINT-SIZE="32" COLOR="{TEXT}">'
+            ' — System Architecture</FONT><BR/>'
+            f'<FONT FACE="Helvetica" POINT-SIZE="15" COLOR="{MUTED}">'
+            '<I>Hybrid LangGraph orchestrator  ·  parallel two-phase agent '
+            'fleet  ·  human-in-the-loop gates</I></FONT>>'
+        ),
     )
-    g.attr("node", fontname="Helvetica Neue", fontsize="11", style="filled")
-    g.attr("edge", fontname="Helvetica Neue", fontsize="9", color="#666666")
+    g.attr("node", fontname="Helvetica", style="filled")
+    g.attr("edge", fontname="Helvetica", fontsize="13", color=LIME,
+           fontcolor=MUTED, arrowsize="1.0", penwidth="1.8")
 
-    # ── Colors ──────────────────────────────────────────────────────
-    C_USER = "#2C3E50"
-    C_ORCH = "#C0392B"
-    C_P1 = "#2980B9"
-    C_P2 = "#27AE60"
-    C_SYNTH = "#8E44AD"
-    C_DB = "#E67E22"
-    C_OOS = "#95A5A6"
-    C_SKIP = "#7F8C8D"
+    # ── Terminals (white fill, lime border) ──────────────────────────
+    g.node(
+        "user",
+        terminal_label("User", "natural-language request"),
+        shape="box", style="filled,rounded", fillcolor="white",
+        color=LIME, penwidth="2", margin="0.32,0.18",
+    )
+    g.node(
+        "streamlit",
+        terminal_label("Streamlit UI",
+                       "dark theme · streaming · plan approval"),
+        shape="box", style="filled,rounded", fillcolor="white",
+        color=LIME, penwidth="2", margin="0.32,0.18",
+    )
 
-    # ════════════════════════════════════════════════════════════════
-    # TOP: User → Streamlit → Orchestrator
-    # ════════════════════════════════════════════════════════════════
+    # ── Orchestrator (hero) ───────────────────────────────────────────
+    g.node(
+        "orchestrator",
+        hero_label(
+            "Orchestrator",
+            "gpt-5.3-chat  ·  hybrid routing engine",
+            [
+                pill("white", TEXT, "INTENT", 13),
+                '<TD WIDTH="6"></TD>',
+                pill("white", TEXT, "23 FEW-SHOT", 13),
+                '<TD WIDTH="6"></TD>',
+                pill("white", TEXT, "REGEX PARAMS", 13),
+            ],
+        ),
+        shape="box", style="filled,rounded", fillcolor=LIME,
+        color=LIME, penwidth="0", margin="0.40,0.22",
+    )
 
-    g.node("user", "  User  \n(Natural Language)",
-           shape="ellipse", fillcolor=C_USER, fontcolor="white",
-           fontsize="14", penwidth="0")
+    # ── Approve? diamond (amber HITL) ─────────────────────────────────
+    g.node(
+        "approve",
+        '<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">'
+        f'<TR><TD ALIGN="CENTER"><FONT FACE="Helvetica Bold" POINT-SIZE="19" COLOR="{AMBER}">Approve?</FONT></TD></TR>'
+        f'<TR><TD ALIGN="CENTER"><FONT FACE="Helvetica Bold" POINT-SIZE="12" COLOR="{AMBER}"><I>HITL gate</I></FONT></TD></TR>'
+        '</TABLE>>',
+        shape="diamond", style="filled", fillcolor=AMBER_TINT,
+        color=AMBER, penwidth="2.8", margin="0.30,0.12",
+    )
 
-    g.node("streamlit",
-           "  Streamlit UI  \n  Dark Theme · Streaming · Rich Rendering  ",
-           shape="box", fillcolor="#34495E", fontcolor="white",
-           style="filled,rounded", width="3.5")
-
-    g.node("orchestrator",
-           "Hybrid Orchestrator (GPT-5 Mini)\n"
-           "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-           "1. LLM classifies intent → selects agent + tool\n"
-           "2. param_extractor.py fills LP params (code-side, 0ms)\n"
-           "3. interrupt() → User approves work plan",
-           shape="box", fillcolor=C_ORCH, fontcolor="white",
-           style="filled,rounded,bold", penwidth="2", width="5")
-
-    g.node("oos", "Out of Scope\n(fixed refusal)",
-           shape="box", fillcolor=C_OOS, fontcolor="white",
-           style="filled,rounded", fontsize="9")
-
-    # ════════════════════════════════════════════════════════════════
-    # PHASE 1: Data Retrieval
-    # ════════════════════════════════════════════════════════════════
-
+    # ════ PHASE 1 cluster ═════════════════════════════════════════════
     with g.subgraph(name="cluster_phase1") as p1:
         p1.attr(
-            label="PHASE 1 — Data Retrieval (parallel fan-out)",
-            style="dashed,rounded", color=C_P1, fontcolor=C_P1,
-            fontsize="13", fontname="Helvetica Neue Bold",
-            bgcolor="#F7FBFF", penwidth="1.5",
+            label=(
+                '<<FONT FACE="Helvetica Bold" POINT-SIZE="17" '
+                f'COLOR="{PHASE1_BORDER}">PHASE 1 </FONT>'
+                '<FONT FACE="Helvetica" POINT-SIZE="14" '
+                f'COLOR="{PHASE1_BORDER}">— Data Retrieval · parallel fan-out</FONT>>'
+            ),
+            style="dashed,rounded",
+            color=PHASE1_BORDER,
+            bgcolor=PHASE1_HALO,
+            penwidth="2.8",
+            margin="22",
         )
-        p1.node("pipeline_agent",
-                "Pipeline Agent\n(Direct Execution)\n───────────\n"
-                "10 pre-built tools\nForecast · BOM\nInventory · Procurement",
-                shape="box", fillcolor="#D6EAF8", fontcolor="#1A5276",
-                style="filled,rounded", width="2.6")
-        p1.node("data_agent",
-                "Data Agent\n(ReAct Loop)\n───────────\n"
-                "Free-form SQL\nPostgres MCP",
-                shape="box", fillcolor="#D6EAF8", fontcolor="#1A5276",
-                style="filled,rounded", width="2.2")
-        p1.node("risk_agent",
-                "Risk Agent\n(ReAct Loop)\n───────────\n"
-                "Web Search\nTavily MCP",
-                shape="box", fillcolor="#D6EAF8", fontcolor="#1A5276",
-                style="filled,rounded", width="2.2")
+        p1.node(
+            "pipeline_agent",
+            agent_label(
+                "Pipeline Agent",
+                "Direct Execution  ·  zero LLM in loop",
+                [
+                    pill(LIME, INK, "⚡ FAST"),
+                    '<TD WIDTH="5"></TD>',
+                    pill("#F4FAE8", TEXT, "10 TOOLS"),
+                ],
+                "Forecast · BOM · Inventory · Procurement",
+                uses_pill=pill("white", DEP_PG, "uses: PostgreSQL", 11),
+                border_color=PHASE1_BORDER,
+            ),
+            shape="box", style="filled,rounded",
+            fillcolor=PHASE1_CARD, color=PHASE1_BORDER, penwidth="2",
+            margin="0.28,0.20",
+        )
+        p1.node(
+            "data_agent",
+            agent_label(
+                "Data Agent",
+                "ReAct Loop",
+                [
+                    pill(PHASE1_BORDER, "white", "↻ REACT"),
+                    '<TD WIDTH="5"></TD>',
+                    pill("#EAF3FB", TEXT, "SQL"),
+                ],
+                "Free-form queries over procurement DB",
+                uses_pill=pill("white", DEP_PG, "uses: Postgres MCP", 11),
+                border_color=PHASE1_BORDER,
+            ),
+            shape="box", style="filled,rounded",
+            fillcolor=PHASE1_CARD, color=PHASE1_BORDER, penwidth="2",
+            margin="0.28,0.20",
+        )
+        p1.node(
+            "risk_agent",
+            agent_label(
+                "Risk Agent",
+                "ReAct Loop",
+                [
+                    pill(PHASE1_BORDER, "white", "↻ REACT"),
+                    '<TD WIDTH="5"></TD>',
+                    pill("#EAF3FB", TEXT, "WEB"),
+                ],
+                "Geopolitical &amp; tariff news search",
+                uses_pill=pill("white", DEP_TAVILY, "uses: Tavily MCP", 11),
+                border_color=PHASE1_BORDER,
+            ),
+            shape="box", style="filled,rounded",
+            fillcolor=PHASE1_CARD, color=PHASE1_BORDER, penwidth="2",
+            margin="0.28,0.20",
+        )
 
-    # ════════════════════════════════════════════════════════════════
-    # PHASE 2: Analysis & Optimization
-    # ════════════════════════════════════════════════════════════════
+    # ── Phase Router pill ────────────────────────────────────────────
+    g.node(
+        "phase_router",
+        '<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">'
+        f'<TR><TD ALIGN="CENTER"><FONT FACE="Helvetica Bold" POINT-SIZE="16" COLOR="{TEXT}">Phase Router</FONT></TD></TR>'
+        f'<TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" POINT-SIZE="12" COLOR="{MUTED}"><I>dispatch by intent</I></FONT></TD></TR>'
+        '</TABLE>>',
+        shape="box", style="filled,rounded", fillcolor=LIME_HALO,
+        color=LIME, penwidth="2.2", margin="0.34,0.16",
+    )
 
+    # ════ PHASE 2 cluster ════════════════════════════════════════════
     with g.subgraph(name="cluster_phase2") as p2:
         p2.attr(
-            label="PHASE 2 — Analysis & Optimization (parallel fan-out)",
-            style="dashed,rounded", color=C_P2, fontcolor=C_P2,
-            fontsize="13", fontname="Helvetica Neue Bold",
-            bgcolor="#F5FFF5", penwidth="1.5",
+            label=(
+                '<<FONT FACE="Helvetica Bold" POINT-SIZE="17" '
+                f'COLOR="{PHASE2_BORDER}">PHASE 2 </FONT>'
+                '<FONT FACE="Helvetica" POINT-SIZE="14" '
+                f'COLOR="{PHASE2_BORDER}">— Analysis &amp; Optimization · parallel</FONT>>'
+            ),
+            style="dashed,rounded",
+            color=PHASE2_BORDER,
+            bgcolor=PHASE2_HALO,
+            penwidth="2.8",
+            margin="22",
         )
-        p2.node("chart_agent",
-                "Chart Agent\n(Direct Execution)\n───────────\n"
-                "7 chart tools\nSupplier Scoring",
-                shape="box", fillcolor="#D5F5E3", fontcolor="#1E8449",
-                style="filled,rounded", width="2.6")
-        p2.node("lp_agent",
-                "LP Agent\n(Direct Execution)\n───────────\n"
-                "Procurement Optimizer\nPuLP/CBC Solver\ninterrupt() → User Approval",
-                shape="box", fillcolor="#D5F5E3", fontcolor="#1E8449",
-                style="filled,rounded", width="2.8")
+        p2.node(
+            "chart_agent",
+            agent_label(
+                "ChartBuilder",
+                "Direct Execution",
+                [
+                    pill(LIME, INK, "⚡ FAST"),
+                    '<TD WIDTH="5"></TD>',
+                    pill("#E4F5EC", TEXT, "7 TOOLS"),
+                ],
+                "Supplier scoring · charts · comparisons",
+                uses_pill=pill("white", DEP_PG,
+                               "uses: PostgreSQL (read-only)", 11),
+                border_color=PHASE2_BORDER,
+            ),
+            shape="box", style="filled,rounded",
+            fillcolor=PHASE2_CARD, color=PHASE2_BORDER, penwidth="2",
+            margin="0.28,0.20",
+        )
+        p2.node(
+            "lp_agent",
+            agent_label(
+                "LP Optimizer",
+                "Direct Execution  ·  procurement optimizer",
+                [
+                    pill(LIME, INK, "⚡ FAST"),
+                    '<TD WIDTH="5"></TD>',
+                    pill(AMBER, "white", "⏸ HITL"),
+                ],
+                "Risk-adjusted allocation · approve / modify",
+                uses_pill=pill("white", DEP_SOLVER,
+                               "uses: PuLP + CBC solver", 11),
+                border_color=PHASE2_BORDER,
+            ),
+            shape="box", style="filled,rounded",
+            fillcolor=PHASE2_CARD, color=PHASE2_BORDER, penwidth="2",
+            margin="0.28,0.20",
+        )
 
-    # ════════════════════════════════════════════════════════════════
-    # POST-EXECUTION ROUTING
-    # ════════════════════════════════════════════════════════════════
+    # ── needs synthesis? diamond ──────────────────────────────────────
+    g.node(
+        "synth_gate",
+        '<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">'
+        f'<TR><TD ALIGN="CENTER"><FONT FACE="Helvetica Bold" POINT-SIZE="17" COLOR="{TEXT}">needs synthesis?</FONT></TD></TR>'
+        f'<TR><TD ALIGN="CENTER"><FONT FACE="Helvetica" POINT-SIZE="12" COLOR="{MUTED}"><I>fires if Data or Risk ran</I></FONT></TD></TR>'
+        '</TABLE>>',
+        shape="diamond", style="filled", fillcolor=LIME_HALO,
+        color=LIME, penwidth="2.8", margin="0.34,0.14",
+    )
 
-    g.node("synthesizer",
-           "  Synthesizer (GPT-5 Mini)  \n"
-           "  Executive Summary · Next Steps  ",
-           shape="box", fillcolor=C_SYNTH, fontcolor="white",
-           style="filled,rounded", width="3")
+    # ── Synthesizer (hero) ────────────────────────────────────────────
+    g.node(
+        "synthesizer",
+        hero_label(
+            "Synthesizer",
+            "gpt-5.3-chat  ·  executive summary",
+            [
+                pill("white", TEXT, "SUMMARY", 13),
+                '<TD WIDTH="6"></TD>',
+                pill("white", TEXT, "NEXT STEPS", 13),
+            ],
+        ),
+        shape="box", style="filled,rounded", fillcolor=LIME,
+        color=LIME, penwidth="0", margin="0.36,0.20",
+    )
 
-    g.node("end_direct",
-           "END (Direct Return)\n"
-           "━━━━━━━━━━━━━━━━━━━━\n"
-           "⚡ Skip Synthesizer\n"
-           "Structured results go\n"
-           "straight to UI",
-           shape="box", fillcolor="#E8E8E8", fontcolor="#555555",
-           style="filled,rounded,dashed", fontsize="9", width="2.2")
+    # ── Response terminal (white, lime border) ────────────────────────
+    g.node(
+        "response",
+        terminal_label("Response",
+                       "text · tables · charts · LP allocations"),
+        shape="box", style="filled,rounded", fillcolor="white",
+        color=LIME, penwidth="2", margin="0.36,0.18",
+    )
 
-    g.node("response",
-           "  Response  \n(Text + Charts + Structured Data)",
-           shape="ellipse", fillcolor=C_USER, fontcolor="white",
-           fontsize="13", penwidth="0")
+    # ════ EDGES ═══════════════════════════════════════════════════════
+    g.edge("user", "streamlit", color=LIME, penwidth="1.8")
+    g.edge("streamlit", "orchestrator", color=LIME, penwidth="1.8")
 
-    # ── Demo note ──────────────────────────────────────────────────
-    g.node("demo_note",
-           "⚡ Demo Speed Optimization\n"
-           "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-           "In demo, pipeline / chart / LP agents\n"
-           "skip Synthesizer and return structured\n"
-           "results directly for speed (~4s vs ~12s).\n"
-           "Synthesizer is part of the full architecture\n"
-           "and fires for data_agent / risk_agent flows\n"
-           "(free-form text needing LLM summary).",
-           shape="note", fillcolor="#F5EEF8", fontcolor="#6C3483",
-           fontsize="9")
+    g.edge("orchestrator", "approve",
+           label="  work orders  ", color=LIME, penwidth="1.8",
+           fontcolor=MUTED)
 
-    # ════════════════════════════════════════════════════════════════
-    # INFRASTRUCTURE (right side)
-    # ════════════════════════════════════════════════════════════════
+    for target, lbl in (
+        ("pipeline_agent", "  structured queries"),
+        ("data_agent", "  SQL explore"),
+        ("risk_agent", "  geopolitical"),
+    ):
+        g.edge("approve", target, label=lbl, color=LIME, penwidth="1.6",
+               fontcolor=MUTED)
 
-    g.node("backend",
-           "Backend Modules\n═══════════════\n"
-           "forecasting/forecast_summary.py\n"
-           "inventory/procurement_summary.py\n"
-           "optimization/run_lp_optimization.py\n"
-           "analytics/scoring.py + charts/",
-           shape="box3d", fillcolor="#FDEBD0", fontcolor="#784212",
-           fontsize="9", style="filled")
+    # Phase 1 → Phase Router
+    for src in ("pipeline_agent", "data_agent", "risk_agent"):
+        g.edge(src, "phase_router", color=LIME, penwidth="1.4")
 
-    g.node("postgres", "  PostgreSQL  \n  Procurement DB  ",
-           shape="cylinder", fillcolor=C_DB, fontcolor="white",
-           fontsize="10")
-    g.node("tavily", "  Tavily API  \n  (Web Search)  ",
-           shape="cylinder", fillcolor="#1ABC9C", fontcolor="white",
-           fontsize="10")
+    g.edge("phase_router", "chart_agent",
+           label="  chart task", color=LIME, penwidth="1.5",
+           fontcolor=MUTED)
+    g.edge("phase_router", "lp_agent",
+           label="  optimization task", color=LIME, penwidth="1.5",
+           fontcolor=MUTED)
+    # Bypass Phase 2 when only Data/Risk produced text
+    g.edge("phase_router", "synth_gate",
+           label="  text-only flow", color=LIME_SOFT, penwidth="1.2",
+           style="dashed", fontcolor=MUTED, constraint="false")
 
-    # ════════════════════════════════════════════════════════════════
-    # RANK CONSTRAINTS
-    # ════════════════════════════════════════════════════════════════
+    # Phase 2 → synth gate
+    g.edge("chart_agent", "synth_gate", color=LIME, penwidth="1.5")
+    g.edge("lp_agent", "synth_gate", color=LIME, penwidth="1.5")
 
-    with g.subgraph() as s:
-        s.attr(rank="same")
-        s.node("synthesizer")
-        s.node("end_direct")
-        s.node("demo_note")
+    # synth gate → synthesizer (yes) / bypass to response (no)
+    g.edge("synth_gate", "synthesizer",
+           label="  yes", color=LIME, penwidth="1.8",
+           fontcolor=LIME)
+    g.edge("synth_gate", "response",
+           label="  no · bypass", color=MUTED, penwidth="1.3",
+           style="dashed", fontcolor=MUTED, constraint="false")
 
-    with g.subgraph() as s:
-        s.attr(rank="same")
-        s.node("backend")
-        s.node("postgres")
-        s.node("tavily")
+    g.edge("synthesizer", "response", color=LIME, penwidth="1.8")
 
-    # ════════════════════════════════════════════════════════════════
-    # EDGES: Main Flow
-    # ════════════════════════════════════════════════════════════════
+    # LP modify loop (amber dashed)
+    g.edge("lp_agent", "orchestrator",
+           label="  modify · re-plan  ", color=AMBER, penwidth="1.6",
+           style="dashed", fontcolor=AMBER, constraint="false",
+           arrowsize="1.0")
 
-    g.edge("user", "streamlit", penwidth="1.5")
-    g.edge("streamlit", "orchestrator", penwidth="1.5")
-
-    # Orchestrator → out_of_scope
-    g.edge("orchestrator", "oos", label="  unrelated",
-           color=C_OOS, style="dashed", constraint="false")
-    g.edge("oos", "response", color=C_OOS, style="dashed",
-           constraint="false")
-
-    # ── Orchestrator → Phase 1 ─────────────────────────────────────
-    g.edge("orchestrator", "pipeline_agent", color=C_P1, penwidth="1.5",
-           label="  structured\n  queries")
-    g.edge("orchestrator", "data_agent", color=C_P1, penwidth="1.5",
-           label="  SQL explore")
-    g.edge("orchestrator", "risk_agent", color=C_P1, penwidth="1.5",
-           label="  geopolitical")
-
-    # ── Phase 1 → Phase 2 ─────────────────────────────────────────
-    g.edge("pipeline_agent", "chart_agent", color=C_P2, penwidth="1.5",
-           label="  data →\n  visualization")
-    g.edge("pipeline_agent", "lp_agent", color=C_P2, penwidth="1.5",
-           label="  data →\n  optimization")
-
-    # ════════════════════════════════════════════════════════════════
-    # EDGES: Post-Execution Routing (key architectural change)
-    # ════════════════════════════════════════════════════════════════
-
-    # data_agent / risk_agent → Synthesizer (needs LLM summary)
-    g.edge("data_agent", "synthesizer", color=C_SYNTH, penwidth="1.5",
-           label="  free-form →\n  LLM summary")
-    g.edge("risk_agent", "synthesizer", color=C_SYNTH, penwidth="1.5",
-           label="  risk intel →\n  LLM summary")
-
-    # pipeline / chart / LP → END directly (skip Synthesizer)
-    g.edge("pipeline_agent", "end_direct", color=C_SKIP,
-           style="dashed", penwidth="1.2")
-    g.edge("chart_agent", "end_direct", color=C_SKIP,
-           style="dashed", penwidth="1.2")
-    g.edge("lp_agent", "end_direct", color=C_SKIP,
-           style="dashed", penwidth="1.2")
-
-    # Both paths → Response
-    g.edge("synthesizer", "response", penwidth="1.5", color=C_SYNTH)
-    g.edge("end_direct", "response", penwidth="1.2", color=C_SKIP,
-           style="dashed")
-
-    # Demo note → END
-    g.edge("demo_note", "end_direct", style="dotted", color="#6C3483",
-           arrowsize="0.5", constraint="false")
-
-    # ════════════════════════════════════════════════════════════════
-    # EDGES: Infrastructure (side connections)
-    # ════════════════════════════════════════════════════════════════
-
-    g.edge("pipeline_agent", "backend", style="dotted", color="#B0B0B0",
-           arrowsize="0.7", constraint="false", label="helpers")
-    g.edge("chart_agent", "backend", style="dotted", color="#B0B0B0",
-           arrowsize="0.7", constraint="false")
-    g.edge("lp_agent", "backend", style="dotted", color="#B0B0B0",
-           arrowsize="0.7", constraint="false")
-
-    g.edge("backend", "postgres", style="dotted", color="#CCCCCC",
-           arrowsize="0.6")
-    g.edge("data_agent", "postgres", style="dashed", color=C_DB,
-           constraint="false", label="MCP", fontcolor=C_DB, fontsize="8")
-    g.edge("risk_agent", "tavily", style="dashed", color="#1ABC9C",
-           constraint="false", label="MCP", fontcolor="#1ABC9C", fontsize="8")
+    # ── Legend (compact, right-aligned footnote) ─────────────────────
+    # Combine into a single plaintext node so it reads as one tidy block,
+    # then anchor it to the right of Response with an invisible spacer.
+    g.node(
+        "legend",
+        (
+            '<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6">'
+            f'<TR><TD ALIGN="LEFT" COLSPAN="2"><FONT FACE="Helvetica Bold" POINT-SIZE="12" COLOR="{MUTED}">LEGEND</FONT></TD></TR>'
+            f'<TR><TD ALIGN="LEFT"><FONT FACE="Helvetica Bold" POINT-SIZE="13" COLOR="{LIME}">━━</FONT></TD>'
+            f'<TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="13" COLOR="{TEXT}">Primary flow</FONT></TD></TR>'
+            f'<TR><TD ALIGN="LEFT"><FONT FACE="Helvetica Bold" POINT-SIZE="13" COLOR="{AMBER}">⧫</FONT></TD>'
+            f'<TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="13" COLOR="{TEXT}">HITL gate / loop</FONT></TD></TR>'
+            f'<TR><TD ALIGN="LEFT"><FONT FACE="Helvetica Bold" POINT-SIZE="13" COLOR="{MUTED}">┈┈</FONT></TD>'
+            f'<TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="13" COLOR="{TEXT}">Optional path / bypass</FONT></TD></TR>'
+            '</TABLE>>'
+        ),
+        shape="box", style="filled,rounded",
+        fillcolor="white", color=LINE, penwidth="1",
+        margin="0.18,0.10",
+    )
+    # Invisible spacer so legend ends up on the right of Response
+    g.node("leg_spacer", "", shape="plaintext", width="1.4", height="0.01")
+    with g.subgraph() as r:
+        r.attr(rank="same")
+        r.node("leg_spacer"); r.node("response"); r.node("legend")
+    g.edge("leg_spacer", "response", style="invis")
+    g.edge("response", "legend", style="invis")
 
     return g
 

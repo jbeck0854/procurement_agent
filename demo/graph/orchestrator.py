@@ -146,6 +146,29 @@ User: "Rank the top suppliers for power_devices"
 User: "What's the weather like today?" / "Tell me a joke"
 → intent: "Out of scope"
   tasks: [{agent: "out_of_scope"}]
+
+MULTI-TASK EXAMPLES (emit MORE THAN ONE task when the user asks two independent questions in one message):
+
+User: "Show me where and when we need to trigger procurement in the upcoming horizon, and scan recent news for any semiconductor supply chain disruptions or tariff changes."
+→ intent: "Internal procurement triggers with external supply-chain risk scan"
+  tasks: [
+    {agent: "pipeline_agent", tool: "query_triggered_procurement_rows"},
+    {agent: "risk_agent"}
+  ]
+
+User: "Which weeks do we need to order components, and what's happening globally that could affect supply?"
+→ intent: "Procurement schedule with geopolitical risk overlay"
+  tasks: [
+    {agent: "pipeline_agent", tool: "query_triggered_procurement_rows"},
+    {agent: "risk_agent"}
+  ]
+
+User: "Compare forecast across facilities and check recent tariff news."
+→ intent: "Cross-facility forecast with tariff news"
+  tasks: [
+    {agent: "pipeline_agent", tool: "query_forecast_drilldown"},
+    {agent: "risk_agent"}
+  ]
 """
 
 

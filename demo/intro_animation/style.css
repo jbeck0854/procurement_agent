@@ -282,10 +282,10 @@ html, body {
 
 .eyebrow {
     font-size: 0.7rem;
-    color: var(--muted);
+    color: #e6e6e6;
     text-transform: uppercase;
     letter-spacing: 0.3em;
-    font-weight: 300;
+    font-weight: 500;
     margin-bottom: 28px;
 }
 
@@ -313,9 +313,9 @@ html, body {
 
 .hero-role {
     font-size: 1.05rem;
-    color: var(--muted);
+    color: #d2d2d2;
     margin-bottom: 12px;
-    font-weight: 300;
+    font-weight: 400;
 }
 
 .role-word {
@@ -328,11 +328,11 @@ html, body {
 
 .hero-desc {
     font-size: 0.88rem;
-    color: var(--muted);
+    color: #c4c4c4;
     max-width: 440px;
     margin: 0 auto 36px;
     line-height: 1.65;
-    font-weight: 300;
+    font-weight: 400;
 }
 
 /* ── Buttons ── */
