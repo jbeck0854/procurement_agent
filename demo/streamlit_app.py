@@ -532,6 +532,61 @@ def render_demo_buttons():
 
 # ── Graph execution helpers ──────────────────────────────────────────────────
 
+def render_progress_panel(trace):
+    """Persistent Active Engine Progress panel — rendered after streaming
+    completes. Sits above the Execution Trace in both live and replay views.
+    Reads `trace["tasks"]` (from orchestrator plan) and `trace["timings"]`
+    (agent wall-clock seconds). All planned agents render as completed (✓)
+    with their final timing."""
+    tasks = trace.get("tasks") or []
+    timings = trace.get("timings") or {}
+    planned = {t.get("agent") for t in tasks if t.get("agent")}
+    if planned & _SYNTH_TRIGGERS:
+        planned = planned | {"synthesizer"}
+    label_map = dict(AGENT_STEPS)
+
+    phase_eyebrow = (
+        "font-family:'Inter',sans-serif; font-size:0.58rem;"
+        "letter-spacing:0.18em; text-transform:uppercase; color:#888888;"
+        "margin:0.85rem 0 0.35rem; padding:0; font-weight:600;"
+    )
+    body = ""
+    for phase_label, agent_keys in PHASE_GROUPS:
+        phase_agents = [a for a in agent_keys if a in planned]
+        if not phase_agents:
+            continue
+        body += f"<p style=\"{phase_eyebrow}\">{phase_label}</p>"
+        for agent_key in phase_agents:
+            label = label_map.get(agent_key, agent_key)
+            secs = timings.get(agent_key)
+            time_html = (
+                f"<span style='font-family:\"Space Grotesk\",sans-serif;"
+                f"font-size:0.72rem; font-weight:700; color:#76b900;"
+                f"margin-left:auto; white-space:nowrap;'>{secs:.2f}s</span>"
+                if isinstance(secs, (int, float)) else ""
+            )
+            body += (
+                f"<div style='display:flex; align-items:center; gap:0.75rem;"
+                f"padding:0.35rem 0;'>"
+                f"<span style='color:#76b900; flex-shrink:0;'>✓</span>"
+                f"<span style='font-family:Manrope,sans-serif; font-size:0.85rem;"
+                f"color:#FFFFFF;'>{label}</span>"
+                f"{time_html}"
+                f"</div>"
+            )
+
+    if not body:
+        return
+
+    st.markdown(
+        f"<div style='{SECTION_STYLE}'>"
+        + section_header("—", "Active Engine Progress", "#76b900")
+        + body
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def show_trace(trace):
     """Render an expandable Execution Trace — vertical animated architecture flowchart."""
     import json as _json
@@ -548,7 +603,7 @@ def show_trace(trace):
     total_time = sum(timings.get(a, 0) for a in all_agents)
 
     agent_labels = {
-        "orchestrator": "Orchestrator", "pipeline_agent": "Pipeline",
+        "orchestrator": "Orchestrator", "pipeline_agent": "Pipeline Agent",
         "data_agent": "Data", "risk_agent": "Risk",
         "chart_agent": "Chart", "lp_agent": "LP Optimizer",
         "synthesizer": "Synthesizer",
@@ -678,11 +733,11 @@ const nodes = [
   {{ id:"orch_fewshot",  label:"Few-Shot", cx:centerX, cy:R.orch, w:ORCH_SUB_W, h:ORCH_SUB_H, agentKey:"orchestrator" }},
   {{ id:"orch_extract",  label:"Param Extract", cx:centerX+ORCH_SUB_W+COL_GAP, cy:R.orch, w:ORCH_SUB_W, h:ORCH_SUB_H, agentKey:"orchestrator" }},
   // Row 2: Phase 1 (3 parallel)
-  {{ id:"pipeline_agent", label:"Pipeline", cx:centerX-(NODE_W+COL_GAP), cy:R.phase1, w:NODE_W, h:NODE_H, agentKey:"pipeline_agent" }},
+  {{ id:"pipeline_agent", label:"Pipeline Agent", cx:centerX-(NODE_W+COL_GAP), cy:R.phase1, w:NODE_W, h:NODE_H, agentKey:"pipeline_agent" }},
   {{ id:"data_agent",     label:"Data Agent", cx:centerX, cy:R.phase1, w:NODE_W, h:NODE_H, agentKey:"data_agent" }},
   {{ id:"risk_agent",     label:"Risk Agent", cx:centerX+(NODE_W+COL_GAP), cy:R.phase1, w:NODE_W, h:NODE_H, agentKey:"risk_agent" }},
   // Row 3: Phase 2 (2 parallel)
-  {{ id:"chart_agent", label:"Chart Agent", cx:centerX-(NODE_W/2+COL_GAP/2), cy:R.phase2, w:NODE_W, h:NODE_H, agentKey:"chart_agent" }},
+  {{ id:"chart_agent", label:"Chart Builder", cx:centerX-(NODE_W/2+COL_GAP/2), cy:R.phase2, w:NODE_W, h:NODE_H, agentKey:"chart_agent" }},
   {{ id:"lp_agent",    label:"LP Optimizer", cx:centerX+(NODE_W/2+COL_GAP/2), cy:R.phase2, w:NODE_W, h:NODE_H, agentKey:"lp_agent" }},
   // Row 4: Synthesizer
   {{ id:"synthesizer", label:"Synthesizer", cx:centerX, cy:R.synth, w:NODE_W, h:NODE_H, agentKey:"synthesizer" }},
@@ -929,7 +984,7 @@ function draw(ts) {{
     const isTerminal = !n.agentKey;
 
     // Glow for active nodes
-    if (n.active && !isTerminal && progress > 0.5) {{
+    if (n.active && progress > 0.5) {{
       const pulse = 0.5 + 0.5 * Math.sin(elapsed/400);
       const gs = 10 + pulse*5;
       const grad = ctx.createRadialGradient(n.cx,n.cy,0, n.cx,n.cy,n.w/2+gs);
@@ -943,14 +998,14 @@ function draw(ts) {{
     drawRR(n.x, n.y, n.w, n.h, NODE_R);
     ctx.fillStyle = n.active ? "rgba(10,31,23,0.9)" : "rgba(10,31,23,0.4)";
     ctx.fill();
-    ctx.strokeStyle = n.active ? (isTerminal ? "#555" : "#76b900") : "#333";
-    ctx.lineWidth = n.active && !isTerminal ? 2 : 1;
+    ctx.strokeStyle = n.active ? "#76b900" : "#333";
+    ctx.lineWidth = n.active ? 2 : 1;
     ctx.stroke();
 
     // Label
     ctx.font = "700 " + (n.h < 34 ? "9" : "10") + "px Inter,sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = n.active ? (isTerminal ? "#999" : "#fff") : "#555";
+    ctx.fillStyle = n.active ? "#fff" : "#555";
     const hasTime = n.agentKey && DATA.agents[n.agentKey] && DATA.agents[n.agentKey].time > 0 && n.active && !n.id.startsWith("orch_");
     ctx.fillText(n.label.toUpperCase(), n.cx, n.cy - (hasTime ? 4 : 0));
 
@@ -996,13 +1051,23 @@ def extract_plan(state):
 
 
 AGENT_STEPS = [
-    ("pipeline_agent", "Querying forecast & inventory data"),
-    ("data_agent",     "Running exploratory SQL analysis"),
-    ("risk_agent",     "Scanning geopolitical risk signals"),
-    ("chart_agent",    "Generating visualizations & scoring"),
-    ("lp_agent",       "Optimizing supplier allocation"),
-    ("synthesizer",    "Synthesizing executive summary"),
+    ("pipeline_agent", "Pipeline · Structured query"),
+    ("data_agent",     "Data Agent · ReAct SQL (PostgreSQL MCP)"),
+    ("risk_agent",     "Risk Monitor · Tavily news retrieval"),
+    ("chart_agent",    "Chart Builder · Matplotlib synthesis"),
+    ("lp_agent",       "LP Optimizer · PuLP/CBC solve"),
+    ("synthesizer",    "Synthesizer · Cross-signal reasoning"),
 ]
+
+PHASE_GROUPS = [
+    ("PHASE 1 — PARALLEL FAN-OUT", ["pipeline_agent", "data_agent", "risk_agent"]),
+    ("PHASE 2 — PARALLEL",         ["chart_agent", "lp_agent"]),
+    ("SYNTHESIS",                  ["synthesizer"]),
+]
+
+# Synthesizer auto-triggers when data_agent or risk_agent participates
+# (mirrors builder.py::_NEEDS_SYNTHESIS).
+_SYNTH_TRIGGERS = {"data_agent", "risk_agent"}
 
 
 def stream_graph(command, config):
@@ -1013,28 +1078,52 @@ def stream_graph(command, config):
         with placeholder.container():
             completed = set(final_state.get("_completed_agents") or [])
             active = final_state.get("_active_agent")
+            timings = final_state.get("timings") or {}
 
-            # Progress feed
-            rows = ""
-            for agent_key, label in AGENT_STEPS:
+            # ── Filter agents to this plan only ─────────────────────────────
+            planned_agents = {
+                t.get("agent") for t in (final_state.get("tasks") or [])
+                if t.get("agent")
+            }
+            # Auto-include synthesizer when data/risk participates
+            if planned_agents & _SYNTH_TRIGGERS:
+                planned_agents = planned_agents | {"synthesizer"}
+
+            label_map = dict(AGENT_STEPS)
+
+            def _row_html(agent_key: str) -> str:
+                label = label_map.get(agent_key, agent_key)
                 if agent_key in completed:
-                    rows += (
+                    secs = timings.get(agent_key)
+                    time_html = (
+                        f"<span style='font-family:\"Space Grotesk\",sans-serif;"
+                        f"font-size:0.72rem; font-weight:700; color:#76b900;"
+                        f"margin-left:auto; white-space:nowrap;'>{secs:.2f}s</span>"
+                        if isinstance(secs, (int, float)) else ""
+                    )
+                    return (
                         f"<div style='display:flex; align-items:center; gap:0.75rem;"
-                        f"padding:0.35rem 0; opacity:0.6;'>"
+                        f"padding:0.35rem 0;'>"
                         f"<span style='color:#76b900; flex-shrink:0;'>✓</span>"
                         f"<span style='font-family:Manrope,sans-serif; font-size:0.85rem;"
-                        f"color:#FFFFFF;'>{label}</span></div>"
+                        f"color:#FFFFFF;'>{label}</span>"
+                        f"{time_html}"
+                        f"</div>"
                     )
                 elif agent_key == active:
-                    rows += (
+                    return (
                         f"<div style='display:flex; align-items:center; gap:0.75rem;"
                         f"padding:0.35rem 0;'>"
                         f"<span style='color:#76b900; flex-shrink:0;'>◌</span>"
                         f"<span style='font-family:Manrope,sans-serif; font-size:0.85rem;"
-                        f"color:#76b900; font-weight:700;'>{label}</span></div>"
+                        f"color:#76b900; font-weight:700;'>{label}</span>"
+                        f"<span style='font-family:\"Space Grotesk\",sans-serif;"
+                        f"font-size:0.72rem; font-weight:500; color:#76b900;"
+                        f"margin-left:auto; opacity:0.75; white-space:nowrap;'>running…</span>"
+                        f"</div>"
                     )
                 else:
-                    rows += (
+                    return (
                         f"<div style='display:flex; align-items:center; gap:0.75rem;"
                         f"padding:0.35rem 0; opacity:0.55;'>"
                         f"<span style='color:#555555; flex-shrink:0;'>○</span>"
@@ -1042,26 +1131,59 @@ def stream_graph(command, config):
                         f"color:#555555;'>{label}</span></div>"
                     )
 
+            # ── Assemble by phase, drop empty buckets ───────────────────────
+            phase_eyebrow = (
+                "font-family:'Inter',sans-serif; font-size:0.58rem;"
+                "letter-spacing:0.18em; text-transform:uppercase; color:#888888;"
+                "margin:0.85rem 0 0.35rem; padding:0; font-weight:600;"
+            )
+            body = ""
+            for phase_label, agent_keys in PHASE_GROUPS:
+                phase_agents = [a for a in agent_keys if a in planned_agents]
+                if not phase_agents:
+                    continue
+                body += f"<p style=\"{phase_eyebrow}\">{phase_label}</p>"
+                for agent_key in phase_agents:
+                    body += _row_html(agent_key)
+
+            # Defensive: if plan info hasn't arrived yet (first tick), show
+            # a single placeholder line instead of an empty panel.
+            if not body:
+                body = (
+                    "<div style='display:flex; align-items:center; gap:0.75rem;"
+                    "padding:0.35rem 0; opacity:0.55;'>"
+                    "<span style='color:#555555; flex-shrink:0;'>○</span>"
+                    "<span style='font-family:Manrope,sans-serif; font-size:0.85rem;"
+                    "color:#555555;'>Awaiting orchestrator plan…</span></div>"
+                )
+
             st.markdown(
                 f"<div style='{SECTION_STYLE}'>"
                 + section_header("—", "Active Engine Progress", "#76b900")
-                + rows
+                + body
                 + "</div>",
                 unsafe_allow_html=True,
             )
 
-            # Pipeline results glass card
+            # Pipeline results glass card — during streaming show a ready
+            # placeholder instead of raw markdown. Final structured render
+            # happens after stream completes (render_data_pipeline path).
             pipeline_results = final_state.get("pipeline_results") or {}
             if pipeline_results:
                 _PIPELINE_LABELS = {
                     "forecast_summary": "Forecast Summary",
                     "component_requirements": "Component Requirements",
                     "procurement_status": "Procurement Status",
+                    "triggered_procurement_rows": "Triggered Procurement Rows",
                 }
                 inner = "".join(
-                    f"<p class='result-label'>{_PIPELINE_LABELS.get(k, k.replace('_',' ').title())}</p>"
-                    f"<pre class='result-pre'>{v}</pre>"
-                    for k, v in pipeline_results.items()
+                    f"<div style='display:flex;align-items:center;gap:0.6rem;"
+                    f"padding:0.5rem 0;'>"
+                    f"<span style='color:#76b900;flex-shrink:0;font-size:0.9rem;'>✓</span>"
+                    f"<span style='font-family:Manrope,sans-serif;font-size:0.85rem;"
+                    f"color:#CCCCCC;'>{_PIPELINE_LABELS.get(k, k.replace('_',' ').title())} "
+                    f"ready — structured view renders below after all agents finish.</span></div>"
+                    for k in pipeline_results.keys()
                 )
                 st.markdown(
                     f"<div style='{SECTION_STYLE}'>"
@@ -1835,6 +1957,7 @@ def finalize_execution(final_state, fallback_plan=None):
         "summary": summary_text,
         "has_trace": True,
     })
+    render_progress_panel(trace)
     show_trace(trace)
 
     # Export button
@@ -1921,7 +2044,7 @@ def render_pending_plan():
             "lp_agent":       "#76b900",
         }
         agent_label = {
-            "pipeline_agent": "Pipeline",
+            "pipeline_agent": "Pipeline Agent",
             "data_agent":     "Data Explorer",
             "risk_agent":     "Risk Monitor",
             "chart_agent":    "Visualization",
@@ -2405,6 +2528,7 @@ else:
             if _b64 and not msg.get("chart_first"):
                 st.image(base64.b64decode(_b64))
         if msg.get("has_trace") and assistant_index < len(st.session_state.traces):
+            render_progress_panel(st.session_state.traces[assistant_index])
             show_trace(st.session_state.traces[assistant_index])
             assistant_index += 1
 

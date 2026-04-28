@@ -1777,7 +1777,7 @@ ORDER BY disruption_probability ASC;</div>
 </div>
 <div id="panel-chart">
   <div class="pclose" onclick="closeChartPanel()">\u2715</div>
-  <div class="ph">Chart Agent \u2014 7 Visualization Tools</div>
+  <div class="ph">Chart Builder \u2014 7 Visualization Tools</div>
   <div class="psub">Zero LLM in loop \u00b7 matplotlib PNG output \u00b7 skips synthesizer \u00b7 auto-scores suppliers when needed</div>
 
   <div class="gsec">
@@ -1811,7 +1811,7 @@ ORDER BY disruption_probability ASC;</div>
 
       <path d="M 510 86 C 510 140, 130 130, 130 174" stroke="#76b900" stroke-width="1.5" fill="none" marker-end="url(#arrGc)"/>
 
-      <text x="20" y="162" fill="#76b900" font-family="Inter,sans-serif" font-size="10.5" font-weight="700" letter-spacing="0.15em">CHART AGENT \u00b7 PHASE 2</text>
+      <text x="20" y="162" fill="#76b900" font-family="Inter,sans-serif" font-size="10.5" font-weight="700" letter-spacing="0.15em">CHART BUILDER \u00b7 PHASE 2</text>
       <line x1="195" y1="158" x2="880" y2="158" stroke="rgba(118,185,0,0.35)" stroke-width="1"/>
 
       <!-- tool+params -->
@@ -1962,7 +1962,7 @@ var nodes = [
   // Row 3: Router (fan-in)
   {id:"router", label:"Phase Router", cx:cx, cy:RY.router, w:NW, h:54, key:"router"},
   // Row 4: Phase 2 (parallel fan-out)
-  {id:"chart_agent", label:"Chart Agent", cx:cx-(NW/2+CG/2), cy:RY.phase2, w:NW, h:NH, key:"chart_agent"},
+  {id:"chart_agent", label:"Chart Builder", cx:cx-(NW/2+CG/2), cy:RY.phase2, w:NW, h:NH, key:"chart_agent"},
   {id:"lp_agent", label:"LP Optimizer", cx:cx+(NW/2+CG/2), cy:RY.phase2, w:NW, h:NH, key:"lp_agent"},
   // Row 5: Synthesizer (conditional)
   {id:"synthesizer", label:"Synthesizer", cx:cx, cy:RY.synth, w:NW, h:NH, key:"synthesizer"},
@@ -3443,13 +3443,11 @@ def render_landing():
         """, unsafe_allow_html=True)
 
         _SUGGESTIONS = [
-            ("Data Agent — Supplier Risk",
-             "Which suppliers have the highest disruption risk scores and what countries are they in?"),
             ("Risk Agent — Geopolitical",
              "Are there any recent geopolitical risks affecting semiconductor supply chains in East Asia?"),
-            ("Multi-Agent — Risk × News",
-             "Show me our top 10 highest-risk suppliers and check for any recent news about "
-             "disruptions or tariffs affecting the countries they operate in."),
+            ("Multi-Agent — Internal × External",
+             "Show me where and when we need to trigger procurement in the upcoming horizon, "
+             "and scan recent news for any semiconductor supply chain disruptions or tariff changes."),
         ]
         st.markdown("<div class='suggestion-row'>", unsafe_allow_html=True)
         cols = st.columns(len(_SUGGESTIONS))
