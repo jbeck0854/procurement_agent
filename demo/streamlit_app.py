@@ -2145,6 +2145,165 @@ def render_pending_plan():
                     st.rerun()
 
 
+def _run_scripted_demo_stage(prompt: str) -> None:
+    """Route scripted demo prompts to deterministic handlers, bypassing the LLM.
+
+    Covers all 7 scripted stages.  For each matched prompt this function
+    executes the appropriate deterministic logic and then calls st.rerun(),
+    which raises RerunException so control never returns to the caller.
+    Unrecognised prompts return normally and the caller falls through to the
+    LLM path.
+    """
+    from tools.pipeline_queries import (
+        query_forecast_summary,
+        query_component_requirements,
+        query_aggregated_procurement_need,
+    )
+
+    _p = prompt.strip().lower()
+
+    # ── 1. Planning initialization ─────────────────────────────────────────
+    if _p == (
+        "help me plan procurement for the upcoming 20 week planning horizon "
+        "with a balance between cost and reliability."
+    ):
+        _html = (
+            '<p style="color:#fff;margin:0 0 1rem;">Understood. We will:</p>'
+            '<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.65rem 1rem;margin:0.4rem 0;">'
+            '<p style="color:#fff;margin:0;font-size:0.88rem;"><span style="color:#76b900;font-weight:300;font-size:1.1rem;margin-right:8px;">01</span>'
+            'Verify your historical demand across all four facilities and semiconductor SKUs</p></div>'
+            '<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.65rem 1rem;margin:0.4rem 0;">'
+            '<p style="color:#fff;margin:0;font-size:0.88rem;"><span style="color:#76b900;font-weight:300;font-size:1.1rem;margin-right:8px;">02</span>'
+            'Translate that demand into the exact component requirements needed to support production</p></div>'
+            '<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.65rem 1rem;margin:0.4rem 0;">'
+            '<p style="color:#fff;margin:0;font-size:0.88rem;"><span style="color:#76b900;font-weight:300;font-size:1.1rem;margin-right:8px;">03</span>'
+            'Assess inventory coverage and identify where procurement is required</p></div>'
+            '<div style="background:#0A1F17;border-left:3px solid #76b900;border-radius:2px;padding:0.65rem 1rem;margin:0.4rem 0;">'
+            '<p style="color:#fff;margin:0;font-size:0.88rem;"><span style="color:#76b900;font-weight:300;font-size:1.1rem;margin-right:8px;">04</span>'
+            'Optimize supplier allocation to minimize cost while controlling supplier risk and disruption</p></div>'
+            '<hr style="border:none;border-top:1px solid #333;margin:1rem 0;">'
+            '<p style="color:#ccc;margin:0 0 0.5rem;font-size:0.85rem;">'
+            'Your objective balances <strong>cost efficiency</strong> with <strong>supply reliability</strong> — '
+            'the risk parameter controls this tradeoff.</p>'
+            '<p style="color:#ccc;margin:0 0 0.5rem;font-size:0.85rem;">'
+            "Let's begin by validating the historical demand that drives this entire workflow.</p>"
+            '<p style="color:#76b900;margin:0;font-size:0.85rem;font-weight:600;">'
+            "Reply 'Yes, proceed' to continue.</p>"
+        )
+        _advance_stage(0)
+        with st.chat_message("assistant", avatar=CPU_AVATAR):
+            st.markdown(_html, unsafe_allow_html=True)
+            _render_csv_button()
+        st.session_state.messages.append({
+            "role": "assistant", "content": _html,
+            "has_trace": False, "summary": "",
+        })
+        st.rerun()
+
+    # ── 2. Demand forecasting ("Yes, proceed") ────────────────────────────
+    if _p == "yes, proceed":
+        with st.spinner("Running demand forecast…"):
+            _r = query_forecast_summary()
+        _fs = {
+            "intent": "demand_forecasting",
+            "tasks": [{"agent": "pipeline_agent", "tool": "query_forecast_summary"}],
+            "agent_results": {
+                "forecast_summary": _r.get("content", ""),
+                "forecast_summary__structured": _r.get("structured"),
+            },
+            "raw_data": {},
+            "chart_results": {},
+            "timings": {"pipeline_agent": 0.0},
+            "final_response": "",
+        }
+        finalize_execution(_fs)
+        _advance_stage(1)
+        st.rerun()
+
+    # ── 3. BOM — component requirements ──────────────────────────────────
+    if _p == "show total component requirements for the upcoming demand window.":
+        with st.spinner("Loading component requirements…"):
+            _r = query_component_requirements()
+        _fs = {
+            "intent": "component_requirements",
+            "tasks": [{"agent": "pipeline_agent", "tool": "query_component_requirements"}],
+            "agent_results": {
+                "component_requirements": _r.get("content", ""),
+                "component_requirements__structured": _r.get("structured"),
+            },
+            "raw_data": {},
+            "chart_results": {},
+            "timings": {"pipeline_agent": 0.0},
+            "final_response": "",
+        }
+        finalize_execution(_fs)
+        _advance_stage(2)
+        st.rerun()
+
+    # ── 4. Net inventory / procurement need ───────────────────────────────
+    if _p == (
+        "after our inventory is factored in, what is the total amount that needs to be "
+        "ordered for each component to meet our upcoming demand?"
+    ):
+        with st.spinner("Calculating net procurement requirement…"):
+            _r = query_aggregated_procurement_need()
+        _fs = {
+            "intent": "inventory_planning",
+            "tasks": [{"agent": "pipeline_agent", "tool": "query_aggregated_procurement_need"}],
+            "agent_results": {
+                "aggregated_procurement_need": _r.get("content", ""),
+                "aggregated_procurement_need__structured": _r.get("structured"),
+            },
+            "raw_data": {},
+            "chart_results": {},
+            "timings": {"pipeline_agent": 0.0},
+            "final_response": "",
+        }
+        finalize_execution(_fs)
+        _advance_stage(3)
+        st.rerun()
+
+    # ── 5. LP — integrated circuit components ─────────────────────────────
+    if _p == (
+        "from our available suppliers, provide a procurement plan to ensure we have enough "
+        "integrated circuit components across all facilities to meet our upcoming demand window. "
+        "implement a moderate risk aversion supply strategy. "
+        "no supplier should exceed 40% of total supply volume for this order."
+    ):
+        _run_lp_direct(fill_defaults({
+            "product": "integrated_circuit_components",
+            "lambda_risk": 0.5,
+            "max_supplier_share": 0.40,
+        }))
+
+    # ── 6. Expedite (urgency re-run of the last LP) ───────────────────────
+    if _p == "expedite this":
+        _prior = st.session_state.lp_params_history.get("integrated_circuit_components") or {}
+        if not _prior:
+            for _pv in st.session_state.lp_params_history.values():
+                _prior = _pv
+                break
+        if _prior:
+            _epar = merge_with_prior("expedite this", _prior)
+        else:
+            _epar = fill_defaults({
+                "product": "integrated_circuit_components",
+                "urgency": True,
+            })
+        _run_lp_direct(_epar)
+
+    # ── 7. Complete Procurement Plan (executive summary) ──────────────────
+    if _p == "complete procurement plan":
+        st.session_state.show_executive_summary = True
+        _advance_stage(6)
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": "Generating final procurement executive summary…",
+            "has_trace": False, "summary": "",
+        })
+        st.rerun()
+
+
 def _run_lp_direct(params: dict) -> None:
     """Execute LP optimization without the orchestrator or LangGraph graph.
 
@@ -2579,7 +2738,13 @@ else:
             with st.chat_message("user", avatar=USER_AVATAR):
                 st.write(prompt)
 
-            # ── All input goes through the Orchestrator ──────────────────
+            # ── Scripted demo router ──────────────────────────────────────
+            # Handles all 7 scripted stages without calling the LLM.
+            # Matched prompts call st.rerun() inside and never return here.
+            # Unrecognised prompts fall through to the LLM path below.
+            _run_scripted_demo_stage(prompt)
+
+            # ── Non-scripted: all input goes through the Orchestrator ─────
             with st.spinner("Initializing procurement matrix..."):
                 thread_id = str(uuid.uuid4())
                 st.session_state.thread_id = thread_id
